@@ -577,9 +577,24 @@ composer.callbackQuery('deposit:close', async (ctx) => {
 // ═══════════════════════════════════════════════════════════════════
 //  TEXT INPUT ROUTER (no /cancel needed — use buttons above)
 // ═══════════════════════════════════════════════════════════════════
+
+// Reply keyboard button texts — if user presses these, clear state & forward
+const MENU_BUTTONS = new Set([
+  '📠 GET OTP', '💰 DEPOSIT', '👤 PROFILE', '🔥 MORE',
+  '📮 SMS CHECKER', '🛡 SUPPORT', '🎁 REFER & EARN', '💎 READYMADE ACCOUNT',
+  '📧 GET EMAIL', '😊 Favorite', 'Promo Code 👾', '◀️ RETURN',
+  '📊 TOP SERVICES', '⚙️ API', '🔮 Reseller Account', '🔧 ADMIN PANEL',
+]);
+
 composer.on('message:text', async (ctx, next) => {
   const state = userStates.get(ctx.chat.id);
   if (!state) return next();
+
+  // If user presses a reply keyboard button, clear state and forward
+  if (MENU_BUTTONS.has(ctx.message.text.trim())) {
+    userStates.delete(ctx.chat.id);
+    return next();
+  }
 
   switch (state.step) {
     case 'paytm_amount': return handlePaytmAmount(ctx);
@@ -590,3 +605,4 @@ composer.on('message:text', async (ctx, next) => {
 });
 
 export default composer;
+
