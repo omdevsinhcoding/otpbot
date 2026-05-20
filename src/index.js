@@ -8,7 +8,6 @@ import { initDb } from './database/models.js';
 import { createBot } from './bot/bot.js';
 import { Tracker } from './tracking/tracker.js';
 import { setupErrorHandler } from './handlers/error.js';
-import { rateLimiter } from './middleware/rateLimiter.js';
 import { activityTracker } from './middleware/activityTracker.js';
 import { ActionType } from './utils/constants.js';
 import logger from './utils/logger.js';
@@ -43,8 +42,7 @@ async function main() {
   // 4. Global error handler
   setupErrorHandler(bot);
 
-  // 5. Middleware (order matters!)
-  bot.use(rateLimiter);
+  // 5. Middleware
   bot.use(activityTracker);
 
   // 6. Register handlers (admin FIRST so they take priority over text handlers)

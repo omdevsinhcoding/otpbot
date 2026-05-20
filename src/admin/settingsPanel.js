@@ -18,13 +18,11 @@ async function showSettingsPanel(ctx) {
   const text =
     `⚙️ <b>Bot Settings</b>\n\n` +
     `🔧 <b>Maintenance Mode:</b> ${all.maintenance_mode ? '🟢 On' : '🔴 Off'}\n` +
-    `⏱ <b>Rate Limiting:</b> ${all.rate_limit_enabled ? '🟢 On' : '🔴 Off'}\n` +
     `🤖 <b>Bot Name:</b> ${escapeHtml(all.bot_name || 'N/A')}\n` +
     `🛡 <b>Support Username:</b> ${all.support_username ? '@' + escapeHtml(all.support_username) : 'Not set'}`;
 
   const kb = new InlineKeyboard()
     .text(`${all.maintenance_mode ? '🔴 Disable' : '🟢 Enable'} Maintenance`, 'settings:maintenance').row()
-    .text(`${all.rate_limit_enabled ? '🔴 Disable' : '🟢 Enable'} Rate Limit`, 'settings:ratelimit').row()
     .text('📝 Edit Bot Name', 'settings:edit:bot_name').row()
     .text('📝 Edit Support Username', 'settings:edit:support_username').row()
     .text('‹ Back', 'admin:back');
@@ -44,17 +42,6 @@ composer.callbackQuery('settings:maintenance', adminRequired, async (ctx) => {
   const newVal = !current;
   await settingsRepo.setSetting(pool, 'maintenance_mode', newVal, ctx.from.id);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key: 'maintenance_mode', value: newVal });
-  await showSettingsPanel(ctx);
-});
-
-// ── Toggle rate limit ───────────────────────────────────────────
-composer.callbackQuery('settings:ratelimit', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
-  const pool = ctx.dbPool;
-  const current = await settingsRepo.getSetting(pool, 'rate_limit_enabled');
-  const newVal = !current;
-  await settingsRepo.setSetting(pool, 'rate_limit_enabled', newVal, ctx.from.id);
-  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key: 'rate_limit_enabled', value: newVal });
   await showSettingsPanel(ctx);
 });
 

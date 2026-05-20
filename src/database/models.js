@@ -149,7 +149,6 @@ export const DEFAULT_SETTINGS = {
   maintenance_mode: false,
   bot_name: 'OTP Bot',
   support_username: '',
-  rate_limit_enabled: true,
 };
 
 export async function initDb(pool) {

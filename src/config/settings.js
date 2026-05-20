@@ -14,12 +14,6 @@ const settings = Object.freeze({
 
   LOG_LEVEL: process.env.LOG_LEVEL || 'info',
   LOG_PATH: process.env.LOG_PATH || './logs',
-
-  RATE_LIMIT_MESSAGES: Number(process.env.RATE_LIMIT_MESSAGES) || 30,
-  RATE_LIMIT_WINDOW: Number(process.env.RATE_LIMIT_WINDOW) || 60,
-
-  DB_MIN_CONNECTIONS: Number(process.env.DB_MIN_CONNECTIONS) || 2,
-  DB_MAX_CONNECTIONS: Number(process.env.DB_MAX_CONNECTIONS) || 20,
 });
 
 export default settings;

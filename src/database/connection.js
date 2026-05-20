@@ -8,10 +8,6 @@ let pool = null;
 export async function createPool() {
   pool = new Pool({
     connectionString: settings.DATABASE_URL,
-    min: settings.DB_MIN_CONNECTIONS,
-    max: settings.DB_MAX_CONNECTIONS,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
   });
   const client = await pool.connect();
   client.release();
