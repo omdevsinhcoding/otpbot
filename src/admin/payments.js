@@ -62,20 +62,11 @@ async function showPaytmSettings(ctx) {
     settingsRepo.getSetting(pool, 'paytm_max_amount'),
   ]);
 
-  // Mask MID: show first 4 + last 4 chars
-  let midDisplay = '❌ Not set';
-  if (merchantKey) {
-    const mk = String(merchantKey);
-    midDisplay = mk.length > 8
-      ? `<code>${mk.slice(0, 4)}****${mk.slice(-4)}</code>`
-      : `<code>${mk}</code>`;
-  }
-
   const text =
     `💳 <b>Paytm Settings</b>\n\n` +
     `📊 <b>Status:</b> ${enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
     `💳 <b>UPI ID:</b> ${upiId ? `<code>${escapeHtml(upiId)}</code>` : '❌ Not set'}\n` +
-    `🔑 <b>MID:</b> ${midDisplay}\n` +
+    `🔑 <b>MID:</b> ${merchantKey ? `<code>${escapeHtml(String(merchantKey))}</code>` : '❌ Not set'}\n` +
     `👤 <b>Payee Name:</b> ${payeeName || 'Paytm Merchant'}\n` +
     `⏱ <b>Time Limit:</b> ${timeLimit || 600}s\n` +
     `💰 <b>Min Amount:</b> ₹${minAmount || 10}\n` +
@@ -129,23 +120,11 @@ async function showBharatpaySettings(ctx) {
     settingsRepo.getSetting(pool, 'bharatpay_qr_file_id'),
   ]);
 
-  // Mask sensitive values
-  let midDisplay = '❌ Not set';
-  if (merchantId) {
-    const m = String(merchantId);
-    midDisplay = m.length > 8 ? `<code>${m.slice(0, 4)}****${m.slice(-4)}</code>` : `<code>${m}</code>`;
-  }
-  let tokenDisplay = '❌ Not set';
-  if (token) {
-    const t = String(token);
-    tokenDisplay = t.length > 8 ? `<code>${t.slice(0, 4)}****${t.slice(-4)}</code>` : '✅ Set';
-  }
-
   const text =
     `🏦 <b>Bharat Pay Settings</b>\n\n` +
     `📊 <b>Status:</b> ${enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
-    `🏪 <b>Merchant ID:</b> ${midDisplay}\n` +
-    `🔑 <b>Token:</b> ${tokenDisplay}\n` +
+    `🏪 <b>Merchant ID:</b> ${merchantId ? `<code>${escapeHtml(String(merchantId))}</code>` : '❌ Not set'}\n` +
+    `🔑 <b>Token:</b> ${token ? `<code>${escapeHtml(String(token))}</code>` : '❌ Not set'}\n` +
     `💳 <b>UPI ID:</b> ${upiId ? `<code>${escapeHtml(upiId)}</code>` : '❌ Not set'}\n` +
     `💰 <b>Min Amount:</b> ₹${minAmount || 10}\n` +
     `📈 <b>Max Amount:</b> ${maxAmount ? '₹' + maxAmount : 'No Limit'}\n` +
