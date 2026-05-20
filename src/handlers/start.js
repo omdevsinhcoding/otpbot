@@ -2,9 +2,10 @@ import { Composer } from 'grammy';
 import crypto from 'crypto';
 import { checkForceJoin } from '../middleware/forceJoinCheck.js';
 import * as userRepo from '../database/repositories/userRepo.js';
+import * as adminRepo from '../database/repositories/adminRepo.js';
 import * as welcomeRepo from '../database/repositories/welcomeRepo.js';
 import * as settingsRepo from '../database/repositories/settingsRepo.js';
-import { USER_MAIN_MENU, buildInlineButtons } from '../utils/keyboard.js';
+import { getMainMenu, buildInlineButtons } from '../utils/keyboard.js';
 import { ActionType } from '../utils/constants.js';
 import logger from '../utils/logger.js';
 
@@ -17,7 +18,7 @@ composer.command('start', async (ctx) => {
 
   // ── Parse deep-link referral ────────────────────────────────────
   let referredBy = null;
-  const payload = ctx.match; // grammY parses /start payload into ctx.match
+  const payload = ctx.match;
   if (payload && payload.startsWith('ref_')) {
     const refCode = payload.slice(4);
     try {
@@ -59,6 +60,10 @@ composer.command('start', async (ctx) => {
   // ── Force join gate ────────────────────────────────────────────
   if (!await checkForceJoin(ctx)) return;
 
+  // ── Check if admin (for dynamic menu) ──────────────────────────
+  const isAdmin = await adminRepo.isAdmin(pool, ctx.from.id);
+  const mainMenu = getMainMenu(isAdmin);
+
   // ── Welcome message ────────────────────────────────────────────
   try {
     const welcomeEnabled = await settingsRepo.getSetting(pool, 'welcome_enabled');
@@ -87,8 +92,7 @@ composer.command('start', async (ctx) => {
             reply_markup: kb,
           });
         }
-        // Send menu separately
-        await ctx.reply('Select an option below:', { reply_markup: USER_MAIN_MENU });
+        await ctx.reply('Select an option below:', { reply_markup: mainMenu });
         return;
       }
     }
@@ -101,7 +105,7 @@ composer.command('start', async (ctx) => {
   await ctx.reply(
     `👋 <b>Welcome${isReturning ? ' back' : ''}, ${name}!</b>\n\n` +
     `Use the menu below to get started.`,
-    { parse_mode: 'HTML', reply_markup: USER_MAIN_MENU }
+    { parse_mode: 'HTML', reply_markup: mainMenu }
   );
 });
 

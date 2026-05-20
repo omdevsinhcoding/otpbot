@@ -10,6 +10,7 @@ import { Tracker } from './tracking/tracker.js';
 import { setupErrorHandler } from './handlers/error.js';
 import { activityTracker } from './middleware/activityTracker.js';
 import { ActionType } from './utils/constants.js';
+import settings from './config/settings.js';
 import logger from './utils/logger.js';
 
 // ── Handlers & Admin ────────────────────────────────────────────
@@ -32,6 +33,22 @@ async function main() {
   logger.info('Starting OTP Bot…');
   const pool = await createPool();
   await initDb(pool);
+
+  // 2. Auto-seed first admin (super_admin) on every start
+  const adminId = settings.FIRST_ADMIN_ID;
+  await pool.query(
+    `INSERT INTO users (user_id, full_name, referral_code)
+     VALUES ($1, 'Super Admin', 'admin_' || $1::text)
+     ON CONFLICT (user_id) DO NOTHING`,
+    [adminId]
+  );
+  await pool.query(
+    `INSERT INTO admins (admin_id, role)
+     VALUES ($1, 'super_admin')
+     ON CONFLICT (admin_id) DO UPDATE SET role = 'super_admin', is_active = TRUE`,
+    [adminId]
+  );
+  logger.info(`Super admin seeded: ${adminId}`);
 
   // 2. Tracker
   const tracker = new Tracker(pool);

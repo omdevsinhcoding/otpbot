@@ -2,17 +2,30 @@ import { Keyboard, InlineKeyboard } from 'grammy';
 import {
   BTN_GET_OTP, BTN_DEPOSIT, BTN_PROFILE, BTN_MORE,
   BTN_SMS_CHECKER, BTN_SUPPORT, BTN_REFER_EARN, BTN_READYMADE,
-  ADMIN_CB, BROADCAST_CB, USER_MGMT_CB, ADMIN_MGMT_CB,
-  FORCE_JOIN_CB, WELCOME_CB, ANALYTICS_CB, LOGS_CB,
-  SETTINGS_CB, BOT_STATS_CB, MENU_CB,
+  BTN_GET_EMAIL, BTN_FAVORITE, BTN_PROMO_CODE, BTN_RETURN,
+  BTN_TOP_SERVICES, BTN_API, BTN_RESELLER, BTN_ADMIN_PANEL,
+  ADMIN_CB,
 } from './constants.js';
 
-// ── User main menu (Reply Keyboard) ─────────────────────────────────
-export const USER_MAIN_MENU = new Keyboard()
-  .text(BTN_GET_OTP).text(BTN_DEPOSIT).row()
-  .text(BTN_PROFILE).text(BTN_MORE).text(BTN_SMS_CHECKER).row()
-  .text(BTN_SUPPORT).text(BTN_REFER_EARN).row()
-  .text(BTN_READYMADE)
+// ── User main menu (Dynamic — adds Admin button for admins) ─────────
+export function getMainMenu(isAdmin = false) {
+  const kb = new Keyboard()
+    .text(BTN_GET_OTP).text(BTN_DEPOSIT).row()
+    .text(BTN_PROFILE).text(BTN_MORE).text(BTN_SMS_CHECKER).row()
+    .text(BTN_SUPPORT).text(BTN_REFER_EARN).row()
+    .text(BTN_READYMADE);
+  if (isAdmin) {
+    kb.row().text(BTN_ADMIN_PANEL);
+  }
+  return kb.resized();
+}
+
+// ── MORE sub-menu (Reply Keyboard) ──────────────────────────────────
+export const MORE_MENU_KEYBOARD = new Keyboard()
+  .text(BTN_GET_EMAIL).text(BTN_FAVORITE).row()
+  .text(BTN_PROMO_CODE).text(BTN_RETURN).row()
+  .text(BTN_TOP_SERVICES).text(BTN_API).row()
+  .text(BTN_RESELLER)
   .resized();
 
 // ── Admin panel (Inline Keyboard) ────────────────────────────────────

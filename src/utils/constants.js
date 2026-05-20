@@ -70,3 +70,15 @@ export const BTN_SMS_CHECKER = '📮 SMS CHECKER';
 export const BTN_SUPPORT = '🛡 SUPPORT';
 export const BTN_REFER_EARN = '🎁 REFER & EARN';
 export const BTN_READYMADE = '💎 READYMADE ACCOUNT';
+
+// ── MORE sub-menu button labels ──────────────────────────────────────
+export const BTN_GET_EMAIL = '📧 GET EMAIL';
+export const BTN_FAVORITE = '😊 Favorite';
+export const BTN_PROMO_CODE = 'Promo Code 👾';
+export const BTN_RETURN = '◀️ RETURN';
+export const BTN_TOP_SERVICES = '📊 TOP SERVICES';
+export const BTN_API = '⚙️ API';
+export const BTN_RESELLER = '🔮 Reseller Account';
+
+// ── Admin button in main menu ────────────────────────────────────────
+export const BTN_ADMIN_PANEL = '🔧 ADMIN PANEL';
