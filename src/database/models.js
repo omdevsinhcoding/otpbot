@@ -208,5 +208,12 @@ export async function initDb(pool) {
       [key, JSON.stringify(value)]
     );
   }
+
+  // Fix old default "OTP Bot" → "OTPBOT" (one-time migration)
+  await pool.query(
+    `UPDATE bot_settings SET value = $1::jsonb WHERE key = 'bot_name' AND value = $2::jsonb`,
+    [JSON.stringify('OTPBOT'), JSON.stringify('OTP Bot')]
+  );
+
   logger.info(`Default settings seeded (${Object.keys(DEFAULT_SETTINGS).length} keys).`);
 }

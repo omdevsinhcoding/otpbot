@@ -58,7 +58,7 @@ export async function checkPaymentStatus(mid, orderId) {
     });
     const result = await response.json();
 
-    logger.info(`Paytm status for ${orderId}: STATUS=${result.STATUS}, TXNAMOUNT=${result.TXNAMOUNT}`);
+    logger.debug(`Paytm status for ${orderId}: STATUS=${result.STATUS}, TXNAMOUNT=${result.TXNAMOUNT}`);
 
     const status = result.STATUS || 'UNKNOWN';
     const responseAmount = parseFloat(result.TXNAMOUNT) || 0;
@@ -72,7 +72,7 @@ export async function checkPaymentStatus(mid, orderId) {
       result.MID &&
       responseOrderId === orderId
     ) {
-      logger.info(`Paytm VERIFIED: order=${orderId}, amount=${responseAmount}, UTR=${utr}, TXNID=${txnId}`);
+      logger.debug(`Paytm VERIFIED: order=${orderId}, amount=${responseAmount}, UTR=${utr}, TXNID=${txnId}`);
       return { success: true, amount: responseAmount, status, utr, txnId, failed: false };
     }
 
@@ -114,7 +114,7 @@ function isPaymentFailed(response) {
 
   // If there's a TXNID or BANKTXNID, user actually attempted payment and it failed
   if (response.TXNID || response.BANKTXNID) {
-    logger.info(`Paytm payment genuinely failed: ${respMsg}`);
+    logger.debug(`Paytm payment genuinely failed: ${respMsg}`);
     return true;
   }
 
