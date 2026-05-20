@@ -91,6 +91,11 @@ export async function generateBrandedQR({
         width="${qrCardW}" height="${qrCardH}"
         fill="#ffffff" rx="8"/>
 
+  <!-- Thin separator line below QR card -->
+  <line x1="${qrCardX + 40}" y1="${qrCardY + qrCardH + 14}"
+        x2="${qrCardX + qrCardW - 40}" y2="${qrCardY + qrCardH + 14}"
+        stroke="#1a1a3a" stroke-width="1"/>
+
   <!-- Amount (white, medium) -->
   <text x="${cx}" y="${f1}"
         text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif"
