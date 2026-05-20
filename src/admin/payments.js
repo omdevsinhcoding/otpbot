@@ -52,36 +52,47 @@ composer.callbackQuery('pay:paytm', adminRequired, async (ctx) => {
 
 async function showPaytmSettings(ctx) {
   const pool = ctx.dbPool;
-  const [enabled, upiId, merchantKey, payeeName, paytmQr, timeLimit, minAmount, maxAmount] = await Promise.all([
+  const [enabled, upiId, merchantKey, payeeName, timeLimit, minAmount, maxAmount] = await Promise.all([
     settingsRepo.getSetting(pool, 'paytm_enabled'),
     settingsRepo.getSetting(pool, 'paytm_upi_id'),
     settingsRepo.getSetting(pool, 'paytm_merchant_key'),
     settingsRepo.getSetting(pool, 'paytm_payee_name'),
-    settingsRepo.getSetting(pool, 'paytm_qr_code'),
     settingsRepo.getSetting(pool, 'paytm_time_limit'),
     settingsRepo.getSetting(pool, 'paytm_min_amount'),
     settingsRepo.getSetting(pool, 'paytm_max_amount'),
   ]);
 
+  // Mask MID: show first 4 + last 4 chars
+  let midDisplay = '❌ Not set';
+  if (merchantKey) {
+    const mk = String(merchantKey);
+    midDisplay = mk.length > 8
+      ? `<code>${mk.slice(0, 4)}****${mk.slice(-4)}</code>`
+      : `<code>${mk}</code>`;
+  }
+
   const text =
     `💳 <b>Paytm Settings</b>\n\n` +
     `📊 <b>Status:</b> ${enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
     `💳 <b>UPI ID:</b> ${upiId ? `<code>${escapeHtml(upiId)}</code>` : '❌ Not set'}\n` +
-    `🔑 <b>MID:</b> ${merchantKey ? '✅ Set' : '❌ Not set'}\n` +
+    `🔑 <b>MID:</b> ${midDisplay}\n` +
     `👤 <b>Payee Name:</b> ${payeeName || 'Paytm Merchant'}\n` +
-    `📱 <b>QR Code ID:</b> ${paytmQr ? '✅ Set' : '❌ Not set'}\n` +
     `⏱ <b>Time Limit:</b> ${timeLimit || 600}s\n` +
     `💰 <b>Min Amount:</b> ₹${minAmount || 10}\n` +
     `📈 <b>Max Amount:</b> ₹${maxAmount || 50000}`;
 
   const kb = new InlineKeyboard()
     .text(enabled ? '🔴 Disable' : '🟢 Enable', 'pay:paytm:toggle').row()
-    .text('📝 Set UPI ID', 'pay:paytm:edit:paytm_upi_id').row()
-    .text('🔑 Set MID', 'pay:paytm:edit:paytm_merchant_key').row()
-    .text('👤 Payee Name', 'pay:paytm:edit:paytm_payee_name').text('📱 QR Code', 'pay:paytm:edit:paytm_qr_code').row()
+    .text('📝 Set UPI ID', 'pay:paytm:edit:paytm_upi_id');
+  if (upiId) kb.text('🗑 Clear UPI', 'pay:paytm:clear:paytm_upi_id');
+  kb.row()
+    .text('🔑 Set MID', 'pay:paytm:edit:paytm_merchant_key');
+  if (merchantKey) kb.text('🗑 Clear MID', 'pay:paytm:clear:paytm_merchant_key');
+  kb.row()
+    .text('👤 Payee Name', 'pay:paytm:edit:paytm_payee_name').row()
     .text('⏱ Time Limit', 'pay:paytm:edit:paytm_time_limit').row()
     .text('💰 Min Amount', 'pay:paytm:edit:paytm_min_amount').text('📈 Max Amount', 'pay:paytm:edit:paytm_max_amount').row()
-    .text('‹ Back', 'admin:payments');
+    .text('‹ Back', 'admin:back');
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
 }
@@ -115,11 +126,23 @@ async function showBharatpaySettings(ctx) {
     settingsRepo.getSetting(pool, 'bharatpay_qr_file_id'),
   ]);
 
+  // Mask sensitive values
+  let midDisplay = '❌ Not set';
+  if (merchantId) {
+    const m = String(merchantId);
+    midDisplay = m.length > 8 ? `<code>${m.slice(0, 4)}****${m.slice(-4)}</code>` : `<code>${m}</code>`;
+  }
+  let tokenDisplay = '❌ Not set';
+  if (token) {
+    const t = String(token);
+    tokenDisplay = t.length > 8 ? `<code>${t.slice(0, 4)}****${t.slice(-4)}</code>` : '✅ Set';
+  }
+
   const text =
     `🏦 <b>Bharat Pay Settings</b>\n\n` +
     `📊 <b>Status:</b> ${enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
-    `🏪 <b>Merchant ID:</b> ${merchantId ? '✅ Set' : '❌ Not set'}\n` +
-    `🔑 <b>Token:</b> ${token ? '✅ Set' : '❌ Not set'}\n` +
+    `🏪 <b>Merchant ID:</b> ${midDisplay}\n` +
+    `🔑 <b>Token:</b> ${tokenDisplay}\n` +
     `💳 <b>UPI ID:</b> ${upiId ? `<code>${escapeHtml(upiId)}</code>` : '❌ Not set'}\n` +
     `💰 <b>Min Amount:</b> ₹${minAmount || 10}\n` +
     `📈 <b>Max Amount:</b> ₹${maxAmount || 50000}\n` +
@@ -127,15 +150,21 @@ async function showBharatpaySettings(ctx) {
 
   const kb = new InlineKeyboard()
     .text(enabled ? '🔴 Disable' : '🟢 Enable', 'pay:bharatpay:toggle').row()
-    .text('🏪 Set Merchant ID', 'pay:bharatpay:edit:bharatpay_merchant_id').row()
-    .text('🔑 Set Token', 'pay:bharatpay:edit:bharatpay_token').row()
-    .text('💳 Set UPI ID', 'pay:bharatpay:edit:bharatpay_upi_id').row()
+    .text('🏪 Set Merchant ID', 'pay:bharatpay:edit:bharatpay_merchant_id');
+  if (merchantId) kb.text('🗑 Clear', 'pay:bharatpay:clear:bharatpay_merchant_id');
+  kb.row()
+    .text('🔑 Set Token', 'pay:bharatpay:edit:bharatpay_token');
+  if (token) kb.text('🗑 Clear', 'pay:bharatpay:clear:bharatpay_token');
+  kb.row()
+    .text('💳 Set UPI ID', 'pay:bharatpay:edit:bharatpay_upi_id');
+  if (upiId) kb.text('🗑 Clear', 'pay:bharatpay:clear:bharatpay_upi_id');
+  kb.row()
     .text('💰 Min Amount', 'pay:bharatpay:edit:bharatpay_min_amount').text('📈 Max Amount', 'pay:bharatpay:edit:bharatpay_max_amount').row()
     .text('🖼 Upload QR Image', 'pay:bharatpay:upload_qr').row();
 
   // Only show remove button if QR exists
   if (qrFileId) kb.text('🗑 Remove QR Image', 'pay:bharatpay:remove_qr').row();
-  kb.text('‹ Back', 'admin:payments');
+  kb.text('‹ Back', 'admin:back');
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
 }
@@ -260,6 +289,26 @@ composer.callbackQuery(/^pay:cancel_edit:(paytm|bharatpay|cryptomus)$/, adminReq
   editStates.delete(ctx.chat.id);
 
   // Go back to the correct gateway settings page
+  switch (gateway) {
+    case 'paytm': return showPaytmSettings(ctx);
+    case 'bharatpay': return showBharatpaySettings(ctx);
+    case 'cryptomus': return showCryptomusSettings(ctx);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  CLEAR SETTING — reset a key to empty
+// ═══════════════════════════════════════════════════════════════════
+composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):clear:.+$/, adminRequired, async (ctx) => {
+  const parts = ctx.callbackQuery.data.split(':');
+  const gateway = parts[1];
+  const key = parts.slice(3).join(':');
+  const pool = ctx.dbPool;
+
+  await settingsRepo.setSetting(pool, key, '', ctx.from.id);
+  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key, value: '(cleared)' });
+  await ctx.answerCallbackQuery(`✅ ${key} cleared!`);
+
   switch (gateway) {
     case 'paytm': return showPaytmSettings(ctx);
     case 'bharatpay': return showBharatpaySettings(ctx);
