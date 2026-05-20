@@ -56,10 +56,11 @@ composer.callbackQuery('deposit:paytm', async (ctx) => {
   const pool = ctx.dbPool;
   const minAmount = await settingsRepo.getSetting(pool, 'paytm_min_amount') || 10;
   const maxAmount = await settingsRepo.getSetting(pool, 'paytm_max_amount') || 50000;
+  const displayName = await settingsRepo.getSetting(pool, 'paytm_display_name') || 'Pay via Automatic Gateway';
 
   const kb = new InlineKeyboard().text('❌ Cancel', 'deposit:cancel_state');
   const sent = await ctx.editMessageText(
-    `💳 <b>Paytm UPI Deposit</b>\n\n` +
+    `💳 <b>${escapeHtml(displayName)}</b>\n\n` +
     `Enter the amount you want to deposit.\n` +
     `<b>Minimum:</b> ₹${minAmount}\n` +
     `<b>Maximum:</b> ₹${maxAmount}`,
@@ -147,7 +148,7 @@ async function handlePaytmAmount(ctx) {
   const photoFileId = sentMsg.photo?.[sentMsg.photo.length - 1]?.file_id;
   if (photoFileId) {
     await transactionRepo.updateGatewayData(pool, orderId, {
-      txnRef, upiId, photoFileId, caption,
+      txnRef, upiId, photoFileId, caption, qrMsgId: sentMsg.message_id,
     });
   }
 }
@@ -233,6 +234,7 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
 
     if (result.success) {
       // ── Payment verified! ──────────────────────────────────
+      // Clear auto-expiry timer
       const creditAmount = result.amount || parseFloat(txn.amount);
       await transactionRepo.updateStatus(pool, orderId, 'success', txnRef, {
         paytm_txnId: result.txnId,
@@ -341,15 +343,19 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
 
   // Send separate "not received" message
   await ctx.reply(
-    `❌ <b>Payment Not Received</b>\n\n` +
-    `We checked ${MAX_ATTEMPTS} times but could not find your payment.\n\n` +
-    `📋 Order: <code>${orderId}</code>\n` +
-    `💰 Amount: ₹${parseFloat(txn.amount).toFixed(2)}\n\n` +
-    `<b>Please ensure:</b>\n` +
-    `• You completed the payment for the exact amount\n` +
-    `• You paid using the QR code shown above\n` +
-    `• Wait a minute and try Check Payment again\n\n` +
-    `<i>If you already paid, please wait 1-2 minutes and try again.</i>`,
+    `╔══════════════════════╗\n` +
+    `   ❌ <b>Payment Not Received</b>\n` +
+    `╚══════════════════════╝\n\n` +
+    `We checked <b>${MAX_ATTEMPTS} times</b> but could not find your payment.\n\n` +
+    `📋 <b>Order:</b> <code>${orderId}</code>\n` +
+    `💰 <b>Amount:</b> ₹${parseFloat(txn.amount).toFixed(2)}\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `📌 <b>Please ensure:</b>\n\n` +
+    `  ✅ You completed the payment for the exact amount\n` +
+    `  ✅ You paid using the QR code shown above\n` +
+    `  ✅ Wait a minute and try Check Payment again\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `<i>💡 If you already paid, please wait 1-2 minutes and try again.</i>`,
     { parse_mode: 'HTML' }
   );
 });
@@ -568,20 +574,28 @@ composer.callbackQuery(/^deposit:check_crypto:CRYPTO_/, async (ctx) => {
 composer.callbackQuery(/^deposit:cancel_txn:/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const orderId = ctx.callbackQuery.data.replace('deposit:cancel_txn:', '');
+  const txn = await transactionRepo.getByOrderId(ctx.dbPool, orderId);
   await transactionRepo.updateStatus(ctx.dbPool, orderId, 'cancelled');
   try { await ctx.deleteMessage(); } catch { /* ignore */ }
-  await ctx.reply('❌ Order cancelled.', {
-    reply_markup: new InlineKeyboard().text('💰 Deposit Again', 'deposit:menu')
-  });
+  await ctx.reply(
+    `╔══════════════════════╗\n` +
+    `   🚫 <b>Payment Cancelled</b>\n` +
+    `╚══════════════════════╝\n\n` +
+    `📋 <b>Order:</b> <code>${orderId}</code>\n` +
+    `💰 <b>Amount:</b> ₹${txn ? parseFloat(txn.amount).toFixed(2) : '0.00'}\n\n` +
+    `<i>Your payment order has been cancelled.\nYou can create a new order anytime.</i>`,
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Deposit Again', 'deposit:menu') }
+  );
 });
 
 composer.callbackQuery('deposit:cancel_state', async (ctx) => {
   await ctx.answerCallbackQuery();
   userStates.delete(ctx.chat.id);
   try { await ctx.deleteMessage(); } catch { /* ignore */ }
-  await ctx.reply('❌ Cancelled.', {
-    reply_markup: new InlineKeyboard().text('💰 Deposit Again', 'deposit:menu')
-  });
+  await ctx.reply(
+    `🚫 <b>Cancelled</b>\n\n<i>Deposit process cancelled. You can start again anytime.</i>`,
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Deposit Again', 'deposit:menu') }
+  );
 });
 
 composer.callbackQuery('deposit:close', async (ctx) => {

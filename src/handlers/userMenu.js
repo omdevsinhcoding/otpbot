@@ -51,16 +51,18 @@ composer.hears(new RegExp(`^${escRe(BTN_DEPOSIT)}$`), async (ctx) => {
 
   const pool = ctx.dbPool;
   const balance = await walletRepo.getBalance(pool, ctx.from.id);
-  const [paytmOn, bharatpayOn, cryptomusOn] = await Promise.all([
+  const [paytmOn, bharatpayOn, cryptomusOn, paytmName, bharatpayName] = await Promise.all([
     settingsRepo.getSetting(pool, 'paytm_enabled'),
     settingsRepo.getSetting(pool, 'bharatpay_enabled'),
     settingsRepo.getSetting(pool, 'cryptomus_enabled'),
+    settingsRepo.getSetting(pool, 'paytm_display_name'),
+    settingsRepo.getSetting(pool, 'bharatpay_display_name'),
   ]);
 
   let text = `💰 <b>Deposit Funds</b>\n\n💳 <b>Your Balance:</b> ₹${formatNumber(balance)}\n\nChoose a payment method:`;
   const kb = new InlineKeyboard();
-  if (paytmOn) kb.text('💳 Paytm UPI', 'deposit:paytm').row();
-  if (bharatpayOn) kb.text('🏦 Bharat Pay', 'deposit:bharatpay').row();
+  if (paytmOn) kb.text(`💳 ${paytmName || 'Pay via Automatic Gateway'}`, 'deposit:paytm').row();
+  if (bharatpayOn) kb.text(`🏦 ${bharatpayName || 'Pay via UTR / Transaction ID'}`, 'deposit:bharatpay').row();
   if (cryptomusOn) kb.text('₿ Cryptomus', 'deposit:cryptomus').row();
   if (!paytmOn && !bharatpayOn && !cryptomusOn) text += '\n\n⚠️ No payment methods available.';
   kb.text('❌ Close', 'deposit:close');
@@ -278,11 +280,14 @@ composer.hears(new RegExp(`^${escRe(BTN_ADMIN_PANEL)}$`), async (ctx) => {
   ]);
 
   const text =
-    `👑 <b>Admin Panel</b>\n\n` +
-    `👥 Total Users: ${usersRes.rows[0].c}\n` +
-    `🛒 Total Orders: ${ordersRes.rows[0].c}\n` +
-    `💵 Revenue: ₹${formatNumber(parseFloat(revenueRes.rows[0].s))}\n` +
-    `🟢 Paid: ${paidRes.rows[0].c} | 🟡 Pending: ${pendingRes.rows[0].c} | 🔴 Expired: ${expiredRes.rows[0].c}`;
+    `╔══════════════════════╗\n` +
+    `   👑 <b>Admin Panel</b>\n` +
+    `╚══════════════════════╝\n\n` +
+    `👥 <b>Total Users:</b> ${usersRes.rows[0].c}\n` +
+    `🛒 <b>Total Orders:</b> ${ordersRes.rows[0].c}\n` +
+    `💵 <b>Revenue:</b> ₹${formatNumber(parseFloat(revenueRes.rows[0].s))}\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `🟢 Paid: ${paidRes.rows[0].c}  |  🟡 Pending: ${pendingRes.rows[0].c}  |  🔴 Expired: ${expiredRes.rows[0].c}`;
 
   await ctx.reply(text, {
     parse_mode: 'HTML',

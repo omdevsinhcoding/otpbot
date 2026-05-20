@@ -12,6 +12,7 @@ import { setupErrorHandler } from './handlers/error.js';
 
 import settings from './config/settings.js';
 import logger from './utils/logger.js';
+import { startExpiryService, stopExpiryService } from './services/expiryService.js';
 
 // ── Handlers & Admin ────────────────────────────────────────────
 import startHandler from './handlers/start.js';
@@ -91,9 +92,13 @@ async function main() {
     },
   });
 
+  // 8. Start payment expiry background service
+  startExpiryService(bot, pool);
+
   // 8. Graceful shutdown
   const shutdown = async (signal) => {
     logger.info(`Received ${signal}. Shutting down…`);
+    stopExpiryService();
     await bot.stop();
     await closePool();
     logger.info('Bot stopped. Goodbye!');

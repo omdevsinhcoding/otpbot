@@ -4,7 +4,7 @@ import { ADMIN_PANEL_KEYBOARD } from '../utils/keyboard.js';
 import logger from '../utils/logger.js';
 
 const composer = new Composer();
-const PANEL_TEXT = '🔧 <b>Admin Panel</b>\n\nSelect an option:';
+const PANEL_TEXT = '╔══════════════════════╗\n   🔧 <b>Admin Panel</b>\n╚══════════════════════╝\n\nSelect an option below:';
 
 composer.command('admin', adminRequired, async (ctx) => {
   await ctx.reply(PANEL_TEXT, { parse_mode: 'HTML', reply_markup: ADMIN_PANEL_KEYBOARD });
