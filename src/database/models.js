@@ -178,16 +178,19 @@ export const DEFAULT_SETTINGS = {
   paytm_merchant_key: '',
   paytm_time_limit: 600,
   paytm_min_amount: 10,
+  paytm_max_amount: 50000,
   bharatpay_enabled: false,
   bharatpay_merchant_id: '',
   bharatpay_token: '',
   bharatpay_upi_id: '',
   bharatpay_min_amount: 10,
+  bharatpay_max_amount: 50000,
   bharatpay_qr_file_id: '',
   cryptomus_enabled: false,
   cryptomus_api_key: '',
   cryptomus_merchant_id: '',
   cryptomus_min_amount: 1,
+  cryptomus_max_amount: 10000,
 };
 
 export async function initDb(pool) {

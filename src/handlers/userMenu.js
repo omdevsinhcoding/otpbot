@@ -69,7 +69,7 @@ composer.hears(new RegExp(`^${escRe(BTN_DEPOSIT)}$`), async (ctx) => {
   await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
 });
 
-// ── 👤 PROFILE ──────────────────────────────────────────────────
+// ── 👤 PROFILE — Premium card style ─────────────────────────────
 composer.hears(new RegExp(`^${escRe(BTN_PROFILE)}$`), async (ctx) => {
   if (!await checkForceJoin(ctx)) return;
   ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'profile' });
@@ -80,26 +80,48 @@ composer.hears(new RegExp(`^${escRe(BTN_PROFILE)}$`), async (ctx) => {
     return;
   }
 
+  // Fetch wallet data
+  const walletMod = await import('../database/repositories/walletRepo.js');
+  const wallet = await walletMod.getWallet(pool, ctx.from.id);
+  const balance = wallet ? parseFloat(wallet.balance) : 0;
+  const totalDeposit = wallet ? parseFloat(wallet.total_deposit) : 0;
+
+  // Count deposits
+  const { rows: depRows } = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM transactions WHERE user_id = $1 AND status = 'success'`, [ctx.from.id]
+  );
+  const depositCount = depRows[0].count;
+
+  // Count referrals
   const { rows: refRows } = await pool.query(
     'SELECT COUNT(*)::int AS count FROM users WHERE referred_by = $1', [ctx.from.id]
   );
   const referralCount = refRows[0].count;
 
-  const text =
-    `╔══════════════════════╗\n` +
-    `      👤 <b>YOUR PROFILE</b>\n` +
-    `╠══════════════════════╣\n` +
-    `┃ 🆔 <b>ID:</b> <code>${user.user_id}</code>\n` +
-    `┃ 📛 <b>Name:</b> ${escapeHtml(user.full_name || 'N/A')}\n` +
-    `┃ 👤 <b>Username:</b> ${user.username ? '@' + escapeHtml(user.username) : 'N/A'}\n` +
-    `┃ 📅 <b>Joined:</b> ${formatTimestamp(user.first_seen)}\n` +
-    `┃ ⏰ <b>Last Active:</b> ${formatTimestamp(user.last_active)}\n` +
-    `┃ 🔗 <b>Referral Code:</b> <code>${user.referral_code || 'N/A'}</code>\n` +
-    `┃ 👥 <b>Referrals:</b> ${formatNumber(referralCount)}\n` +
-    `┃ ⭐ <b>Status:</b> ${user.is_banned ? '🚫 Banned' : '✅ Active'}\n` +
-    `╚══════════════════════╝`;
+  // Count OTP/numbers bought (future-proof: 0 for now)
+  const totalBought = 0;
 
-  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: await menuFor(ctx) });
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+
+  const { InlineKeyboard } = await import('grammy');
+
+  const text =
+    `👤 <b>Name :</b> ${escapeHtml(user.full_name || 'N/A')}\n` +
+    `🆔 <b>User ID :</b> <code>${user.user_id}</code>\n\n` +
+    `💰 <b>Balance :</b> ₹${formatNumber(balance)}\n` +
+    `💵 <b>Total Deposit :</b> ${depositCount} Times\n\n` +
+    `🕐 <b>Last Updated :</b> ${timeStr}\n` +
+    `📅 <b>Date :</b> ${dateStr}\n\n` +
+    `📦 <b>Total Number Buyed :</b> ${totalBought}`;
+
+  const kb = new InlineKeyboard()
+    .text('📠 OTP History', 'profile:otp_history').text('💵 Deposit History', 'profile:deposit_history').row()
+    .text('📧 Email History', 'profile:email_history').text('💸 Transfer Balance', 'profile:transfer').row()
+    .text('📜 Read Full Terms And Conditions', 'profile:terms');
+
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
 });
 
 // ── 🔥 MORE → shows sub-menu reply keyboard ────────────────────
@@ -235,19 +257,89 @@ composer.hears(new RegExp(`^${escRe(BTN_RESELLER)}$`), async (ctx) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-//  🔧 ADMIN PANEL BUTTON (reply keyboard)
+//  🔧 ADMIN PANEL BUTTON — Premium with live stats
 // ═══════════════════════════════════════════════════════════════════
 composer.hears(new RegExp(`^${escRe(BTN_ADMIN_PANEL)}$`), async (ctx) => {
-  const isAdmin = await adminRepo.isAdmin(ctx.dbPool, ctx.from.id);
+  const pool = ctx.dbPool;
+  const isAdmin = await adminRepo.isAdmin(pool, ctx.from.id);
   if (!isAdmin) {
     await ctx.reply('⛔ You are not authorized.', { reply_markup: getMainMenu(false) });
     return;
   }
   ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'admin_panel' });
-  await ctx.reply('🔧 <b>Admin Panel</b>\n\nSelect an option:', {
+
+  // Fetch live stats
+  const [usersRes, ordersRes, revenueRes, paidRes, pendingRes, expiredRes] = await Promise.all([
+    pool.query('SELECT COUNT(*)::int AS c FROM users'),
+    pool.query('SELECT COUNT(*)::int AS c FROM transactions'),
+    pool.query(`SELECT COALESCE(SUM(amount), 0)::numeric AS s FROM transactions WHERE status = 'success'`),
+    pool.query(`SELECT COUNT(*)::int AS c FROM transactions WHERE status = 'success'`),
+    pool.query(`SELECT COUNT(*)::int AS c FROM transactions WHERE status = 'pending'`),
+    pool.query(`SELECT COUNT(*)::int AS c FROM transactions WHERE status = 'expired'`),
+  ]);
+
+  const text =
+    `👑 <b>Admin Panel</b>\n\n` +
+    `👥 Total Users: ${usersRes.rows[0].c}\n` +
+    `🛒 Total Orders: ${ordersRes.rows[0].c}\n` +
+    `💵 Revenue: ₹${formatNumber(parseFloat(revenueRes.rows[0].s))}\n` +
+    `🟢 Paid: ${paidRes.rows[0].c} | 🟡 Pending: ${pendingRes.rows[0].c} | 🔴 Expired: ${expiredRes.rows[0].c}`;
+
+  await ctx.reply(text, {
     parse_mode: 'HTML',
     reply_markup: ADMIN_PANEL_KEYBOARD,
   });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  PROFILE CALLBACK HANDLERS
+// ═══════════════════════════════════════════════════════════════════
+composer.callbackQuery('profile:deposit_history', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const pool = ctx.dbPool;
+  const { rows } = await pool.query(
+    `SELECT gateway, amount, status, created_at FROM transactions
+     WHERE user_id = $1 ORDER BY created_at DESC LIMIT 10`, [ctx.from.id]
+  );
+  if (rows.length === 0) {
+    await ctx.reply('📭 No deposit history found.');
+    return;
+  }
+  let text = '💵 <b>Deposit History</b> (Last 10)\n\n';
+  for (const r of rows) {
+    const icon = r.status === 'success' ? '✅' : r.status === 'pending' ? '🟡' : '❌';
+    const date = new Date(r.created_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' });
+    text += `${icon} ₹${r.amount} — ${r.gateway} — ${date}\n`;
+  }
+  await ctx.reply(text, { parse_mode: 'HTML' });
+});
+
+composer.callbackQuery('profile:otp_history', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await ctx.reply('📠 <b>OTP History</b>\n\nNo OTP orders yet.', { parse_mode: 'HTML' });
+});
+
+composer.callbackQuery('profile:email_history', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await ctx.reply('📧 <b>Email History</b>\n\nNo email orders yet.', { parse_mode: 'HTML' });
+});
+
+composer.callbackQuery('profile:transfer', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await ctx.reply('💸 <b>Transfer Balance</b>\n\nThis feature is coming soon.', { parse_mode: 'HTML' });
+});
+
+composer.callbackQuery('profile:terms', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await ctx.reply(
+    '📜 <b>Terms And Conditions</b>\n\n' +
+    '1. All payments are non-refundable.\n' +
+    '2. Misuse of services will result in permanent ban.\n' +
+    '3. Contact support for any issues.\n' +
+    '4. We reserve the right to modify services.\n' +
+    '5. By using this bot, you agree to these terms.',
+    { parse_mode: 'HTML' }
+  );
 });
 
 export default composer;
