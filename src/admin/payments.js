@@ -79,7 +79,7 @@ async function showPaytmSettings(ctx) {
     `👤 <b>Payee Name:</b> ${payeeName || 'Paytm Merchant'}\n` +
     `⏱ <b>Time Limit:</b> ${timeLimit || 600}s\n` +
     `💰 <b>Min Amount:</b> ₹${minAmount || 10}\n` +
-    `📈 <b>Max Amount:</b> ₹${maxAmount || 50000}`;
+    `📈 <b>Max Amount:</b> ${maxAmount ? '₹' + maxAmount : 'No Limit'}`;
 
   const kb = new InlineKeyboard()
     .text(enabled ? '🔴 Disable' : '🟢 Enable', 'pay:paytm:toggle').row()

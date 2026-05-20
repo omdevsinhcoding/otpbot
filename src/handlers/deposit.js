@@ -55,7 +55,7 @@ composer.callbackQuery('deposit:paytm', async (ctx) => {
   await ctx.answerCallbackQuery();
   const pool = ctx.dbPool;
   const minAmount = await settingsRepo.getSetting(pool, 'paytm_min_amount') || 10;
-  const maxAmount = await settingsRepo.getSetting(pool, 'paytm_max_amount') || 50000;
+  const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'paytm_max_amount')) || 0;
   const displayName = await settingsRepo.getSetting(pool, 'paytm_display_name') || 'Pay via Automatic Gateway';
 
   const kb = new InlineKeyboard().text('❌ Cancel', 'deposit:cancel_state');
@@ -63,7 +63,7 @@ composer.callbackQuery('deposit:paytm', async (ctx) => {
     `💳 <b>${escapeHtml(displayName)}</b>\n\n` +
     `Enter the amount you want to deposit.\n` +
     `<b>Minimum:</b> ₹${minAmount}\n` +
-    `<b>Maximum:</b> ₹${maxAmount}`,
+    `<b>Maximum:</b> ${maxAmount ? '₹' + maxAmount : 'No Limit'}`,
     { parse_mode: 'HTML', reply_markup: kb }
   );
   userStates.set(ctx.chat.id, { step: 'paytm_amount' });
@@ -74,7 +74,7 @@ async function handlePaytmAmount(ctx) {
   const pool = ctx.dbPool;
   const amount = parseFloat(ctx.message.text.trim());
   const minAmount = await settingsRepo.getSetting(pool, 'paytm_min_amount') || 10;
-  const maxAmount = await settingsRepo.getSetting(pool, 'paytm_max_amount') || 50000;
+  const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'paytm_max_amount')) || 0;
 
   if (isNaN(amount) || amount < minAmount) {
     await ctx.reply(`⚠️ Minimum deposit is ₹${minAmount}.`, {
@@ -82,7 +82,7 @@ async function handlePaytmAmount(ctx) {
     });
     return;
   }
-  if (amount > maxAmount) {
+  if (maxAmount > 0 && amount > maxAmount) {
     await ctx.reply(`⚠️ Maximum deposit is ₹${maxAmount}.`, {
       reply_markup: new InlineKeyboard().text('❌ Cancel', 'deposit:cancel_state')
     });
@@ -468,13 +468,13 @@ composer.callbackQuery('deposit:cryptomus', async (ctx) => {
   await ctx.answerCallbackQuery();
   const pool = ctx.dbPool;
   const minAmount = await settingsRepo.getSetting(pool, 'cryptomus_min_amount') || 1;
-  const maxAmount = await settingsRepo.getSetting(pool, 'cryptomus_max_amount') || 10000;
+  const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_max_amount')) || 0;
 
   const kb = new InlineKeyboard().text('❌ Cancel', 'deposit:cancel_state');
   await ctx.editMessageText(
     `₿ <b>Cryptomus Deposit</b>\n\n` +
     `Enter the amount in <b>USD</b>.\n` +
-    `<b>Minimum:</b> $${minAmount}  |  <b>Maximum:</b> $${maxAmount}`,
+    `<b>Minimum:</b> $${minAmount}  |  <b>Maximum:</b> ${maxAmount ? '$' + maxAmount : 'No Limit'}`,
     { parse_mode: 'HTML', reply_markup: kb }
   );
   userStates.set(ctx.chat.id, { step: 'cryptomus_amount' });
@@ -484,7 +484,7 @@ async function handleCryptomusAmount(ctx) {
   const pool = ctx.dbPool;
   const amount = parseFloat(ctx.message.text.trim());
   const minAmount = await settingsRepo.getSetting(pool, 'cryptomus_min_amount') || 1;
-  const maxAmount = await settingsRepo.getSetting(pool, 'cryptomus_max_amount') || 10000;
+  const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_max_amount')) || 0;
 
   if (isNaN(amount) || amount < minAmount) {
     await ctx.reply(`⚠️ Minimum is $${minAmount}.`, {
@@ -492,7 +492,7 @@ async function handleCryptomusAmount(ctx) {
     });
     return;
   }
-  if (amount > maxAmount) {
+  if (maxAmount > 0 && amount > maxAmount) {
     await ctx.reply(`⚠️ Maximum is $${maxAmount}.`, {
       reply_markup: new InlineKeyboard().text('❌ Cancel', 'deposit:cancel_state')
     });
