@@ -1,0 +1,22 @@
+{
+  "name": "otpbot",
+  "version": "1.0.0",
+  "description": "Production-grade Telegram OTP Bot with admin system, tracking, and scalable architecture",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "init-db": "node src/scripts/initDb.js"
+  },
+  "dependencies": {
+    "grammy": "^1.35.0",
+    "@grammyjs/conversations": "^2.0.3",
+    "pg": "^8.13.1",
+    "dotenv": "^16.4.7",
+    "winston": "^3.17.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
