@@ -26,7 +26,7 @@ import logger from '../utils/logger.js';
  *   └──────────────────────────────────────────┘
  */
 export async function generateBrandedQR({
-  storeName = 'OTP BOT',
+  storeName = 'OTPBOT',
   amount,
   currency = '₹',
   refId,
@@ -83,7 +83,7 @@ export async function generateBrandedQR({
   <text x="${cx}" y="45" text-anchor="middle"
         font-family="'Segoe UI', Arial, sans-serif"
         font-size="18" font-weight="600" fill="#2ecc71">
-    🏪 ${esc(storeName)}
+    ${esc(storeName)}
   </text>
 
   <!-- QR white card — large, nearly edge-to-edge -->

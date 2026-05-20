@@ -111,7 +111,7 @@ async function handlePaytmAmount(ctx) {
 
 
   const minutes = Math.floor(timeLimit / 60);
-  const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTP BOT';
+  const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTPBOT';
 
   // Generate branded QR image
   const qrImageBuffer = await generateBrandedQR({
@@ -184,10 +184,22 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
   if (elapsed > timeLimit) {
     await transactionRepo.updateStatus(pool, orderId, 'expired');
     try { await ctx.deleteMessage(); } catch { /* ignore */ }
-    await ctx.reply(
-      `⏰ <b>Payment Expired!</b>\n\nOrder <code>${orderId}</code> has expired.`,
-      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Pay Again', 'deposit:paytm').text('‹ Back', 'deposit:menu') }
-    );
+
+    const supportUser = await settingsRepo.getSetting(pool, 'support_username');
+    let expiredText =
+      `💀 <b>Payment Expired</b>\n\n` +
+      `Order <code>${orderId}</code> has expired.\n` +
+      `Please create a new order.\n\n` +
+      `<i>If you already made the payment, please contact support with your UTR/transaction ID and we will resolve it.</i>`;
+
+    if (supportUser) {
+      expiredText += `\n\n🛡 <b>Support:</b> @${escapeHtml(supportUser)}`;
+    }
+
+    await ctx.reply(expiredText, {
+      parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard().text('💰 Pay Again', 'deposit:paytm').text('‹ Back', 'deposit:menu'),
+    });
     return;
   }
 
@@ -286,7 +298,7 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
   if (storedFileId) {
     // ── Re-send the EXACT SAME image (no regeneration) ────────
     const displayName = await settingsRepo.getSetting(pool, 'paytm_display_name') || 'Pay via Automatic Gateway';
-    const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTP BOT';
+    const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTPBOT';
     const resendCaption =
       `💳 <b>${escapeHtml(displayName)}</b>\n\n` +
       `🏪 <b>${escapeHtml(botName)}</b>\n` +
@@ -302,7 +314,7 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
     });
   } else {
     // ── Fallback: regenerate QR if file_id not stored ──────────
-    const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTP BOT';
+    const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTPBOT';
     const payeeName = await settingsRepo.getSetting(pool, 'paytm_payee_name') || 'Paytm Merchant';
     const paytmQr = await settingsRepo.getSetting(pool, 'paytm_qr_code') || '';
     const displayName = await settingsRepo.getSetting(pool, 'paytm_display_name') || 'Pay via Automatic Gateway';
