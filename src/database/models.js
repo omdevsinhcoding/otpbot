@@ -176,6 +176,8 @@ export const DEFAULT_SETTINGS = {
   paytm_enabled: false,
   paytm_upi_id: '',
   paytm_merchant_key: '',
+  paytm_payee_name: 'Paytm Merchant',
+  paytm_qr_code: '',
   paytm_time_limit: 600,
   paytm_min_amount: 10,
   paytm_max_amount: 50000,

@@ -1,4 +1,4 @@
-import { Composer, InlineKeyboard } from 'grammy';
+import { Composer, InlineKeyboard, InputFile } from 'grammy';
 import { checkForceJoin } from '../middleware/forceJoinCheck.js';
 import * as settingsRepo from '../database/repositories/settingsRepo.js';
 import * as walletRepo from '../database/repositories/walletRepo.js';
@@ -8,6 +8,7 @@ import * as bharatpayService from '../services/bharatpayService.js';
 import * as cryptomusService from '../services/cryptomusService.js';
 import { ActionType } from '../utils/constants.js';
 import { formatNumber, escapeHtml } from '../utils/formatters.js';
+import { generateBrandedQR } from '../services/qrImageService.js';
 import logger from '../utils/logger.js';
 
 const composer = new Composer();
@@ -88,6 +89,8 @@ async function handlePaytmAmount(ctx) {
   userStates.delete(ctx.chat.id);
   const upiId = await settingsRepo.getSetting(pool, 'paytm_upi_id');
   const timeLimit = await settingsRepo.getSetting(pool, 'paytm_time_limit') || 600;
+  const payeeName = await settingsRepo.getSetting(pool, 'paytm_payee_name') || 'Paytm Merchant';
+  const paytmQr = await settingsRepo.getSetting(pool, 'paytm_qr_code') || '';
 
   if (!upiId) {
     await ctx.reply('⚠️ Paytm is not configured yet. Contact admin.');
@@ -95,12 +98,12 @@ async function handlePaytmAmount(ctx) {
   }
 
   const orderId = `DX-${Date.now().toString().slice(-8)}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-  const { qrUrl, txnRef } = paytmService.generatePaymentQR(upiId, amount, orderId);
+  const { upiLink, txnRef } = paytmService.generatePaymentQR(upiId, amount, orderId, payeeName, paytmQr);
 
   await walletRepo.ensureWallet(pool, ctx.from.id);
   await transactionRepo.createTransaction(pool, {
     userId: ctx.from.id, gateway: 'paytm', orderId, amount,
-    gatewayData: { txnRef, upiId, qrUrl },
+    gatewayData: { txnRef, upiId },
   });
 
   ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.FINANCIAL_DEPOSIT, {
@@ -109,6 +112,16 @@ async function handlePaytmAmount(ctx) {
 
   const minutes = Math.floor(timeLimit / 60);
   const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTP Bot';
+
+  // Generate branded QR image — matches Python upi.py create_qr_buffer()
+  const qrImageBuffer = await generateBrandedQR({
+    storeName: botName,
+    amount: amount.toFixed(2),
+    currency: '₹',
+    refId: txnRef,
+    upiLink,
+    developer: '@Erroroo',
+  });
 
   const caption =
     `💳 <b>Payment Required — Paytm</b>\n\n` +
@@ -123,7 +136,9 @@ async function handlePaytmAmount(ctx) {
     .text('🔄 Check Payment', `deposit:check:${orderId}`).row()
     .text('❌ Cancel Order', `deposit:cancel_txn:${orderId}`);
 
-  await ctx.replyWithPhoto(qrUrl, { caption, parse_mode: 'HTML', reply_markup: kb });
+  await ctx.replyWithPhoto(new InputFile(qrImageBuffer, 'payment_qr.png'), {
+    caption, parse_mode: 'HTML', reply_markup: kb,
+  });
 }
 
 // ── Paytm: check payment (manual click) ─────────────────────────
@@ -135,6 +150,10 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
   const txn = await transactionRepo.getByOrderId(pool, orderId);
   if (!txn) { await ctx.answerCallbackQuery('⚠️ Order not found.'); return; }
   if (txn.status === 'success') { await ctx.answerCallbackQuery('✅ Already verified!'); return; }
+  if (txn.status === 'expired' || txn.status === 'failed') {
+    await ctx.answerCallbackQuery(`⚠️ Order ${txn.status}.`);
+    return;
+  }
 
   // Check time limit
   const timeLimit = await settingsRepo.getSetting(pool, 'paytm_time_limit') || 600;
@@ -149,19 +168,25 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
     return;
   }
 
-  // Check via Paytm API
-  const merchantKey = await settingsRepo.getSetting(pool, 'paytm_merchant_key');
+  // Check via Paytm GET API — mirrors Python:
+  // GET https://securegw.paytm.in/order/status?JsonData={"MID":"...","ORDERID":"txnRef"}
+  const mid = await settingsRepo.getSetting(pool, 'paytm_merchant_key'); // This stores the MID
   const txnRef = txn.gateway_data?.txnRef;
-  if (!merchantKey || !txnRef) {
-    await ctx.answerCallbackQuery('⚠️ Verification not configured.');
+  if (!mid || !txnRef) {
+    await ctx.answerCallbackQuery('⚠️ Verification not configured. Set Merchant Key (MID) in admin.');
     return;
   }
 
-  const result = await paytmService.checkPaymentStatus(merchantKey, txnRef);
+  // txnRef IS the ORDERID for Paytm — this is what we use in UPI link tr= param
+  const result = await paytmService.checkPaymentStatus(mid, txnRef);
 
   if (result.success) {
     const creditAmount = result.amount || parseFloat(txn.amount);
-    await transactionRepo.updateStatus(pool, orderId, 'success', txnRef, result);
+    await transactionRepo.updateStatus(pool, orderId, 'success', txnRef, {
+      paytm_txnId: result.txnId,
+      paytm_utr: result.utr,
+      paytm_status: result.status,
+    });
     await walletRepo.addBalance(pool, ctx.from.id, creditAmount);
 
     ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.FINANCIAL_DEPOSIT, {
@@ -174,8 +199,17 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
       `✅ <b>Payment Successful!</b>\n\n💰 <b>Amount:</b> ₹${creditAmount}\n💳 <b>New Balance:</b> ₹${formatNumber(newBalance)}\n\nThank you! 🎉`,
       { parse_mode: 'HTML' }
     );
+  } else if (result.failed) {
+    // Genuinely failed (user attempted but declined)
+    await transactionRepo.updateStatus(pool, orderId, 'failed');
+    try { await ctx.deleteMessage(); } catch { /* ignore */ }
+    await ctx.reply(
+      `❌ <b>Payment Failed!</b>\n\nYour payment was declined by the bank.`,
+      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Try Again', 'deposit:paytm').text('‹ Back', 'deposit:menu') }
+    );
   } else {
-    await ctx.answerCallbackQuery('❌ Payment not found yet. Try again after paying.');
+    // Still pending — order not found in Paytm yet (user hasn't scanned)
+    await ctx.answerCallbackQuery('❌ Payment not found yet. Scan QR and try again.');
   }
 });
 

@@ -49,10 +49,12 @@ composer.callbackQuery('pay:paytm', adminRequired, async (ctx) => {
 
 async function showPaytmSettings(ctx) {
   const pool = ctx.dbPool;
-  const [enabled, upiId, merchantKey, timeLimit, minAmount, maxAmount] = await Promise.all([
+  const [enabled, upiId, merchantKey, payeeName, paytmQr, timeLimit, minAmount, maxAmount] = await Promise.all([
     settingsRepo.getSetting(pool, 'paytm_enabled'),
     settingsRepo.getSetting(pool, 'paytm_upi_id'),
     settingsRepo.getSetting(pool, 'paytm_merchant_key'),
+    settingsRepo.getSetting(pool, 'paytm_payee_name'),
+    settingsRepo.getSetting(pool, 'paytm_qr_code'),
     settingsRepo.getSetting(pool, 'paytm_time_limit'),
     settingsRepo.getSetting(pool, 'paytm_min_amount'),
     settingsRepo.getSetting(pool, 'paytm_max_amount'),
@@ -62,7 +64,9 @@ async function showPaytmSettings(ctx) {
     `💳 <b>Paytm Settings</b>\n\n` +
     `📊 <b>Status:</b> ${enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
     `💳 <b>UPI ID:</b> ${upiId ? `<code>${escapeHtml(upiId)}</code>` : '❌ Not set'}\n` +
-    `🔑 <b>Merchant Key:</b> ${merchantKey ? '✅ Set' : '❌ Not set'}\n` +
+    `🔑 <b>MID:</b> ${merchantKey ? '✅ Set' : '❌ Not set'}\n` +
+    `👤 <b>Payee Name:</b> ${payeeName || 'Paytm Merchant'}\n` +
+    `📱 <b>QR Code ID:</b> ${paytmQr ? '✅ Set' : '❌ Not set'}\n` +
     `⏱ <b>Time Limit:</b> ${timeLimit || 600}s\n` +
     `💰 <b>Min Amount:</b> ₹${minAmount || 10}\n` +
     `📈 <b>Max Amount:</b> ₹${maxAmount || 50000}`;
@@ -70,8 +74,9 @@ async function showPaytmSettings(ctx) {
   const kb = new InlineKeyboard()
     .text(enabled ? '🔴 Disable' : '🟢 Enable', 'pay:paytm:toggle').row()
     .text('📝 Set UPI ID', 'pay:paytm:edit:paytm_upi_id').row()
-    .text('🔑 Set Merchant Key', 'pay:paytm:edit:paytm_merchant_key').row()
-    .text('⏱ Set Time Limit', 'pay:paytm:edit:paytm_time_limit').row()
+    .text('🔑 Set MID', 'pay:paytm:edit:paytm_merchant_key').row()
+    .text('👤 Payee Name', 'pay:paytm:edit:paytm_payee_name').text('📱 QR Code', 'pay:paytm:edit:paytm_qr_code').row()
+    .text('⏱ Time Limit', 'pay:paytm:edit:paytm_time_limit').row()
     .text('💰 Min Amount', 'pay:paytm:edit:paytm_min_amount').text('📈 Max Amount', 'pay:paytm:edit:paytm_max_amount').row()
     .text('‹ Back', 'admin:payments');
 
@@ -217,7 +222,9 @@ composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):edit:.+$/, adminRequire
 
   const labels = {
     paytm_upi_id: 'Paytm UPI ID',
-    paytm_merchant_key: 'Paytm Merchant Key (MID)',
+    paytm_merchant_key: 'Paytm MID (Merchant ID)',
+    paytm_payee_name: 'Payee Name (shown in UPI app)',
+    paytm_qr_code: 'Paytm QR Code ID (paytmqr param)',
     paytm_time_limit: 'Time Limit (seconds)',
     paytm_min_amount: 'Minimum Amount (₹)',
     paytm_max_amount: 'Maximum Amount (₹)',

@@ -14,7 +14,9 @@
     "@grammyjs/conversations": "^2.0.3",
     "pg": "^8.13.1",
     "dotenv": "^16.4.7",
-    "winston": "^3.17.0"
+    "winston": "^3.17.0",
+    "qrcode": "^1.5.4",
+    "sharp": "^0.33.5"
   },
   "engines": {
     "node": ">=18.0.0"
