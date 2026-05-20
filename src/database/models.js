@@ -201,6 +201,12 @@ export const DEFAULT_SETTINGS = {
 
 export async function initDb(pool) {
   logger.info('Applying database schema…');
+
+  // Migration: add expires_at column BEFORE schema (index needs it)
+  try {
+    await pool.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
+  } catch { /* table may not exist yet on fresh install — that's fine */ }
+
   await pool.query(SCHEMA_SQL);
   logger.info('Schema applied successfully.');
 
@@ -216,9 +222,5 @@ export async function initDb(pool) {
     `UPDATE bot_settings SET value = $1::jsonb WHERE key = 'bot_name' AND value = $2::jsonb`,
     [JSON.stringify('OTPBOT'), JSON.stringify('OTP Bot')]
   );
-
-  // Migration: add expires_at column if missing
-  await pool.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
-
   logger.info(`Default settings seeded (${Object.keys(DEFAULT_SETTINGS).length} keys).`);
 }
