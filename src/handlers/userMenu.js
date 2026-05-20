@@ -3,14 +3,20 @@ import { checkForceJoin } from '../middleware/forceJoinCheck.js';
 import * as userRepo from '../database/repositories/userRepo.js';
 import * as adminRepo from '../database/repositories/adminRepo.js';
 import * as settingsRepo from '../database/repositories/settingsRepo.js';
-import { getMainMenu, MORE_MENU_KEYBOARD, ADMIN_PANEL_KEYBOARD } from '../utils/keyboard.js';
+import * as walletRepo from '../database/repositories/walletRepo.js';
+import { getMainMenu, MORE_MENU_KEYBOARD, ADMIN_PANEL_KEYBOARD, ADMIN_MENU_KEYBOARD, PAYMENTS_MENU_KEYBOARD } from '../utils/keyboard.js';
 import {
   BTN_GET_OTP, BTN_DEPOSIT, BTN_PROFILE, BTN_MORE,
   BTN_SMS_CHECKER, BTN_SUPPORT, BTN_REFER_EARN, BTN_READYMADE,
   BTN_GET_EMAIL, BTN_FAVORITE, BTN_PROMO_CODE, BTN_RETURN,
   BTN_TOP_SERVICES, BTN_API, BTN_RESELLER, BTN_ADMIN_PANEL,
+  BTN_ADM_BROADCAST, BTN_ADM_USERS, BTN_ADM_FORCEJOIN, BTN_ADM_ADMINS,
+  BTN_ADM_WELCOME, BTN_ADM_SETTINGS, BTN_ADM_PAYMENTS, BTN_ADM_BOTSTATS,
+  BTN_ADM_LOGS, BTN_ADM_BACK,
+  BTN_PAY_PAYTM, BTN_PAY_BHARATPAY, BTN_PAY_CRYPTO, BTN_PAY_BACK,
 } from '../utils/constants.js';
 import { escapeHtml, formatTimestamp, formatNumber } from '../utils/formatters.js';
+import { InlineKeyboard } from 'grammy';
 import logger from '../utils/logger.js';
 
 const composer = new Composer();
@@ -258,7 +264,7 @@ composer.hears(new RegExp(`^${escRe(BTN_RESELLER)}$`), async (ctx) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-//  🔧 ADMIN PANEL BUTTON — Premium with live stats
+//  🔧 ADMIN PANEL BUTTON — Shows static keyboard + inline stats
 // ═══════════════════════════════════════════════════════════════════
 composer.hears(new RegExp(`^${escRe(BTN_ADMIN_PANEL)}$`), async (ctx) => {
   const pool = ctx.dbPool;
@@ -268,8 +274,13 @@ composer.hears(new RegExp(`^${escRe(BTN_ADMIN_PANEL)}$`), async (ctx) => {
     return;
   }
 
+  // Show static admin buttons (reply keyboard)
+  await ctx.reply('🔧 <b>Admin Panel</b>\n\nUse the buttons below:', {
+    parse_mode: 'HTML',
+    reply_markup: ADMIN_MENU_KEYBOARD,
+  });
 
-  // Fetch live stats
+  // Also show inline stats panel
   const [usersRes, ordersRes, revenueRes, paidRes, pendingRes, expiredRes] = await Promise.all([
     pool.query('SELECT COUNT(*)::int AS c FROM users'),
     pool.query('SELECT COUNT(*)::int AS c FROM transactions'),
@@ -293,6 +304,98 @@ composer.hears(new RegExp(`^${escRe(BTN_ADMIN_PANEL)}$`), async (ctx) => {
     parse_mode: 'HTML',
     reply_markup: ADMIN_PANEL_KEYBOARD,
   });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  ADMIN STATIC BUTTON HANDLERS — trigger same inline actions
+// ═══════════════════════════════════════════════════════════════════
+
+// Helper: check admin and send inline panel for a specific section
+async function adminStaticAction(ctx, callbackData, sectionName) {
+  const isAdmin = await adminRepo.isAdmin(ctx.dbPool, ctx.from.id);
+  if (!isAdmin) {
+    await ctx.reply('⛔ You are not authorized.', { reply_markup: getMainMenu(false) });
+    return;
+  }
+  // Simulate callback query by sending the inline keyboard message
+  await ctx.reply(`${sectionName}\n\nOpening...`, {
+    parse_mode: 'HTML',
+    reply_markup: new InlineKeyboard().text(`Open ${sectionName}`, callbackData),
+  });
+}
+
+composer.hears(new RegExp(`^${escRe(BTN_ADM_BROADCAST)}$`), async (ctx) => {
+  await adminStaticAction(ctx, 'admin:broadcast', '📢 <b>Broadcast</b>');
+});
+
+composer.hears(new RegExp(`^${escRe(BTN_ADM_USERS)}$`), async (ctx) => {
+  await adminStaticAction(ctx, 'admin:users', '👥 <b>Users</b>');
+});
+
+composer.hears(new RegExp(`^${escRe(BTN_ADM_FORCEJOIN)}$`), async (ctx) => {
+  await adminStaticAction(ctx, 'admin:forcejoin', '🔗 <b>Force Join</b>');
+});
+
+composer.hears(new RegExp(`^${escRe(BTN_ADM_ADMINS)}$`), async (ctx) => {
+  await adminStaticAction(ctx, 'admin:admins', '👑 <b>Admins</b>');
+});
+
+composer.hears(new RegExp(`^${escRe(BTN_ADM_WELCOME)}$`), async (ctx) => {
+  await adminStaticAction(ctx, 'admin:welcome', '💬 <b>Welcome Msg</b>');
+});
+
+composer.hears(new RegExp(`^${escRe(BTN_ADM_SETTINGS)}$`), async (ctx) => {
+  await adminStaticAction(ctx, 'admin:settings', '⚙️ <b>Settings</b>');
+});
+
+composer.hears(new RegExp(`^${escRe(BTN_ADM_BOTSTATS)}$`), async (ctx) => {
+  await adminStaticAction(ctx, 'admin:botstats', '🤖 <b>Bot Stats</b>');
+});
+
+composer.hears(new RegExp(`^${escRe(BTN_ADM_LOGS)}$`), async (ctx) => {
+  await adminStaticAction(ctx, 'admin:logs', '📋 <b>Admin Logs</b>');
+});
+
+// ── 💰 Payments → show sub-menu with Paytm/BharatPay/Crypto ────
+composer.hears(new RegExp(`^${escRe(BTN_ADM_PAYMENTS)}$`), async (ctx) => {
+  const isAdmin = await adminRepo.isAdmin(ctx.dbPool, ctx.from.id);
+  if (!isAdmin) {
+    await ctx.reply('⛔ You are not authorized.', { reply_markup: getMainMenu(false) });
+    return;
+  }
+  await ctx.reply('💰 <b>Payment Settings</b>\n\nSelect a gateway:', {
+    parse_mode: 'HTML',
+    reply_markup: PAYMENTS_MENU_KEYBOARD,
+  });
+});
+
+// ── Payment sub-buttons ─────────────────────────────────────────
+composer.hears(new RegExp(`^${escRe(BTN_PAY_PAYTM)}$`), async (ctx) => {
+  await adminStaticAction(ctx, 'pay:paytm', '💳 <b>Paytm Settings</b>');
+});
+
+composer.hears(new RegExp(`^${escRe(BTN_PAY_BHARATPAY)}$`), async (ctx) => {
+  await adminStaticAction(ctx, 'pay:bharatpay', '🏦 <b>BharatPay Settings</b>');
+});
+
+composer.hears(new RegExp(`^${escRe(BTN_PAY_CRYPTO)}$`), async (ctx) => {
+  await adminStaticAction(ctx, 'pay:cryptomus', '₿ <b>Cryptomus Settings</b>');
+});
+
+// ── Back to admin menu ──────────────────────────────────────────
+composer.hears(new RegExp(`^${escRe(BTN_PAY_BACK)}$`), async (ctx) => {
+  const isAdmin = await adminRepo.isAdmin(ctx.dbPool, ctx.from.id);
+  if (!isAdmin) return;
+  await ctx.reply('🔧 <b>Admin Panel</b>\n\nUse the buttons below:', {
+    parse_mode: 'HTML',
+    reply_markup: ADMIN_MENU_KEYBOARD,
+  });
+});
+
+// ── ◀️ BACK → return to main menu ───────────────────────────────
+composer.hears(new RegExp(`^${escRe(BTN_ADM_BACK)}$`), async (ctx) => {
+  const isAdmin = await adminRepo.isAdmin(ctx.dbPool, ctx.from.id);
+  await ctx.reply('🏠 Main Menu', { reply_markup: getMainMenu(isAdmin) });
 });
 
 // ═══════════════════════════════════════════════════════════════════

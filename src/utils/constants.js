@@ -82,3 +82,21 @@ export const BTN_RESELLER = '🔮 Reseller Account';
 
 // ── Admin button in main menu ────────────────────────────────────────
 export const BTN_ADMIN_PANEL = '🔧 ADMIN PANEL';
+
+// ── Admin panel reply-keyboard button labels ─────────────────────────
+export const BTN_ADM_BROADCAST = '📢 Broadcast';
+export const BTN_ADM_USERS = '👥 Users';
+export const BTN_ADM_FORCEJOIN = '🔗 Force Join';
+export const BTN_ADM_ADMINS = '👑 Admins';
+export const BTN_ADM_WELCOME = '💬 Welcome Msg';
+export const BTN_ADM_SETTINGS = '⚙️ Settings';
+export const BTN_ADM_PAYMENTS = '💰 Payments';
+export const BTN_ADM_BOTSTATS = '🤖 Bot Stats';
+export const BTN_ADM_LOGS = '📋 Admin Logs';
+export const BTN_ADM_BACK = '◀️ BACK';
+
+// ── Payments sub-menu button labels ──────────────────────────────────
+export const BTN_PAY_PAYTM = '💳 Paytm';
+export const BTN_PAY_BHARATPAY = '🏦 BharatPay';
+export const BTN_PAY_CRYPTO = '₿ Crypto';
+export const BTN_PAY_BACK = '◀️ Back to Admin';

@@ -615,6 +615,12 @@ const MENU_BUTTONS = new Set([
   '📮 SMS CHECKER', '🛡 SUPPORT', '🎁 REFER & EARN', '💎 READYMADE ACCOUNT',
   '📧 GET EMAIL', '😊 Favorite', 'Promo Code 👾', '◀️ RETURN',
   '📊 TOP SERVICES', '⚙️ API', '🔮 Reseller Account', '🔧 ADMIN PANEL',
+  // Admin static buttons
+  '📢 Broadcast', '👥 Users', '🔗 Force Join', '👑 Admins',
+  '💬 Welcome Msg', '⚙️ Settings', '💰 Payments', '🤖 Bot Stats',
+  '📋 Admin Logs', '◀️ BACK',
+  // Payment sub-buttons
+  '💳 Paytm', '🏦 BharatPay', '₿ Crypto', '◀️ Back to Admin',
 ]);
 
 composer.on('message:text', async (ctx, next) => {

@@ -4,6 +4,10 @@ import {
   BTN_SMS_CHECKER, BTN_SUPPORT, BTN_REFER_EARN, BTN_READYMADE,
   BTN_GET_EMAIL, BTN_FAVORITE, BTN_PROMO_CODE, BTN_RETURN,
   BTN_TOP_SERVICES, BTN_API, BTN_RESELLER, BTN_ADMIN_PANEL,
+  BTN_ADM_BROADCAST, BTN_ADM_USERS, BTN_ADM_FORCEJOIN, BTN_ADM_ADMINS,
+  BTN_ADM_WELCOME, BTN_ADM_SETTINGS, BTN_ADM_PAYMENTS, BTN_ADM_BOTSTATS,
+  BTN_ADM_LOGS, BTN_ADM_BACK,
+  BTN_PAY_PAYTM, BTN_PAY_BHARATPAY, BTN_PAY_CRYPTO, BTN_PAY_BACK,
   ADMIN_CB,
 } from './constants.js';
 
@@ -26,6 +30,21 @@ export const MORE_MENU_KEYBOARD = new Keyboard()
   .text(BTN_PROMO_CODE).text(BTN_RETURN).row()
   .text(BTN_TOP_SERVICES).text(BTN_API).row()
   .text(BTN_RESELLER)
+  .resized();
+
+// ── Admin panel static reply keyboard ───────────────────────────────
+export const ADMIN_MENU_KEYBOARD = new Keyboard()
+  .text(BTN_ADM_BROADCAST).text(BTN_ADM_USERS).row()
+  .text(BTN_ADM_FORCEJOIN).text(BTN_ADM_ADMINS).row()
+  .text(BTN_ADM_WELCOME).text(BTN_ADM_SETTINGS).row()
+  .text(BTN_ADM_PAYMENTS).text(BTN_ADM_BOTSTATS).row()
+  .text(BTN_ADM_LOGS).text(BTN_ADM_BACK).row()
+  .resized();
+
+// ── Payments sub-menu static reply keyboard ─────────────────────────
+export const PAYMENTS_MENU_KEYBOARD = new Keyboard()
+  .text(BTN_PAY_PAYTM).text(BTN_PAY_BHARATPAY).row()
+  .text(BTN_PAY_CRYPTO).text(BTN_PAY_BACK).row()
   .resized();
 
 // ── Admin panel (Inline Keyboard) ────────────────────────────────────
