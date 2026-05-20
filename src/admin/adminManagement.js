@@ -86,8 +86,8 @@ composer.callbackQuery('admgmt:add', superAdminRequired, async (ctx) => {
   await ctx.answerCallbackQuery();
   addStates.set(ctx.chat.id, 'waiting_id');
   await ctx.editMessageText(
-    '👑 <b>Add Admin</b>\n\nSend me the <b>user ID</b> of the person you want to make an admin.\n\nSend /cancel to abort.',
-    { parse_mode: 'HTML' }
+    '👑 <b>Add Admin</b>\n\nSend me the <b>user ID</b> of the person you want to make an admin.',
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('❌ Cancel', 'admgmt:cancel') }
   );
 });
 
@@ -97,13 +97,13 @@ composer.on('message:text', async (ctx, next) => {
 
   if (ctx.message.text === '/cancel') {
     addStates.delete(ctx.chat.id);
-    await ctx.reply('❌ Admin addition cancelled.');
+    await ctx.reply('❌ Cancelled.', { reply_markup: new InlineKeyboard().text('‹ Back', 'admin:admins') });
     return;
   }
 
   const text = ctx.message.text.trim();
   if (!/^\d+$/.test(text)) {
-    await ctx.reply('⚠️ Please send a valid numeric user ID.\n\nSend /cancel to abort.');
+    await ctx.reply('⚠️ Please send a valid numeric user ID.', { reply_markup: new InlineKeyboard().text('❌ Cancel', 'admgmt:cancel') });
     return;
   }
 
@@ -121,6 +121,25 @@ composer.on('message:text', async (ctx, next) => {
   clearAdminCache(targetId);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.ADMIN_ADDED, { target: targetId });
   await ctx.reply(`✅ User <code>${targetId}</code> has been added as an admin.`, { parse_mode: 'HTML' });
+});
+
+// ── Cancel add admin ────────────────────────────────────────────
+composer.callbackQuery('admgmt:cancel', superAdminRequired, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  addStates.delete(ctx.chat.id);
+  // Go back to admin list
+  const admins = await adminRepo.listAdmins(ctx.dbPool);
+  let text = '👑 <b>Admin Management</b>\n\n';
+  const kb = new InlineKeyboard();
+  for (const a of admins) {
+    const role = a.role === 'super_admin' ? '👑 Super' : '🛡️ Admin';
+    const name = a.username ? `@${escapeHtml(a.username)}` : String(a.admin_id);
+    text += `┃ ${role} — <code>${a.admin_id}</code> (${name})\n`;
+    kb.text(`👁 ${name}`, `admgmt:view:${a.admin_id}`).text('🗑 Remove', `admgmt:remove:${a.admin_id}`).row();
+  }
+  if (!admins.length) text += 'No admins found.\n';
+  kb.text('➕ Add Admin', 'admgmt:add').row().text('‹ Back', 'admin:back');
+  await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
 });
 
 export default composer;

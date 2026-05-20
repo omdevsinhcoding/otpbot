@@ -37,8 +37,8 @@ composer.callbackQuery('welcome:set', adminRequired, async (ctx) => {
   await ctx.answerCallbackQuery();
   states.set(ctx.chat.id, { step: 'set_text' });
   await ctx.editMessageText(
-    '📝 <b>Set Welcome Message</b>\n\nSend me the new welcome message text.\nYou can use HTML formatting.\n\nSend /cancel to abort.',
-    { parse_mode: 'HTML' }
+    '📝 <b>Set Welcome Message</b>\n\nSend me the new welcome message text.\nYou can use HTML formatting.',
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('❌ Cancel', 'welcome:cancel_edit') }
   );
 });
 
@@ -123,8 +123,8 @@ composer.callbackQuery('welcome:add_btn', adminRequired, async (ctx) => {
   await ctx.answerCallbackQuery();
   states.set(ctx.chat.id, { step: 'add_btn_text' });
   await ctx.editMessageText(
-    '➕ <b>Add Button</b>\n\nSend the button in format:\n<code>Button Text | https://url</code>\n\nSend /cancel to abort.',
-    { parse_mode: 'HTML' }
+    '➕ <b>Add Button</b>\n\nSend the button in format:\n<code>Button Text | https://url</code>',
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('❌ Cancel', 'welcome:cancel_edit') }
   );
 });
 
@@ -149,7 +149,7 @@ composer.on('message:text', async (ctx, next) => {
 
   if (ctx.message.text === '/cancel') {
     states.delete(ctx.chat.id);
-    await ctx.reply('❌ Cancelled.');
+    await ctx.reply('❌ Cancelled.', { reply_markup: new InlineKeyboard().text('‹ Back', 'admin:welcome') });
     return;
   }
 
@@ -185,6 +185,27 @@ composer.on('message:text', async (ctx, next) => {
   }
 
   return next();
+});
+
+// ── Cancel edit ────────────────────────────────────────────────
+composer.callbackQuery('welcome:cancel_edit', adminRequired, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  states.delete(ctx.chat.id);
+  // Return to welcome panel
+  const pool = ctx.dbPool;
+  const welcomeEnabled = await settingsRepo.getSetting(pool, 'welcome_enabled');
+  const welcome = await welcomeRepo.getWelcomeMessage(pool);
+  const status = welcomeEnabled ? '✅ Enabled' : '❌ Disabled';
+  const text =
+    `💬 <b>Welcome Message</b>\n\n` +
+    `Status: <b>${status}</b>\n` +
+    `Message: ${welcome ? '✅ Set' : '❌ Not set'}`;
+  const kb = new InlineKeyboard()
+    .text('📝 Set Message', 'welcome:set').text('👁 Preview', 'welcome:preview').row()
+    .text(welcomeEnabled ? '🔴 Disable' : '🟢 Enable', 'welcome:toggle').row()
+    .text('🔘 Manage Buttons', 'welcome:buttons').row()
+    .text('‹ Back', 'admin:back');
+  await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
 });
 
 export default composer;

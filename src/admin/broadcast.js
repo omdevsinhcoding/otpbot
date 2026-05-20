@@ -25,8 +25,8 @@ composer.callbackQuery('bcast:new', adminRequired, async (ctx) => {
   await ctx.answerCallbackQuery();
   drafts.set(ctx.chat.id, { step: 'text', text: '', mediaType: null, mediaFileId: null, buttons: [] });
   await ctx.editMessageText(
-    '📢 <b>New Broadcast</b>\n\nSend me the <b>message text</b> for the broadcast.\n\nSend /cancel to abort.',
-    { parse_mode: 'HTML' }
+    '📢 <b>New Broadcast</b>\n\nSend me the <b>message text</b> for the broadcast.',
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('❌ Cancel', 'bcast:cancel') }
   );
 });
 
@@ -129,9 +129,13 @@ composer.callbackQuery('bcast:confirm_send', adminRequired, async (ctx) => {
 
 // ── Cancel ──────────────────────────────────────────────────────
 composer.callbackQuery('bcast:cancel', async (ctx) => {
-  await ctx.answerCallbackQuery('Cancelled');
+  await ctx.answerCallbackQuery();
   drafts.delete(ctx.chat.id);
-  await ctx.editMessageText('❌ Broadcast cancelled.');
+  const kb = new InlineKeyboard()
+    .text('📝 New Broadcast', 'bcast:new').row()
+    .text('📋 History', 'bcast:history:1').row()
+    .text('‹ Back', 'admin:back');
+  await ctx.editMessageText('📢 <b>Broadcast Manager</b>\n\nChoose an option:', { parse_mode: 'HTML', reply_markup: kb });
 });
 
 // ── History ─────────────────────────────────────────────────────
@@ -193,7 +197,7 @@ composer.on('message:text', async (ctx, next) => {
 
   if (ctx.message.text === '/cancel') {
     drafts.delete(ctx.chat.id);
-    await ctx.reply('❌ Broadcast cancelled.');
+    await ctx.reply('❌ Cancelled.', { reply_markup: new InlineKeyboard().text('‹ Back', 'admin:broadcast') });
     return;
   }
 

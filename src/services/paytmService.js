@@ -12,13 +12,19 @@ import logger from '../utils/logger.js';
  * @param {string} paytmQr - Paytm QR code ID (optional)
  * @returns {{ upiLink: string, txnRef: string }}
  */
-export function generatePaymentQR(upiId, amount, orderId, payeeName = 'Paytm Merchant', paytmQr = '') {
-  // Mirrors: TXN_{timestamp}_{random_8_chars}
-  const timestamp = Math.floor(Date.now() / 1000);
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let randomStr = '';
-  for (let i = 0; i < 8; i++) randomStr += chars[Math.floor(Math.random() * chars.length)];
-  const txnRef = `TXN_${timestamp}_${randomStr}`;
+export function generatePaymentQR(upiId, amount, orderId, payeeName = 'Paytm Merchant', paytmQr = '', existingTxnRef = null) {
+  let txnRef;
+  if (existingTxnRef) {
+    // Re-use existing txnRef when rebuilding QR after failed check
+    txnRef = existingTxnRef;
+  } else {
+    // Generate new: TXN_{timestamp}_{random_8_chars}
+    const timestamp = Math.floor(Date.now() / 1000);
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let randomStr = '';
+    for (let i = 0; i < 8; i++) randomStr += chars[Math.floor(Math.random() * chars.length)];
+    txnRef = `TXN_${timestamp}_${randomStr}`;
+  }
 
   // Build UPI URL — mirrors Python exactly
   let upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}`;

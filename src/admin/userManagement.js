@@ -51,8 +51,8 @@ composer.callbackQuery('usrmgmt:search', adminRequired, async (ctx) => {
   await ctx.answerCallbackQuery();
   searchStates.set(ctx.chat.id, 'searching');
   await ctx.editMessageText(
-    '🔍 <b>Search User</b>\n\nSend a <b>user ID</b> or <b>username</b> to search.\n\nSend /cancel to abort.',
-    { parse_mode: 'HTML' }
+    '🔍 <b>Search User</b>\n\nSend a <b>user ID</b> or <b>username</b> to search.',
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('❌ Cancel', 'usrmgmt:cancel_search') }
   );
 });
 
@@ -128,7 +128,7 @@ composer.on('message:text', async (ctx, next) => {
 
   if (ctx.message.text === '/cancel') {
     searchStates.delete(ctx.chat.id);
-    await ctx.reply('❌ Search cancelled.');
+    await ctx.reply('❌ Cancelled.', { reply_markup: new InlineKeyboard().text('‹ Back', 'admin:users') });
     return;
   }
 
@@ -157,6 +157,17 @@ composer.on('message:text', async (ctx, next) => {
   }
 
   await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+});
+
+// ── Cancel search ──────────────────────────────────────────────
+composer.callbackQuery('usrmgmt:cancel_search', adminRequired, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  searchStates.delete(ctx.chat.id);
+  const kb = new InlineKeyboard()
+    .text('📋 All Users', 'usrmgmt:all:1').text('🔍 Search User', 'usrmgmt:search').row()
+    .text('📊 User Stats', 'usrmgmt:stats').row()
+    .text('‹ Back', 'admin:back');
+  await ctx.editMessageText('👥 <b>User Management</b>\n\nChoose an option:', { parse_mode: 'HTML', reply_markup: kb });
 });
 
 export default composer;

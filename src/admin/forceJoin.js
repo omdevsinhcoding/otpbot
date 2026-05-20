@@ -90,8 +90,8 @@ composer.callbackQuery('forcejoin:add', adminRequired, async (ctx) => {
   await ctx.answerCallbackQuery();
   addStates.set(ctx.chat.id, 'waiting_channel');
   await ctx.editMessageText(
-    '➕ <b>Add Force Join Channel</b>\n\nSend channel ID (e.g. <code>-1001234567890</code>) or username (e.g. <code>@mychannel</code>).\n\n⚠️ Bot must be <b>admin</b> in the channel.\n\nSend /cancel to abort.',
-    { parse_mode: 'HTML' }
+    '➕ <b>Add Force Join Channel</b>\n\nSend channel ID (e.g. <code>-1001234567890</code>) or username (e.g. <code>@mychannel</code>).\n\n⚠️ Bot must be <b>admin</b> in the channel.',
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('❌ Cancel', 'forcejoin:cancel_add') }
   );
 });
 
@@ -101,7 +101,7 @@ composer.on('message:text', async (ctx, next) => {
 
   if (ctx.message.text === '/cancel') {
     addStates.delete(ctx.chat.id);
-    await ctx.reply('❌ Channel addition cancelled.');
+    await ctx.reply('❌ Cancelled.', { reply_markup: new InlineKeyboard().text('‹ Back', 'admin:forcejoin') });
     return;
   }
 
@@ -140,6 +140,21 @@ composer.on('message:text', async (ctx, next) => {
     logger.warn(`Cannot access channel ${chatIdentifier}: ${err.message}`);
     await ctx.reply('⚠️ Could not access that channel. Ensure the channel exists and the bot is a member.');
   }
+});
+
+// ── Cancel add channel ──────────────────────────────────────────
+composer.callbackQuery('forcejoin:cancel_add', adminRequired, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  addStates.delete(ctx.chat.id);
+  // Return to force join panel
+  const enabled = await settingsRepo.getSetting(ctx.dbPool, 'force_join_enabled');
+  const statusEmoji = enabled ? '✅ Enabled' : '❌ Disabled';
+  const toggleLabel = enabled ? '🔴 Disable' : '🟢 Enable';
+  const kb = new InlineKeyboard()
+    .text(toggleLabel, 'forcejoin:toggle').row()
+    .text('➕ Add Channel', 'forcejoin:add').text('📋 List Channels', 'forcejoin:list').row()
+    .text('‹ Back', 'admin:back');
+  await ctx.editMessageText(`🔗 <b>Force Join Management</b>\n\nStatus: <b>${statusEmoji}</b>`, { parse_mode: 'HTML', reply_markup: kb });
 });
 
 export default composer;

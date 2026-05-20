@@ -51,8 +51,8 @@ composer.callbackQuery(/^settings:edit:.+$/, adminRequired, async (ctx) => {
   const key = ctx.callbackQuery.data.split(':').slice(2).join(':');
   editStates.set(ctx.chat.id, { step: 'waiting_value', key });
   await ctx.editMessageText(
-    `📝 <b>Edit Setting</b>\n\nSend the new value for <b>${escapeHtml(key)}</b>.\n\nSend /cancel to abort.`,
-    { parse_mode: 'HTML' }
+    `📝 <b>Edit Setting</b>\n\nSend the new value for <b>${escapeHtml(key)}</b>.`,
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('❌ Cancel', 'settings:cancel_edit') }
   );
 });
 
@@ -63,7 +63,7 @@ composer.on('message:text', async (ctx, next) => {
 
   if (ctx.message.text === '/cancel') {
     editStates.delete(ctx.chat.id);
-    await ctx.reply('❌ Edit cancelled.');
+    await ctx.reply('❌ Cancelled.', { reply_markup: new InlineKeyboard().text('‹ Back', 'admin:settings') });
     return;
   }
 
@@ -72,6 +72,13 @@ composer.on('message:text', async (ctx, next) => {
   await settingsRepo.setSetting(ctx.dbPool, state.key, value, ctx.from.id);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key: state.key, value });
   await ctx.reply(`✅ Setting <b>${escapeHtml(state.key)}</b> updated to: <b>${escapeHtml(value)}</b>`, { parse_mode: 'HTML' });
+});
+
+// ── Cancel edit ────────────────────────────────────────────────
+composer.callbackQuery('settings:cancel_edit', adminRequired, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  editStates.delete(ctx.chat.id);
+  await showSettingsPanel(ctx);
 });
 
 export default composer;

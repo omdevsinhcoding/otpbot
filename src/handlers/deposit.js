@@ -160,10 +160,10 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
     await ctx.answerCallbackQuery('✅ Already verified!');
     return;
   }
-  if (txn.status === 'expired' || txn.status === 'failed') {
+  if (txn.status === 'expired' || txn.status === 'failed' || txn.status === 'cancelled') {
     try { await ctx.deleteMessage(); } catch { /* ignore */ }
     await ctx.reply(
-      `⚠️ <b>Order ${txn.status}.</b>\n\nThis order is no longer active.`,
+      `⚠️ <b>Order ${escapeHtml(txn.status)}.</b>\n\nThis order is no longer active.`,
       { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Pay Again', 'deposit:paytm').text('‹ Back', 'deposit:menu') }
     );
     return;
@@ -176,71 +176,143 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
     await transactionRepo.updateStatus(pool, orderId, 'expired');
     try { await ctx.deleteMessage(); } catch { /* ignore */ }
     await ctx.reply(
-      `⏰ <b>Payment Expired!</b>\n\nYour payment for order <code>${orderId}</code> has expired.`,
+      `⏰ <b>Payment Expired!</b>\n\nOrder <code>${orderId}</code> has expired.`,
       { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Pay Again', 'deposit:paytm').text('‹ Back', 'deposit:menu') }
     );
     return;
   }
 
-  // Check via Paytm GET API
   const mid = await settingsRepo.getSetting(pool, 'paytm_merchant_key');
   const txnRef = txn.gateway_data?.txnRef;
+  const upiId = txn.gateway_data?.upiId;
   if (!mid || !txnRef) {
     await ctx.reply('⚠️ Verification not configured. Contact admin.');
     return;
   }
 
-  const result = await paytmService.checkPaymentStatus(mid, txnRef);
+  // ── Step 1: Delete the QR photo message ──────────────────────
+  try { await ctx.deleteMessage(); } catch { /* ignore */ }
 
-  if (result.success) {
-    const creditAmount = result.amount || parseFloat(txn.amount);
-    await transactionRepo.updateStatus(pool, orderId, 'success', txnRef, {
-      paytm_txnId: result.txnId,
-      paytm_utr: result.utr,
-      paytm_status: result.status,
-    });
-    await walletRepo.addBalance(pool, ctx.from.id, creditAmount);
+  // ── Step 2: Send "Verifying..." message ──────────────────────
+  const verifyMsg = await ctx.reply(
+    `🔄 <b>Verifying your payment...</b>\n\n` +
+    `📋 Order: <code>${orderId}</code>\n` +
+    `💰 Amount: ₹${parseFloat(txn.amount).toFixed(2)}\n\n` +
+    `⏳ Attempt 1/3 — checking...`,
+    { parse_mode: 'HTML' }
+  );
 
-    try { await ctx.deleteMessage(); } catch { /* ignore */ }
-    const newBalance = await walletRepo.getBalance(pool, ctx.from.id);
-    await ctx.reply(
-      `✅ <b>Payment Successful!</b>\n\n💰 <b>Amount:</b> ₹${creditAmount}\n💳 <b>New Balance:</b> ₹${formatNumber(newBalance)}\n\nThank you! 🎉`,
-      { parse_mode: 'HTML' }
-    );
-  } else if (result.failed) {
-    await transactionRepo.updateStatus(pool, orderId, 'failed');
-    try { await ctx.deleteMessage(); } catch { /* ignore */ }
-    await ctx.reply(
-      `❌ <b>Payment Failed!</b>\n\nYour payment was declined by the bank.`,
-      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Try Again', 'deposit:paytm').text('‹ Back', 'deposit:menu') }
-    );
-  } else {
-    // NOT received yet — show proper message (not just a tiny popup)
-    const remaining = Math.max(0, Math.ceil((timeLimit - elapsed) / 60));
-    const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTP Bot';
+  // ── Step 3: Poll Paytm API 3 times with 3s gaps ─────────────
+  const MAX_ATTEMPTS = 3;
+  const DELAY_MS = 3000;
+  let finalResult = null;
 
-    try {
-      await ctx.editMessageCaption({
-        caption:
-          `❌ <b>Payment Not Received</b>\n\n` +
-          `🤖 ${escapeHtml(botName)}\n` +
-          `💰 Amount: ₹${parseFloat(txn.amount).toFixed(2)}\n` +
-          `📋 Order: <code>${orderId}</code>\n` +
-          `💎 Ref: <code>${txnRef}</code>\n\n` +
-          `⏰ Time remaining: ${remaining} min\n\n` +
-          `Please scan the QR code and pay, then tap <b>Check Payment</b> again.`,
-        parse_mode: 'HTML',
-        reply_markup: new InlineKeyboard()
-          .text('🔄 Check Payment', `deposit:check:${orderId}`).row()
-          .text('❌ Cancel Order', `deposit:cancel_txn:${orderId}`),
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const result = await paytmService.checkPaymentStatus(mid, txnRef);
+
+    if (result.success) {
+      // ── Payment verified! ──────────────────────────────────
+      const creditAmount = result.amount || parseFloat(txn.amount);
+      await transactionRepo.updateStatus(pool, orderId, 'success', txnRef, {
+        paytm_txnId: result.txnId,
+        paytm_utr: result.utr,
+        paytm_status: result.status,
       });
-    } catch {
+      await walletRepo.addBalance(pool, ctx.from.id, creditAmount);
+      try { await ctx.api.deleteMessage(ctx.chat.id, verifyMsg.message_id); } catch { /* ignore */ }
+      const newBalance = await walletRepo.getBalance(pool, ctx.from.id);
       await ctx.reply(
-        `❌ <b>Payment Not Received</b>\n\nPlease scan the QR code and pay ₹${parseFloat(txn.amount).toFixed(2)}, then check again.`,
-        { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔄 Check Again', `deposit:check:${orderId}`) }
+        `✅ <b>Payment Successful!</b>\n\n` +
+        `💰 <b>Amount:</b> ₹${creditAmount}\n` +
+        `💳 <b>New Balance:</b> ₹${formatNumber(newBalance)}\n\n` +
+        `Thank you! 🎉`,
+        { parse_mode: 'HTML' }
       );
+      return;
+    }
+
+    if (result.failed) {
+      // ── Genuinely failed ───────────────────────────────────
+      await transactionRepo.updateStatus(pool, orderId, 'failed');
+      try { await ctx.api.deleteMessage(ctx.chat.id, verifyMsg.message_id); } catch { /* ignore */ }
+      await ctx.reply(
+        `❌ <b>Payment Failed!</b>\n\nYour payment was declined.`,
+        { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Try Again', 'deposit:paytm').text('‹ Back', 'deposit:menu') }
+      );
+      return;
+    }
+
+    finalResult = result;
+
+    // Update attempt counter
+    if (attempt < MAX_ATTEMPTS) {
+      try {
+        await ctx.api.editMessageText(
+          ctx.chat.id, verifyMsg.message_id,
+          `🔄 <b>Verifying your payment...</b>\n\n` +
+          `📋 Order: <code>${orderId}</code>\n` +
+          `💰 Amount: ₹${parseFloat(txn.amount).toFixed(2)}\n\n` +
+          `⏳ Attempt ${attempt + 1}/${MAX_ATTEMPTS} — rechecking in ${DELAY_MS / 1000}s...`,
+          { parse_mode: 'HTML' }
+        );
+      } catch { /* ignore */ }
+      await new Promise(r => setTimeout(r, DELAY_MS));
     }
   }
+
+  // ── Step 4: Not verified after all attempts ────────────────────
+  // Delete the verifying message
+  try { await ctx.api.deleteMessage(ctx.chat.id, verifyMsg.message_id); } catch { /* ignore */ }
+
+  // Re-generate and send the original QR image
+  const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTP Bot';
+  const payeeName = await settingsRepo.getSetting(pool, 'paytm_payee_name') || 'Paytm Merchant';
+  const paytmQr = await settingsRepo.getSetting(pool, 'paytm_qr_code') || '';
+  const displayName = await settingsRepo.getSetting(pool, 'paytm_display_name') || 'Pay via Automatic Gateway';
+  const remaining = Math.max(0, Math.ceil((timeLimit - elapsed) / 60));
+
+  // Rebuild UPI link from stored data
+  const { upiLink: rebuildUpiLink } = paytmService.generatePaymentQR(upiId, parseFloat(txn.amount), orderId, payeeName, paytmQr, txnRef);
+
+  const qrImageBuffer = await generateBrandedQR({
+    storeName: botName,
+    amount: parseFloat(txn.amount).toFixed(2),
+    currency: '₹',
+    refId: txnRef,
+    upiLink: rebuildUpiLink,
+    developer: '@Erroroo',
+  });
+
+  const caption =
+    `💳 <b>${escapeHtml(displayName)}</b>\n\n` +
+    `🏪 <b>${escapeHtml(botName)}</b>\n` +
+    `💰 <b>Amount:</b> ₹${parseFloat(txn.amount).toFixed(2)}\n` +
+    `📋 <b>Order:</b> <code>${orderId}</code>\n` +
+    `💎 <b>Ref:</b> <code>${txnRef}</code>\n\n` +
+    `⏰ Expires in <b>${remaining} minutes</b>\n\n` +
+    `Scan the QR code with any UPI app.`;
+
+  // Re-send QR photo with buttons
+  await ctx.replyWithPhoto(new InputFile(qrImageBuffer, 'payment_qr.png'), {
+    caption, parse_mode: 'HTML',
+    reply_markup: new InlineKeyboard()
+      .text('🔄 Check Payment', `deposit:check:${orderId}`).row()
+      .text('❌ Cancel Order', `deposit:cancel_txn:${orderId}`),
+  });
+
+  // Send separate "not received" message
+  await ctx.reply(
+    `❌ <b>Payment Not Received</b>\n\n` +
+    `We checked ${MAX_ATTEMPTS} times but could not find your payment.\n\n` +
+    `📋 Order: <code>${orderId}</code>\n` +
+    `💰 Amount: ₹${parseFloat(txn.amount).toFixed(2)}\n\n` +
+    `<b>Please ensure:</b>\n` +
+    `• You completed the payment for the exact amount\n` +
+    `• You paid using the QR code shown above\n` +
+    `• Wait a minute and try Check Payment again\n\n` +
+    `<i>If you already paid, please wait 1-2 minutes and try again.</i>`,
+    { parse_mode: 'HTML' }
+  );
 });
 
 // ═══════════════════════════════════════════════════════════════════
