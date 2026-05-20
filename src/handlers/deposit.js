@@ -62,8 +62,8 @@ composer.callbackQuery('deposit:paytm', async (ctx) => {
   const sent = await ctx.editMessageText(
     `💳 <b>${escapeHtml(displayName)}</b>\n\n` +
     `Enter the amount you want to deposit.\n` +
-    `<b>Minimum:</b> ₹${minAmount}\n` +
-    `<b>Maximum:</b> ${maxAmount ? '₹' + maxAmount : 'No Limit'}`,
+    `<b>Minimum:</b> ₹${minAmount}` +
+    (maxAmount ? `\n<b>Maximum:</b> ₹${maxAmount}` : ''),
     { parse_mode: 'HTML', reply_markup: kb }
   );
   userStates.set(ctx.chat.id, { step: 'paytm_amount' });
@@ -474,7 +474,8 @@ composer.callbackQuery('deposit:cryptomus', async (ctx) => {
   await ctx.editMessageText(
     `₿ <b>Cryptomus Deposit</b>\n\n` +
     `Enter the amount in <b>USD</b>.\n` +
-    `<b>Minimum:</b> $${minAmount}  |  <b>Maximum:</b> ${maxAmount ? '$' + maxAmount : 'No Limit'}`,
+    `<b>Minimum:</b> $${minAmount}` +
+    (maxAmount ? `  |  <b>Maximum:</b> $${maxAmount}` : ''),
     { parse_mode: 'HTML', reply_markup: kb }
   );
   userStates.set(ctx.chat.id, { step: 'cryptomus_amount' });

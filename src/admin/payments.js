@@ -91,7 +91,10 @@ async function showPaytmSettings(ctx) {
   kb.row()
     .text('👤 Payee Name', 'pay:paytm:edit:paytm_payee_name').row()
     .text('⏱ Time Limit', 'pay:paytm:edit:paytm_time_limit').row()
-    .text('💰 Min Amount', 'pay:paytm:edit:paytm_min_amount').text('📈 Max Amount', 'pay:paytm:edit:paytm_max_amount').row()
+    .text('💰 Min Amount', 'pay:paytm:edit:paytm_min_amount').row()
+    .text('📈 Max Amount', 'pay:paytm:edit:paytm_max_amount');
+  if (maxAmount) kb.text('🚫 No Limit', 'pay:paytm:nolimit:paytm_max_amount');
+  kb.row()
     .text('‹ Back', 'admin:back');
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
@@ -145,7 +148,7 @@ async function showBharatpaySettings(ctx) {
     `🔑 <b>Token:</b> ${tokenDisplay}\n` +
     `💳 <b>UPI ID:</b> ${upiId ? `<code>${escapeHtml(upiId)}</code>` : '❌ Not set'}\n` +
     `💰 <b>Min Amount:</b> ₹${minAmount || 10}\n` +
-    `📈 <b>Max Amount:</b> ₹${maxAmount || 50000}\n` +
+    `📈 <b>Max Amount:</b> ${maxAmount ? '₹' + maxAmount : 'No Limit'}\n` +
     `🖼 <b>QR Image:</b> ${qrFileId ? '✅ Uploaded' : '❌ Not uploaded'}`;
 
   const kb = new InlineKeyboard()
@@ -159,7 +162,10 @@ async function showBharatpaySettings(ctx) {
     .text('💳 Set UPI ID', 'pay:bharatpay:edit:bharatpay_upi_id');
   if (upiId) kb.text('🗑 Clear', 'pay:bharatpay:clear:bharatpay_upi_id');
   kb.row()
-    .text('💰 Min Amount', 'pay:bharatpay:edit:bharatpay_min_amount').text('📈 Max Amount', 'pay:bharatpay:edit:bharatpay_max_amount').row()
+    .text('💰 Min Amount', 'pay:bharatpay:edit:bharatpay_min_amount').row()
+    .text('📈 Max Amount', 'pay:bharatpay:edit:bharatpay_max_amount');
+  if (maxAmount) kb.text('🚫 No Limit', 'pay:bharatpay:nolimit:bharatpay_max_amount');
+  kb.row()
     .text('🖼 Upload QR Image', 'pay:bharatpay:upload_qr').row();
 
   // Only show remove button if QR exists
@@ -308,6 +314,26 @@ composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):clear:.+$/, adminRequir
   await settingsRepo.setSetting(pool, key, '', ctx.from.id);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key, value: '(cleared)' });
   await ctx.answerCallbackQuery(`✅ ${key} cleared!`);
+
+  switch (gateway) {
+    case 'paytm': return showPaytmSettings(ctx);
+    case 'bharatpay': return showBharatpaySettings(ctx);
+    case 'cryptomus': return showCryptomusSettings(ctx);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  NO LIMIT — remove max amount cap
+// ═══════════════════════════════════════════════════════════════════
+composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):nolimit:.+$/, adminRequired, async (ctx) => {
+  const parts = ctx.callbackQuery.data.split(':');
+  const gateway = parts[1];
+  const key = parts.slice(3).join(':');
+  const pool = ctx.dbPool;
+
+  await settingsRepo.setSetting(pool, key, 0, ctx.from.id);
+  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key, value: 'No Limit' });
+  await ctx.answerCallbackQuery('✅ Max Amount set to No Limit!');
 
   switch (gateway) {
     case 'paytm': return showPaytmSettings(ctx);
