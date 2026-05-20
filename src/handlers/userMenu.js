@@ -39,14 +39,34 @@ composer.hears(new RegExp(`^${escRe(BTN_GET_OTP)}$`), async (ctx) => {
   );
 });
 
-// ── 💰 DEPOSIT ──────────────────────────────────────────────────
+// ── 💰 DEPOSIT → opens deposit menu with payment options ────────
 composer.hears(new RegExp(`^${escRe(BTN_DEPOSIT)}$`), async (ctx) => {
   if (!await checkForceJoin(ctx)) return;
   ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'deposit' });
-  await ctx.reply(
-    '💰 <b>Deposit</b>\n\nThis feature is coming soon. Stay tuned!',
-    { parse_mode: 'HTML', reply_markup: await menuFor(ctx) }
-  );
+
+  // Import dynamically to avoid circular deps
+  const walletRepo = await import('../database/repositories/walletRepo.js');
+  const settingsRepo = await import('../database/repositories/settingsRepo.js');
+  const { InlineKeyboard } = await import('grammy');
+  const { formatNumber } = await import('../utils/formatters.js');
+
+  const pool = ctx.dbPool;
+  const balance = await walletRepo.getBalance(pool, ctx.from.id);
+  const [paytmOn, bharatpayOn, cryptomusOn] = await Promise.all([
+    settingsRepo.getSetting(pool, 'paytm_enabled'),
+    settingsRepo.getSetting(pool, 'bharatpay_enabled'),
+    settingsRepo.getSetting(pool, 'cryptomus_enabled'),
+  ]);
+
+  let text = `💰 <b>Deposit Funds</b>\n\n💳 <b>Your Balance:</b> ₹${formatNumber(balance)}\n\nChoose a payment method:`;
+  const kb = new InlineKeyboard();
+  if (paytmOn) kb.text('💳 Paytm UPI', 'deposit:paytm').row();
+  if (bharatpayOn) kb.text('🏦 Bharat Pay', 'deposit:bharatpay').row();
+  if (cryptomusOn) kb.text('₿ Cryptomus', 'deposit:cryptomus').row();
+  if (!paytmOn && !bharatpayOn && !cryptomusOn) text += '\n\n⚠️ No payment methods available.';
+  kb.text('❌ Close', 'deposit:close');
+
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
 });
 
 // ── 👤 PROFILE ──────────────────────────────────────────────────

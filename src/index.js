@@ -27,6 +27,8 @@ import analyticsAdmin from './admin/analytics.js';
 import logsViewer from './admin/logsViewer.js';
 import settingsPanel from './admin/settingsPanel.js';
 import botStats from './admin/botStats.js';
+import paymentsAdmin from './admin/payments.js';
+import depositHandler from './handlers/deposit.js';
 
 async function main() {
   // 1. Database
@@ -73,9 +75,11 @@ async function main() {
   bot.use(logsViewer);
   bot.use(settingsPanel);
   bot.use(botStats);
+  bot.use(paymentsAdmin);
 
   // User handlers
   bot.use(startHandler);
+  bot.use(depositHandler);
   bot.use(idCommandHandler);
   bot.use(userMenuHandler); // Must be LAST — it has broad text matchers
 

@@ -141,6 +141,30 @@ CREATE INDEX IF NOT EXISTS idx_financial_logs_user_id          ON financial_logs
 CREATE INDEX IF NOT EXISTS idx_financial_logs_transaction_type ON financial_logs (transaction_type);
 CREATE INDEX IF NOT EXISTS idx_financial_logs_status           ON financial_logs (status);
 CREATE INDEX IF NOT EXISTS idx_financial_logs_created_at       ON financial_logs (created_at);
+
+CREATE TABLE IF NOT EXISTS user_wallets (
+    user_id       BIGINT PRIMARY KEY REFERENCES users(user_id),
+    balance       DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    total_deposit DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS transactions (
+    id              SERIAL PRIMARY KEY,
+    user_id         BIGINT NOT NULL REFERENCES users(user_id),
+    gateway         VARCHAR(50) NOT NULL,
+    order_id        VARCHAR(100) UNIQUE,
+    amount          DECIMAL(12,2) NOT NULL,
+    status          VARCHAR(50) NOT NULL DEFAULT 'pending',
+    gateway_txn_id  VARCHAR(255),
+    gateway_data    JSONB DEFAULT '{}',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    verified_at     TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_txn_user ON transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_txn_status ON transactions(status);
+CREATE INDEX IF NOT EXISTS idx_txn_order ON transactions(order_id);
 `;
 
 export const DEFAULT_SETTINGS = {
@@ -149,6 +173,21 @@ export const DEFAULT_SETTINGS = {
   maintenance_mode: false,
   bot_name: 'OTP Bot',
   support_username: '',
+  paytm_enabled: false,
+  paytm_upi_id: '',
+  paytm_merchant_key: '',
+  paytm_time_limit: 600,
+  paytm_min_amount: 10,
+  bharatpay_enabled: false,
+  bharatpay_merchant_id: '',
+  bharatpay_token: '',
+  bharatpay_upi_id: '',
+  bharatpay_min_amount: 10,
+  bharatpay_qr_file_id: '',
+  cryptomus_enabled: false,
+  cryptomus_api_key: '',
+  cryptomus_merchant_id: '',
+  cryptomus_min_amount: 1,
 };
 
 export async function initDb(pool) {
