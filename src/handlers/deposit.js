@@ -132,7 +132,8 @@ async function handlePaytmAmount(ctx) {
     `📋 <b>Order:</b> <code>${orderId}</code>\n` +
     `💎 <b>Ref:</b> <code>${txnRef}</code>\n\n` +
     `⏰ Expires in <b>${minutes} minutes</b>\n\n` +
-    `Scan the QR code with any UPI app.`;
+    `Scan the QR code with any UPI app.\n\n` +
+    `<i>Payment will be auto-detected. You can also click Check Payment below.</i>`;
 
   const kb = new InlineKeyboard()
     .text('🔄 Check Payment', `deposit:check:${orderId}`).row()
@@ -293,7 +294,8 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
       `📋 <b>Order:</b> <code>${orderId}</code>\n` +
       `💎 <b>Ref:</b> <code>${txnRef}</code>\n\n` +
       `⏰ Expires in <b>${remaining} minutes</b>\n\n` +
-      `Scan the QR code with any UPI app.`;
+      `Scan the QR code with any UPI app.\n\n` +
+      `<i>Payment will be auto-detected. You can also click Check Payment below.</i>`;
 
     await ctx.replyWithPhoto(storedFileId, {
       caption: resendCaption, parse_mode: 'HTML', reply_markup: resendKb,
@@ -317,7 +319,8 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
       `📋 <b>Order:</b> <code>${orderId}</code>\n` +
       `💎 <b>Ref:</b> <code>${txnRef}</code>\n\n` +
       `⏰ Expires in <b>${remaining} minutes</b>\n\n` +
-      `Scan the QR code with any UPI app.`;
+      `Scan the QR code with any UPI app.\n\n` +
+      `<i>Payment will be auto-detected. You can also click Check Payment below.</i>`;
 
     await ctx.replyWithPhoto(new InputFile(qrImageBuffer, 'payment_qr.png'), {
       caption: fallbackCaption, parse_mode: 'HTML', reply_markup: resendKb,
