@@ -21,9 +21,9 @@ async function main() {
   // Upsert the first admin as a user first
   await pool.query(
     `INSERT INTO users (user_id, full_name, referral_code)
-     VALUES ($1, 'Super Admin', 'admin_' || $1::text)
+     VALUES ($1, 'Super Admin', $2)
      ON CONFLICT (user_id) DO NOTHING`,
-    [FIRST_ADMIN_ID]
+    [FIRST_ADMIN_ID, `admin_${FIRST_ADMIN_ID}`]
   );
 
   // Upsert as super_admin

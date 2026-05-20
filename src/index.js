@@ -38,9 +38,9 @@ async function main() {
   const adminId = settings.FIRST_ADMIN_ID;
   await pool.query(
     `INSERT INTO users (user_id, full_name, referral_code)
-     VALUES ($1, 'Super Admin', 'admin_' || $1::text)
+     VALUES ($1, 'Super Admin', $2)
      ON CONFLICT (user_id) DO NOTHING`,
-    [adminId]
+    [adminId, `admin_${adminId}`]
   );
   await pool.query(
     `INSERT INTO admins (admin_id, role)
