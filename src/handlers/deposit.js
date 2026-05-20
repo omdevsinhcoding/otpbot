@@ -104,9 +104,11 @@ async function handlePaytmAmount(ctx) {
   const { upiLink, txnRef } = paytmService.generatePaymentQR(upiId, amount, orderId, payeeName, paytmQr);
 
   await walletRepo.ensureWallet(pool, ctx.from.id);
+  const expiresAt = new Date(Date.now() + timeLimit * 1000);
   await transactionRepo.createTransaction(pool, {
     userId: ctx.from.id, gateway: 'paytm', orderId, amount,
     gatewayData: { txnRef, upiId },
+    expiresAt,
   });
 
 

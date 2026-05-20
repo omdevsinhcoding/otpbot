@@ -160,11 +160,13 @@ CREATE TABLE IF NOT EXISTS transactions (
     gateway_txn_id  VARCHAR(255),
     gateway_data    JSONB DEFAULT '{}',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at      TIMESTAMPTZ,
     verified_at     TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_txn_user ON transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_txn_status ON transactions(status);
 CREATE INDEX IF NOT EXISTS idx_txn_order ON transactions(order_id);
+CREATE INDEX IF NOT EXISTS idx_txn_expiry ON transactions(status, expires_at) WHERE status = 'pending';
 `;
 
 export const DEFAULT_SETTINGS = {
@@ -214,6 +216,9 @@ export async function initDb(pool) {
     `UPDATE bot_settings SET value = $1::jsonb WHERE key = 'bot_name' AND value = $2::jsonb`,
     [JSON.stringify('OTPBOT'), JSON.stringify('OTP Bot')]
   );
+
+  // Migration: add expires_at column if missing
+  await pool.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
 
   logger.info(`Default settings seeded (${Object.keys(DEFAULT_SETTINGS).length} keys).`);
 }

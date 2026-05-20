@@ -1,9 +1,9 @@
-export async function createTransaction(pool, { userId, gateway, orderId, amount, gatewayData = {} }) {
+export async function createTransaction(pool, { userId, gateway, orderId, amount, gatewayData = {}, expiresAt = null }) {
   const { rows } = await pool.query(
-    `INSERT INTO transactions (user_id, gateway, order_id, amount, status, gateway_data)
-     VALUES ($1, $2, $3, $4, 'pending', $5::jsonb)
+    `INSERT INTO transactions (user_id, gateway, order_id, amount, status, gateway_data, expires_at)
+     VALUES ($1, $2, $3, $4, 'pending', $5::jsonb, $6)
      RETURNING *`,
-    [userId, gateway, orderId, amount, JSON.stringify(gatewayData)]
+    [userId, gateway, orderId, amount, JSON.stringify(gatewayData), expiresAt]
   );
   return rows[0];
 }
