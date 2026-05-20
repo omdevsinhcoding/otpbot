@@ -34,17 +34,16 @@ export const MORE_MENU_KEYBOARD = new Keyboard()
 
 // ── Admin panel static reply keyboard ───────────────────────────────
 export const ADMIN_MENU_KEYBOARD = new Keyboard()
-  .text(BTN_ADM_BROADCAST).text(BTN_ADM_USERS).row()
-  .text(BTN_ADM_FORCEJOIN).text(BTN_ADM_ADMINS).row()
-  .text(BTN_ADM_WELCOME).text(BTN_ADM_SETTINGS).row()
-  .text(BTN_ADM_PAYMENTS).text(BTN_ADM_BOTSTATS).row()
-  .text(BTN_ADM_LOGS).text(BTN_ADM_BACK).row()
+  .text(BTN_ADM_BROADCAST).text(BTN_ADM_USERS).text(BTN_ADM_ADMINS).row()
+  .text(BTN_ADM_PAYMENTS).text(BTN_ADM_SETTINGS).text(BTN_ADM_FORCEJOIN).row()
+  .text(BTN_ADM_WELCOME).text(BTN_ADM_BOTSTATS).text(BTN_ADM_LOGS).row()
+  .text(BTN_ADM_BACK)
   .resized();
 
 // ── Payments sub-menu static reply keyboard ─────────────────────────
 export const PAYMENTS_MENU_KEYBOARD = new Keyboard()
-  .text(BTN_PAY_PAYTM).text(BTN_PAY_BHARATPAY).row()
-  .text(BTN_PAY_CRYPTO).text(BTN_PAY_BACK).row()
+  .text(BTN_PAY_PAYTM).text(BTN_PAY_BHARATPAY).text(BTN_PAY_CRYPTO).row()
+  .text(BTN_PAY_BACK)
   .resized();
 
 // ── Admin panel (Inline Keyboard) ────────────────────────────────────
