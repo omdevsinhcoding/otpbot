@@ -32,9 +32,9 @@ export const MORE_MENU_KEYBOARD = new Keyboard()
 export const ADMIN_PANEL_KEYBOARD = new InlineKeyboard()
   .text('📢 Broadcast', `${ADMIN_CB}broadcast`).text('👥 Users', `${ADMIN_CB}users`).row()
   .text('🔗 Force Join', `${ADMIN_CB}forcejoin`).text('👑 Admins', `${ADMIN_CB}admins`).row()
-  .text('📊 Analytics', `${ADMIN_CB}analytics`).text('📋 Logs', `${ADMIN_CB}logs`).row()
   .text('💬 Welcome Msg', `${ADMIN_CB}welcome`).text('⚙️ Settings', `${ADMIN_CB}settings`).row()
   .text('💰 Payments', `${ADMIN_CB}payments`).text('🤖 Bot Stats', `${ADMIN_CB}botstats`).row()
+  .text('📋 Admin Logs', `${ADMIN_CB}logs`).row()
   .text('❌ Close', `${ADMIN_CB}close`);
 
 // ── Dynamic keyboard builders ────────────────────────────────────────

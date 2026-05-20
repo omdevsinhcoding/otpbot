@@ -8,8 +8,8 @@ import { initDb } from './database/models.js';
 import { createBot } from './bot/bot.js';
 import { Tracker } from './tracking/tracker.js';
 import { setupErrorHandler } from './handlers/error.js';
-import { activityTracker } from './middleware/activityTracker.js';
-import { ActionType } from './utils/constants.js';
+
+
 import settings from './config/settings.js';
 import logger from './utils/logger.js';
 
@@ -23,8 +23,7 @@ import userManagement from './admin/userManagement.js';
 import adminManagement from './admin/adminManagement.js';
 import forceJoinAdmin from './admin/forceJoin.js';
 import welcomeMessageAdmin from './admin/welcomeMessage.js';
-import analyticsAdmin from './admin/analytics.js';
-import logsViewer from './admin/logsViewer.js';
+import analyticsAdmin from './admin/analytics.js';  // Admin action logs
 import settingsPanel from './admin/settingsPanel.js';
 import botStats from './admin/botStats.js';
 import paymentsAdmin from './admin/payments.js';
@@ -61,8 +60,7 @@ async function main() {
   // 4. Global error handler
   setupErrorHandler(bot);
 
-  // 5. Middleware
-  bot.use(activityTracker);
+  // 5. Middleware (admin tracking is built into admin handlers)
 
   // 6. Register handlers (admin FIRST so they take priority over text handlers)
   bot.use(adminPanel);
@@ -71,8 +69,7 @@ async function main() {
   bot.use(adminManagement);
   bot.use(forceJoinAdmin);
   bot.use(welcomeMessageAdmin);
-  bot.use(analyticsAdmin);
-  bot.use(logsViewer);
+  bot.use(analyticsAdmin);   // Admin action logs
   bot.use(settingsPanel);
   bot.use(botStats);
   bot.use(paymentsAdmin);
@@ -87,7 +84,6 @@ async function main() {
   bot.callbackQuery('noop', async (ctx) => { await ctx.answerCallbackQuery(); });
 
   // 7. Start
-  tracker.trackFireAndForget(0, ActionType.BOT_STARTED, { timestamp: new Date().toISOString() });
   logger.info('Bot is starting polling…');
   bot.start({
     onStart: (botInfo) => {

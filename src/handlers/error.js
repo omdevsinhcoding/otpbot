@@ -1,5 +1,5 @@
 import { GrammyError, HttpError } from 'grammy';
-import { ActionType } from '../utils/constants.js';
+
 import logger from '../utils/logger.js';
 
 export function setupErrorHandler(bot) {
@@ -27,16 +27,6 @@ export function setupErrorHandler(bot) {
     // ── Full error logging ────────────────────────────────────────
     logger.error(`Unhandled error: ${e?.message || e}`, { stack: e?.stack });
 
-    // ── Track error ───────────────────────────────────────────────
-    try {
-      if (ctx?.from && ctx?.tracker) {
-        ctx.tracker.trackFireAndForget(
-          ctx.from.id,
-          ActionType.ERROR_OCCURRED,
-          { error_type: e?.constructor?.name, error_message: String(e?.message || e).slice(0, 500) },
-        );
-      }
-    } catch { /* swallow */ }
 
     // ── Notify user ───────────────────────────────────────────────
     try {

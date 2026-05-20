@@ -1,31 +1,17 @@
 import logger from '../utils/logger.js';
 
+/**
+ * Tracker — only tracks admin actions for accountability.
+ * No user activity tracking. Admin logs show who did what.
+ */
 export class Tracker {
   constructor(pool) {
     this.pool = pool;
   }
 
-  async track(userId, actionType, actionData = null, chatId = null, chatType = null) {
-    const { logActivity } = await import('../database/repositories/trackingRepo.js');
-    try {
-      await logActivity(this.pool, {
-        userId,
-        actionType,
-        actionData: typeof actionData === 'string' ? { raw: actionData } : actionData,
-        chatId,
-        chatType,
-      });
-    } catch (err) {
-      logger.error(`Tracking error: ${err.message}`);
-    }
-  }
-
-  trackFireAndForget(userId, actionType, actionData = null, chatId = null, chatType = null) {
-    this.track(userId, actionType, actionData, chatId, chatType).catch(err =>
-      logger.debug(`Fire-and-forget tracking failed: ${err.message}`)
-    );
-  }
-
+  /**
+   * Track an admin action (settings change, ban, broadcast, etc.)
+   */
   async trackAdmin(adminId, adminUsername, actionType, actionData = null, targetUserId = null) {
     const { logAdminAction } = await import('../database/repositories/trackingRepo.js');
     try {
@@ -41,32 +27,12 @@ export class Tracker {
     }
   }
 
+  /**
+   * Fire-and-forget admin tracking (non-blocking)
+   */
   trackAdminFireAndForget(adminId, adminUsername, actionType, actionData = null, targetUserId = null) {
     this.trackAdmin(adminId, adminUsername, actionType, actionData, targetUserId).catch(err =>
       logger.debug(`Fire-and-forget admin tracking failed: ${err.message}`)
-    );
-  }
-
-  async trackFinancial(userId, transactionType, amount, options = {}) {
-    const { logFinancial } = await import('../database/repositories/trackingRepo.js');
-    try {
-      await logFinancial(this.pool, {
-        userId,
-        transactionType,
-        amount,
-        currency: options.currency || 'INR',
-        referenceId: options.referenceId || null,
-        metadata: options.metadata || {},
-        status: options.status || 'pending',
-      });
-    } catch (err) {
-      logger.error(`Financial tracking error: ${err.message}`);
-    }
-  }
-
-  trackFinancialFireAndForget(userId, transactionType, amount, options = {}) {
-    this.trackFinancial(userId, transactionType, amount, options).catch(err =>
-      logger.debug(`Fire-and-forget financial tracking failed: ${err.message}`)
     );
   }
 }

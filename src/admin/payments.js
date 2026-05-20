@@ -18,22 +18,25 @@ composer.callbackQuery('admin:payments', adminRequired, async (ctx) => {
 
 async function showPaymentsMenu(ctx) {
   const pool = ctx.dbPool;
-  const [paytmOn, bharatOn, cryptoOn] = await Promise.all([
+  const [paytmOn, bharatOn, cryptoOn, paytmName, bharatName] = await Promise.all([
     settingsRepo.getSetting(pool, 'paytm_enabled'),
     settingsRepo.getSetting(pool, 'bharatpay_enabled'),
     settingsRepo.getSetting(pool, 'cryptomus_enabled'),
+    settingsRepo.getSetting(pool, 'paytm_display_name'),
+    settingsRepo.getSetting(pool, 'bharatpay_display_name'),
   ]);
 
   const text =
     `💰 <b>Payment Settings</b>\n\n` +
-    `💳 Paytm: ${paytmOn ? '✅ On' : '❌ Off'}\n` +
-    `🏦 Bharat Pay: ${bharatOn ? '✅ On' : '❌ Off'}\n` +
+    `💳 Paytm: ${paytmOn ? '✅ On' : '❌ Off'}  ➜ <i>${escapeHtml(paytmName || 'Pay via Automatic Gateway')}</i>\n` +
+    `🏦 Bharat Pay: ${bharatOn ? '✅ On' : '❌ Off'}  ➜ <i>${escapeHtml(bharatName || 'Pay via UTR / Transaction ID')}</i>\n` +
     `₿ Cryptomus: ${cryptoOn ? '✅ On' : '❌ Off'}`;
 
   const kb = new InlineKeyboard()
     .text('💳 Paytm Settings', 'pay:paytm').row()
     .text('🏦 Bharat Pay Settings', 'pay:bharatpay').row()
     .text('₿ Cryptomus Settings', 'pay:cryptomus').row()
+    .text('✏️ Rename Paytm', 'pay:paytm:edit:paytm_display_name').text('✏️ Rename BharatPe', 'pay:bharatpay:edit:bharatpay_display_name').row()
     .text('‹ Back', 'admin:back');
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
@@ -228,11 +231,13 @@ composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):edit:.+$/, adminRequire
     paytm_time_limit: 'Time Limit (seconds)',
     paytm_min_amount: 'Minimum Amount (₹)',
     paytm_max_amount: 'Maximum Amount (₹)',
+    paytm_display_name: 'Paytm Button Name (shown to user in deposit menu)',
     bharatpay_merchant_id: 'BharatPe Merchant ID',
     bharatpay_token: 'BharatPe API Token',
     bharatpay_upi_id: 'BharatPe UPI ID',
     bharatpay_min_amount: 'Minimum Amount (₹)',
     bharatpay_max_amount: 'Maximum Amount (₹)',
+    bharatpay_display_name: 'BharatPe Button Name (shown to user in deposit menu)',
     cryptomus_api_key: 'Cryptomus API Key',
     cryptomus_merchant_id: 'Cryptomus Merchant ID',
     cryptomus_min_amount: 'Minimum Amount ($)',

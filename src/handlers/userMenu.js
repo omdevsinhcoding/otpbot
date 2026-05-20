@@ -9,7 +9,6 @@ import {
   BTN_SMS_CHECKER, BTN_SUPPORT, BTN_REFER_EARN, BTN_READYMADE,
   BTN_GET_EMAIL, BTN_FAVORITE, BTN_PROMO_CODE, BTN_RETURN,
   BTN_TOP_SERVICES, BTN_API, BTN_RESELLER, BTN_ADMIN_PANEL,
-  ActionType,
 } from '../utils/constants.js';
 import { escapeHtml, formatTimestamp, formatNumber } from '../utils/formatters.js';
 import logger from '../utils/logger.js';
@@ -32,7 +31,7 @@ async function menuFor(ctx) {
 // ── 📠 GET OTP ──────────────────────────────────────────────────
 composer.hears(new RegExp(`^${escRe(BTN_GET_OTP)}$`), async (ctx) => {
   if (!await checkForceJoin(ctx)) return;
-  ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'get_otp' });
+
   await ctx.reply(
     '🔑 <b>OTP Service</b>\n\nThis feature is coming soon. Stay tuned!',
     { parse_mode: 'HTML', reply_markup: await menuFor(ctx) }
@@ -42,7 +41,7 @@ composer.hears(new RegExp(`^${escRe(BTN_GET_OTP)}$`), async (ctx) => {
 // ── 💰 DEPOSIT → opens deposit menu with payment options ────────
 composer.hears(new RegExp(`^${escRe(BTN_DEPOSIT)}$`), async (ctx) => {
   if (!await checkForceJoin(ctx)) return;
-  ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'deposit' });
+
 
   // Import dynamically to avoid circular deps
   const walletRepo = await import('../database/repositories/walletRepo.js');
@@ -72,7 +71,7 @@ composer.hears(new RegExp(`^${escRe(BTN_DEPOSIT)}$`), async (ctx) => {
 // ── 👤 PROFILE — Premium card style ─────────────────────────────
 composer.hears(new RegExp(`^${escRe(BTN_PROFILE)}$`), async (ctx) => {
   if (!await checkForceJoin(ctx)) return;
-  ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'profile' });
+
   const pool = ctx.dbPool;
   const user = await userRepo.getUser(pool, ctx.from.id);
   if (!user) {
@@ -127,14 +126,14 @@ composer.hears(new RegExp(`^${escRe(BTN_PROFILE)}$`), async (ctx) => {
 // ── 🔥 MORE → shows sub-menu reply keyboard ────────────────────
 composer.hears(new RegExp(`^${escRe(BTN_MORE)}$`), async (ctx) => {
   if (!await checkForceJoin(ctx)) return;
-  ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'more' });
+
   await ctx.reply('🔥 <b>More Options</b>', { parse_mode: 'HTML', reply_markup: MORE_MENU_KEYBOARD });
 });
 
 // ── 📮 SMS CHECKER ──────────────────────────────────────────────
 composer.hears(new RegExp(`^${escRe(BTN_SMS_CHECKER)}$`), async (ctx) => {
   if (!await checkForceJoin(ctx)) return;
-  ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'sms_checker' });
+
   await ctx.reply(
     '📮 <b>SMS Checker</b>\n\nThis feature is coming soon. Stay tuned!',
     { parse_mode: 'HTML', reply_markup: await menuFor(ctx) }
@@ -144,7 +143,7 @@ composer.hears(new RegExp(`^${escRe(BTN_SMS_CHECKER)}$`), async (ctx) => {
 // ── 🛡 SUPPORT ──────────────────────────────────────────────────
 composer.hears(new RegExp(`^${escRe(BTN_SUPPORT)}$`), async (ctx) => {
   if (!await checkForceJoin(ctx)) return;
-  ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'support' });
+
   let supportUsername = '';
   try {
     supportUsername = await settingsRepo.getSetting(ctx.dbPool, 'support_username');
@@ -160,7 +159,7 @@ composer.hears(new RegExp(`^${escRe(BTN_SUPPORT)}$`), async (ctx) => {
 // ── 🎁 REFER & EARN ────────────────────────────────────────────
 composer.hears(new RegExp(`^${escRe(BTN_REFER_EARN)}$`), async (ctx) => {
   if (!await checkForceJoin(ctx)) return;
-  ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'refer_earn' });
+
   const pool = ctx.dbPool;
   const user = await userRepo.getUser(pool, ctx.from.id);
   const refCode = user?.referral_code || 'N/A';
@@ -185,7 +184,7 @@ composer.hears(new RegExp(`^${escRe(BTN_REFER_EARN)}$`), async (ctx) => {
 // ── 💎 READYMADE ACCOUNT ────────────────────────────────────────
 composer.hears(new RegExp(`^${escRe(BTN_READYMADE)}$`), async (ctx) => {
   if (!await checkForceJoin(ctx)) return;
-  ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'readymade' });
+
   await ctx.reply(
     '💎 <b>Readymade Account</b>\n\nThis feature is coming soon. Stay tuned!',
     { parse_mode: 'HTML', reply_markup: await menuFor(ctx) }
@@ -198,13 +197,13 @@ composer.hears(new RegExp(`^${escRe(BTN_READYMADE)}$`), async (ctx) => {
 
 // ── ◀️ RETURN → back to main menu ──────────────────────────────
 composer.hears(new RegExp(`^${escRe(BTN_RETURN)}$`), async (ctx) => {
-  ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'return' });
+
   await ctx.reply('🏠 <b>Main Menu</b>', { parse_mode: 'HTML', reply_markup: await menuFor(ctx) });
 });
 
 // ── 📧 GET EMAIL ────────────────────────────────────────────────
 composer.hears(new RegExp(`^${escRe(BTN_GET_EMAIL)}$`), async (ctx) => {
-  ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'get_email' });
+
   await ctx.reply(
     '📧 <b>Get Email</b>\n\nThis feature is coming soon. Stay tuned!',
     { parse_mode: 'HTML', reply_markup: MORE_MENU_KEYBOARD }
@@ -213,7 +212,7 @@ composer.hears(new RegExp(`^${escRe(BTN_GET_EMAIL)}$`), async (ctx) => {
 
 // ── 😊 Favorite ─────────────────────────────────────────────────
 composer.hears(new RegExp(`^${escRe(BTN_FAVORITE)}$`), async (ctx) => {
-  ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'favorite' });
+
   await ctx.reply(
     '😊 <b>Favorites</b>\n\nThis feature is coming soon. Stay tuned!',
     { parse_mode: 'HTML', reply_markup: MORE_MENU_KEYBOARD }
@@ -222,7 +221,7 @@ composer.hears(new RegExp(`^${escRe(BTN_FAVORITE)}$`), async (ctx) => {
 
 // ── Promo Code 👾 ───────────────────────────────────────────────
 composer.hears(new RegExp(`^${escRe(BTN_PROMO_CODE)}$`), async (ctx) => {
-  ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'promo_code' });
+
   await ctx.reply(
     '👾 <b>Promo Code</b>\n\nThis feature is coming soon. Stay tuned!',
     { parse_mode: 'HTML', reply_markup: MORE_MENU_KEYBOARD }
@@ -231,7 +230,7 @@ composer.hears(new RegExp(`^${escRe(BTN_PROMO_CODE)}$`), async (ctx) => {
 
 // ── 📊 TOP SERVICES ────────────────────────────────────────────
 composer.hears(new RegExp(`^${escRe(BTN_TOP_SERVICES)}$`), async (ctx) => {
-  ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'top_services' });
+
   await ctx.reply(
     '📊 <b>Top Services</b>\n\nThis feature is coming soon. Stay tuned!',
     { parse_mode: 'HTML', reply_markup: MORE_MENU_KEYBOARD }
@@ -240,7 +239,7 @@ composer.hears(new RegExp(`^${escRe(BTN_TOP_SERVICES)}$`), async (ctx) => {
 
 // ── ⚙️ API ──────────────────────────────────────────────────────
 composer.hears(new RegExp(`^${escRe(BTN_API)}$`), async (ctx) => {
-  ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'api' });
+
   await ctx.reply(
     '⚙️ <b>API</b>\n\nThis feature is coming soon. Stay tuned!',
     { parse_mode: 'HTML', reply_markup: MORE_MENU_KEYBOARD }
@@ -249,7 +248,7 @@ composer.hears(new RegExp(`^${escRe(BTN_API)}$`), async (ctx) => {
 
 // ── 🔮 Reseller Account ────────────────────────────────────────
 composer.hears(new RegExp(`^${escRe(BTN_RESELLER)}$`), async (ctx) => {
-  ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'reseller' });
+
   await ctx.reply(
     '🔮 <b>Reseller Account</b>\n\nThis feature is coming soon. Stay tuned!',
     { parse_mode: 'HTML', reply_markup: MORE_MENU_KEYBOARD }
@@ -266,7 +265,7 @@ composer.hears(new RegExp(`^${escRe(BTN_ADMIN_PANEL)}$`), async (ctx) => {
     await ctx.reply('⛔ You are not authorized.', { reply_markup: getMainMenu(false) });
     return;
   }
-  ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.BUTTON_CLICK, { button: 'admin_panel' });
+
 
   // Fetch live stats
   const [usersRes, ordersRes, revenueRes, paidRes, pendingRes, expiredRes] = await Promise.all([

@@ -6,7 +6,7 @@ import * as adminRepo from '../database/repositories/adminRepo.js';
 import * as welcomeRepo from '../database/repositories/welcomeRepo.js';
 import * as settingsRepo from '../database/repositories/settingsRepo.js';
 import { getMainMenu, buildInlineButtons } from '../utils/keyboard.js';
-import { ActionType } from '../utils/constants.js';
+
 import logger from '../utils/logger.js';
 
 const composer = new Composer();
@@ -14,7 +14,6 @@ const composer = new Composer();
 composer.command('start', async (ctx) => {
   if (!ctx.from) return;
   const pool = ctx.dbPool;
-  const tracker = ctx.tracker;
 
   // ── Parse deep-link referral ────────────────────────────────────
   let referredBy = null;
@@ -48,14 +47,6 @@ composer.command('start', async (ctx) => {
     referredBy,
   });
 
-  // ── Track ──────────────────────────────────────────────────────
-  tracker.trackFireAndForget(
-    ctx.from.id,
-    isReturning ? ActionType.USER_RESTART : ActionType.USER_START,
-    { payload: payload || null, referred_by: referredBy },
-    ctx.chat?.id,
-    ctx.chat?.type,
-  );
 
   // ── Force join gate ────────────────────────────────────────────
   if (!await checkForceJoin(ctx)) return;

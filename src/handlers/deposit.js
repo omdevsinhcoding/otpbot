@@ -6,7 +6,7 @@ import * as transactionRepo from '../database/repositories/transactionRepo.js';
 import * as paytmService from '../services/paytmService.js';
 import * as bharatpayService from '../services/bharatpayService.js';
 import * as cryptomusService from '../services/cryptomusService.js';
-import { ActionType } from '../utils/constants.js';
+
 import { formatNumber, escapeHtml } from '../utils/formatters.js';
 import { generateBrandedQR } from '../services/qrImageService.js';
 import logger from '../utils/logger.js';
@@ -24,20 +24,22 @@ composer.callbackQuery('deposit:menu', async (ctx) => {
 
 async function showDepositMenu(ctx) {
   const pool = ctx.dbPool;
-  const [paytmOn, bharatpayOn, cryptomusOn] = await Promise.all([
+  const [paytmOn, bharatpayOn, cryptomusOn, paytmName, bharatpayName] = await Promise.all([
     settingsRepo.getSetting(pool, 'paytm_enabled'),
     settingsRepo.getSetting(pool, 'bharatpay_enabled'),
     settingsRepo.getSetting(pool, 'cryptomus_enabled'),
+    settingsRepo.getSetting(pool, 'paytm_display_name'),
+    settingsRepo.getSetting(pool, 'bharatpay_display_name'),
   ]);
   const balance = await walletRepo.getBalance(pool, ctx.from.id);
 
   let text = `💰 <b>Deposit Funds</b>\n\n💳 <b>Your Balance:</b> ₹${formatNumber(balance)}\n\nChoose a payment method:`;
   const kb = new InlineKeyboard();
-  if (paytmOn) kb.text('💳 Paytm UPI', 'deposit:paytm').row();
-  if (bharatpayOn) kb.text('🏦 Bharat Pay', 'deposit:bharatpay').row();
+  if (paytmOn) kb.text(`✅ ${paytmName || 'Pay via Automatic Gateway'}`, 'deposit:paytm').row();
+  if (bharatpayOn) kb.text(`🏦 ${bharatpayName || 'Pay via UTR / Transaction ID based Gateway'}`, 'deposit:bharatpay').row();
   if (cryptomusOn) kb.text('₿ Cryptomus', 'deposit:cryptomus').row();
   if (!paytmOn && !bharatpayOn && !cryptomusOn) text += '\n\n⚠️ No payment methods available.';
-  kb.text('❌ Close', 'deposit:close');
+  kb.text('❌ Cancel', 'deposit:close');
 
   if (ctx.callbackQuery) {
     try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); } catch { /* ignore */ }
@@ -106,9 +108,7 @@ async function handlePaytmAmount(ctx) {
     gatewayData: { txnRef, upiId },
   });
 
-  ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.FINANCIAL_DEPOSIT, {
-    gateway: 'paytm', amount, orderId, status: 'pending',
-  });
+
 
   const minutes = Math.floor(timeLimit / 60);
   const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTP Bot';
@@ -123,13 +123,15 @@ async function handlePaytmAmount(ctx) {
     developer: '@Erroroo',
   });
 
+  const displayName = await settingsRepo.getSetting(pool, 'paytm_display_name') || 'Pay via Automatic Gateway';
+  
   const caption =
-    `💳 <b>Payment Required — Paytm</b>\n\n` +
-    `🤖 ${escapeHtml(botName)}\n` +
-    `💰 Amount: ₹${amount.toFixed(2)}\n` +
-    `📋 Order: <code>${orderId}</code>\n` +
-    `💎 Ref: <code>${txnRef}</code>\n\n` +
-    `⏰ Expires in ${minutes} minutes\n\n` +
+    `💳 <b>${escapeHtml(displayName)}</b>\n\n` +
+    `🏪 <b>${escapeHtml(botName)}</b>\n` +
+    `💰 <b>Amount:</b> ₹${amount.toFixed(2)}\n` +
+    `📋 <b>Order:</b> <code>${orderId}</code>\n` +
+    `💎 <b>Ref:</b> <code>${txnRef}</code>\n\n` +
+    `⏰ Expires in <b>${minutes} minutes</b>\n\n` +
     `Scan the QR code with any UPI app.`;
 
   const kb = new InlineKeyboard()
@@ -143,15 +145,27 @@ async function handlePaytmAmount(ctx) {
 
 // ── Paytm: check payment (manual click) ─────────────────────────
 composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
-  await ctx.answerCallbackQuery('🔍 Checking payment…');
+  await ctx.answerCallbackQuery();
   const orderId = ctx.callbackQuery.data.replace('deposit:check:', '');
   const pool = ctx.dbPool;
 
   const txn = await transactionRepo.getByOrderId(pool, orderId);
-  if (!txn) { await ctx.answerCallbackQuery('⚠️ Order not found.'); return; }
-  if (txn.status === 'success') { await ctx.answerCallbackQuery('✅ Already verified!'); return; }
+  if (!txn) {
+    await ctx.reply('⚠️ Order not found.', {
+      reply_markup: new InlineKeyboard().text('💰 Deposit Again', 'deposit:menu'),
+    });
+    return;
+  }
+  if (txn.status === 'success') {
+    await ctx.answerCallbackQuery('✅ Already verified!');
+    return;
+  }
   if (txn.status === 'expired' || txn.status === 'failed') {
-    await ctx.answerCallbackQuery(`⚠️ Order ${txn.status}.`);
+    try { await ctx.deleteMessage(); } catch { /* ignore */ }
+    await ctx.reply(
+      `⚠️ <b>Order ${txn.status}.</b>\n\nThis order is no longer active.`,
+      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Pay Again', 'deposit:paytm').text('‹ Back', 'deposit:menu') }
+    );
     return;
   }
 
@@ -168,16 +182,14 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
     return;
   }
 
-  // Check via Paytm GET API — mirrors Python:
-  // GET https://securegw.paytm.in/order/status?JsonData={"MID":"...","ORDERID":"txnRef"}
-  const mid = await settingsRepo.getSetting(pool, 'paytm_merchant_key'); // This stores the MID
+  // Check via Paytm GET API
+  const mid = await settingsRepo.getSetting(pool, 'paytm_merchant_key');
   const txnRef = txn.gateway_data?.txnRef;
   if (!mid || !txnRef) {
-    await ctx.answerCallbackQuery('⚠️ Verification not configured. Set Merchant Key (MID) in admin.');
+    await ctx.reply('⚠️ Verification not configured. Contact admin.');
     return;
   }
 
-  // txnRef IS the ORDERID for Paytm — this is what we use in UPI link tr= param
   const result = await paytmService.checkPaymentStatus(mid, txnRef);
 
   if (result.success) {
@@ -189,10 +201,6 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
     });
     await walletRepo.addBalance(pool, ctx.from.id, creditAmount);
 
-    ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.FINANCIAL_DEPOSIT, {
-      gateway: 'paytm', amount: creditAmount, orderId, status: 'success',
-    });
-
     try { await ctx.deleteMessage(); } catch { /* ignore */ }
     const newBalance = await walletRepo.getBalance(pool, ctx.from.id);
     await ctx.reply(
@@ -200,7 +208,6 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
       { parse_mode: 'HTML' }
     );
   } else if (result.failed) {
-    // Genuinely failed (user attempted but declined)
     await transactionRepo.updateStatus(pool, orderId, 'failed');
     try { await ctx.deleteMessage(); } catch { /* ignore */ }
     await ctx.reply(
@@ -208,8 +215,31 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
       { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Try Again', 'deposit:paytm').text('‹ Back', 'deposit:menu') }
     );
   } else {
-    // Still pending — order not found in Paytm yet (user hasn't scanned)
-    await ctx.answerCallbackQuery('❌ Payment not found yet. Scan QR and try again.');
+    // NOT received yet — show proper message (not just a tiny popup)
+    const remaining = Math.max(0, Math.ceil((timeLimit - elapsed) / 60));
+    const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTP Bot';
+
+    try {
+      await ctx.editMessageCaption({
+        caption:
+          `❌ <b>Payment Not Received</b>\n\n` +
+          `🤖 ${escapeHtml(botName)}\n` +
+          `💰 Amount: ₹${parseFloat(txn.amount).toFixed(2)}\n` +
+          `📋 Order: <code>${orderId}</code>\n` +
+          `💎 Ref: <code>${txnRef}</code>\n\n` +
+          `⏰ Time remaining: ${remaining} min\n\n` +
+          `Please scan the QR code and pay, then tap <b>Check Payment</b> again.`,
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard()
+          .text('🔄 Check Payment', `deposit:check:${orderId}`).row()
+          .text('❌ Cancel Order', `deposit:cancel_txn:${orderId}`),
+      });
+    } catch {
+      await ctx.reply(
+        `❌ <b>Payment Not Received</b>\n\nPlease scan the QR code and pay ₹${parseFloat(txn.amount).toFixed(2)}, then check again.`,
+        { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔄 Check Again', `deposit:check:${orderId}`) }
+      );
+    }
   }
 });
 
@@ -296,9 +326,7 @@ async function handleBharatpayUTR(ctx) {
     await transactionRepo.updateStatus(pool, orderId, 'success', utr, result);
     await walletRepo.addBalance(pool, ctx.from.id, result.amount);
 
-    ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.FINANCIAL_DEPOSIT, {
-      gateway: 'bharatpay', amount: result.amount, orderId, utr, status: 'success',
-    });
+
 
     const newBalance = await walletRepo.getBalance(pool, ctx.from.id);
     await ctx.reply(
@@ -375,9 +403,7 @@ async function handleCryptomusAmount(ctx) {
     gatewayData: { uuid: result.uuid, paymentUrl: result.paymentUrl },
   });
 
-  ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.FINANCIAL_DEPOSIT, {
-    gateway: 'cryptomus', amount, orderId, status: 'pending',
-  });
+
 
   const kb = new InlineKeyboard()
     .url('🔗 Pay Now', result.paymentUrl).row()
@@ -413,9 +439,7 @@ composer.callbackQuery(/^deposit:check_crypto:CRYPTO_/, async (ctx) => {
     const creditAmount = result.amount || parseFloat(txn.amount);
     await transactionRepo.updateStatus(pool, orderId, 'success', uuid, result);
     await walletRepo.addBalance(pool, ctx.from.id, creditAmount);
-    ctx.tracker?.trackFireAndForget(ctx.from.id, ActionType.FINANCIAL_DEPOSIT, {
-      gateway: 'cryptomus', amount: creditAmount, orderId, status: 'success',
-    });
+
     try { await ctx.deleteMessage(); } catch { /* ignore */ }
     const newBalance = await walletRepo.getBalance(pool, ctx.from.id);
     await ctx.reply(
