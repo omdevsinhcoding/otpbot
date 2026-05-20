@@ -111,9 +111,9 @@ async function handlePaytmAmount(ctx) {
 
 
   const minutes = Math.floor(timeLimit / 60);
-  const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTP Bot';
+  const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTP BOT';
 
-  // Generate branded QR image — matches Python upi.py create_qr_buffer()
+  // Generate branded QR image
   const qrImageBuffer = await generateBrandedQR({
     storeName: botName,
     amount: amount.toFixed(2),
@@ -138,9 +138,17 @@ async function handlePaytmAmount(ctx) {
     .text('🔄 Check Payment', `deposit:check:${orderId}`).row()
     .text('❌ Cancel Order', `deposit:cancel_txn:${orderId}`);
 
-  await ctx.replyWithPhoto(new InputFile(qrImageBuffer, 'payment_qr.png'), {
+  const sentMsg = await ctx.replyWithPhoto(new InputFile(qrImageBuffer, 'payment_qr.png'), {
     caption, parse_mode: 'HTML', reply_markup: kb,
   });
+
+  // Store file_id so we reuse EXACT same image when re-sending after failed check
+  const photoFileId = sentMsg.photo?.[sentMsg.photo.length - 1]?.file_id;
+  if (photoFileId) {
+    await transactionRepo.updateGatewayData(pool, orderId, {
+      txnRef, upiId, photoFileId, caption,
+    });
+  }
 }
 
 // ── Paytm: check payment (manual click) ─────────────────────────
@@ -264,41 +272,57 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
   // Delete the verifying message
   try { await ctx.api.deleteMessage(ctx.chat.id, verifyMsg.message_id); } catch { /* ignore */ }
 
-  // Re-generate and send the original QR image
-  const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTP Bot';
-  const payeeName = await settingsRepo.getSetting(pool, 'paytm_payee_name') || 'Paytm Merchant';
-  const paytmQr = await settingsRepo.getSetting(pool, 'paytm_qr_code') || '';
-  const displayName = await settingsRepo.getSetting(pool, 'paytm_display_name') || 'Pay via Automatic Gateway';
+  // Re-fetch transaction to get stored photoFileId
+  const freshTxn = await transactionRepo.getByOrderId(pool, orderId);
+  const storedFileId = freshTxn?.gateway_data?.photoFileId;
+  const storedCaption = freshTxn?.gateway_data?.caption;
   const remaining = Math.max(0, Math.ceil((timeLimit - elapsed) / 60));
 
-  // Rebuild UPI link from stored data
-  const { upiLink: rebuildUpiLink } = paytmService.generatePaymentQR(upiId, parseFloat(txn.amount), orderId, payeeName, paytmQr, txnRef);
+  const resendKb = new InlineKeyboard()
+    .text('🔄 Check Payment', `deposit:check:${orderId}`).row()
+    .text('❌ Cancel Order', `deposit:cancel_txn:${orderId}`);
 
-  const qrImageBuffer = await generateBrandedQR({
-    storeName: botName,
-    amount: parseFloat(txn.amount).toFixed(2),
-    currency: '₹',
-    refId: txnRef,
-    upiLink: rebuildUpiLink,
-    developer: '@Erroroo',
-  });
+  if (storedFileId) {
+    // ── Re-send the EXACT SAME image (no regeneration) ────────
+    const displayName = await settingsRepo.getSetting(pool, 'paytm_display_name') || 'Pay via Automatic Gateway';
+    const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTP BOT';
+    const resendCaption =
+      `💳 <b>${escapeHtml(displayName)}</b>\n\n` +
+      `🏪 <b>${escapeHtml(botName)}</b>\n` +
+      `💰 <b>Amount:</b> ₹${parseFloat(txn.amount).toFixed(2)}\n` +
+      `📋 <b>Order:</b> <code>${orderId}</code>\n` +
+      `💎 <b>Ref:</b> <code>${txnRef}</code>\n\n` +
+      `⏰ Expires in <b>${remaining} minutes</b>\n\n` +
+      `Scan the QR code with any UPI app.`;
 
-  const caption =
-    `💳 <b>${escapeHtml(displayName)}</b>\n\n` +
-    `🏪 <b>${escapeHtml(botName)}</b>\n` +
-    `💰 <b>Amount:</b> ₹${parseFloat(txn.amount).toFixed(2)}\n` +
-    `📋 <b>Order:</b> <code>${orderId}</code>\n` +
-    `💎 <b>Ref:</b> <code>${txnRef}</code>\n\n` +
-    `⏰ Expires in <b>${remaining} minutes</b>\n\n` +
-    `Scan the QR code with any UPI app.`;
+    await ctx.replyWithPhoto(storedFileId, {
+      caption: resendCaption, parse_mode: 'HTML', reply_markup: resendKb,
+    });
+  } else {
+    // ── Fallback: regenerate QR if file_id not stored ──────────
+    const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTP BOT';
+    const payeeName = await settingsRepo.getSetting(pool, 'paytm_payee_name') || 'Paytm Merchant';
+    const paytmQr = await settingsRepo.getSetting(pool, 'paytm_qr_code') || '';
+    const displayName = await settingsRepo.getSetting(pool, 'paytm_display_name') || 'Pay via Automatic Gateway';
 
-  // Re-send QR photo with buttons
-  await ctx.replyWithPhoto(new InputFile(qrImageBuffer, 'payment_qr.png'), {
-    caption, parse_mode: 'HTML',
-    reply_markup: new InlineKeyboard()
-      .text('🔄 Check Payment', `deposit:check:${orderId}`).row()
-      .text('❌ Cancel Order', `deposit:cancel_txn:${orderId}`),
-  });
+    const { upiLink: rebuildUpiLink } = paytmService.generatePaymentQR(upiId, parseFloat(txn.amount), orderId, payeeName, paytmQr, txnRef);
+    const qrImageBuffer = await generateBrandedQR({
+      storeName: botName, amount: parseFloat(txn.amount).toFixed(2),
+      currency: '₹', refId: txnRef, upiLink: rebuildUpiLink, developer: '@Erroroo',
+    });
+    const fallbackCaption =
+      `💳 <b>${escapeHtml(displayName)}</b>\n\n` +
+      `🏪 <b>${escapeHtml(botName)}</b>\n` +
+      `💰 <b>Amount:</b> ₹${parseFloat(txn.amount).toFixed(2)}\n` +
+      `📋 <b>Order:</b> <code>${orderId}</code>\n` +
+      `💎 <b>Ref:</b> <code>${txnRef}</code>\n\n` +
+      `⏰ Expires in <b>${remaining} minutes</b>\n\n` +
+      `Scan the QR code with any UPI app.`;
+
+    await ctx.replyWithPhoto(new InputFile(qrImageBuffer, 'payment_qr.png'), {
+      caption: fallbackCaption, parse_mode: 'HTML', reply_markup: resendKb,
+    });
+  }
 
   // Send separate "not received" message
   await ctx.reply(

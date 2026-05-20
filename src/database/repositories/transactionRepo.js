@@ -69,3 +69,12 @@ export async function getByGatewayTxnId(pool, gatewayTxnId) {
   );
   return rows[0] || null;
 }
+
+export async function updateGatewayData(pool, orderId, newData) {
+  await pool.query(
+    `UPDATE transactions
+     SET gateway_data = gateway_data || $2::jsonb
+     WHERE order_id = $1`,
+    [orderId, JSON.stringify(newData)]
+  );
+}

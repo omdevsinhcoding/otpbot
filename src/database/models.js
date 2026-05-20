@@ -171,7 +171,7 @@ export const DEFAULT_SETTINGS = {
   force_join_enabled: false,
   welcome_enabled: true,
   maintenance_mode: false,
-  bot_name: 'OTP Bot',
+  bot_name: 'OTP BOT',
   support_username: '',
   paytm_enabled: false,
   paytm_upi_id: '',
