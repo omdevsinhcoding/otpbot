@@ -24,12 +24,12 @@ export function generatePaymentQR(upiId, amount, orderId, payeeName = 'Paytm Mer
   // Mirrors PHP EXACTLY:
   //   upi://pay?pa={vpa}&pn=Paytm%20Merchant&paytmqr={qr}&tr={$rnd}&am={amount}&cu=INR
   //   - pn is URL-encoded (spaces → %20)
-  //   - NO &tn= parameter
+  //   - tn= shows orderId in UPI app + bank statement for verification
   //   - tr is numeric only
   const encodedPayee = encodeURIComponent(payeeName);
   let upiLink = `upi://pay?pa=${upiId}&pn=${encodedPayee}`;
   if (paytmQr) upiLink += `&paytmqr=${paytmQr}`;
-  upiLink += `&tr=${txnRef}&am=${amount.toFixed(2)}&cu=INR`;
+  upiLink += `&tr=${txnRef}&tn=${encodeURIComponent(`${orderId} Ref:${txnRef}`)}&am=${amount.toFixed(2)}&cu=INR`;
 
   return { upiLink, txnRef };
 }
