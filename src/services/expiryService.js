@@ -118,10 +118,14 @@ async function processExpired(bot, pool) {
 
       // Send expiry notification
       let text =
-        `💀 <b>Payment Expired</b>\n\n` +
-        `Order <code>${escapeHtml(orderId)}</code> has expired.\n` +
-        `Please create a new order.\n\n` +
-        `<i>If you already made the payment, please contact support with your UTR/transaction ID and we will resolve it.</i>`;
+        `╔═══════════════════════╗\n` +
+        `║   ⏰ <b>PAYMENT EXPIRED</b>        ║\n` +
+        `╚═══════════════════════╝\n\n` +
+        `📋 Order: <code>${escapeHtml(orderId)}</code>\n` +
+        `💰 Amount: ₹${parseFloat(txn.amount).toFixed(2)}\n\n` +
+        `Your payment window has closed.\n` +
+        `Please create a new deposit to continue.\n\n` +
+        `<i>💡 Already paid? Contact support with your UTR/Ref number.</i>`;
 
       if (supportUser) {
         text += `\n\n🛡 <b>Support:</b> @${escapeHtml(supportUser)}`;
@@ -130,8 +134,8 @@ async function processExpired(bot, pool) {
       await bot.api.sendMessage(chatId, text, {
         parse_mode: 'HTML',
         reply_markup: new InlineKeyboard()
-          .text('💰 Pay Again', 'deposit:paytm')
-          .text('‹ Back', 'deposit:menu'),
+          .text('💰 New Deposit', 'deposit:paytm')
+          .text('‹ Menu', 'deposit:menu'),
       });
     } catch (err) {
       // Don't crash the loop — log and continue
