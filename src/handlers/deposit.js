@@ -43,24 +43,33 @@ composer.callbackQuery('deposit:menu', async (ctx) => {
 
 async function showDepositMenu(ctx) {
   const pool = ctx.dbPool;
-  const [paytmOn, bharatpayOn, cryptomusOn, paytmName, bharatpayName] = await Promise.all([
+  const [paytmOn, bharatpayOn, cryptomusOn, minAmount, botName] = await Promise.all([
     settingsRepo.getSetting(pool, 'paytm_enabled'),
     settingsRepo.getSetting(pool, 'bharatpay_enabled'),
     settingsRepo.getSetting(pool, 'cryptomus_enabled'),
-    settingsRepo.getSetting(pool, 'paytm_display_name'),
-    settingsRepo.getSetting(pool, 'bharatpay_display_name'),
+    settingsRepo.getSetting(pool, 'paytm_min_amount'),
+    settingsRepo.getSetting(pool, 'bot_name'),
   ]);
   const balance = await walletRepo.getBalance(pool, ctx.from.id);
+  const name = ctx.from.first_name || 'User';
 
-  let text = `💰 <b>Deposit Funds</b>\n\n💳 <b>Your Balance:</b> ₹${formatNumber(balance)}\n\nChoose a payment method:`;
+  let text =
+    `👋 <b>Hey ${escapeHtml(name)}!</b>\n\n` +
+    `💰 <b>Deposit Information</b>\n\n` +
+    `💳 <b>Balance:</b> ₹${formatNumber(balance)}\n` +
+    `📌 <b>Min Deposit:</b> ₹${minAmount || 10}\n\n` +
+    `⚠️ <b>Note:</b> Once deposited, funds are non-refundable.\n` +
+    `You can use your balance for all services.\n\n` +
+    `👇 <b>Select Payment Method</b>`;
+
   const kb = new InlineKeyboard();
-  if (paytmOn) kb.text(`✅ ${paytmName || 'Pay via Automatic Gateway'}`, 'deposit:paytm').row();
-  if (bharatpayOn) kb.text(`🏦 ${bharatpayName || 'Pay via UTR / Transaction ID based Gateway'}`, 'deposit:bharatpay').row();
-  if (cryptomusOn) kb.text('₿ Cryptomus', 'deposit:cryptomus').row();
+  if (paytmOn) kb.text('💎 UPI', 'deposit:paytm');
+  if (cryptomusOn) kb.text('💎 CRYPTO', 'deposit:cryptomus');
+  kb.row();
+  if (bharatpayOn) kb.text('🏦 UPI (Manual)', 'deposit:bharatpay').row();
   if (!paytmOn && !bharatpayOn && !cryptomusOn) text += '\n\n⚠️ No payment methods available.';
   kb.text('❌ Cancel', 'deposit:close');
 
-  // Always use delete+reply (safe for both text and photo parent messages)
   await safeReply(ctx, text, { parse_mode: 'HTML', reply_markup: kb });
 }
 
@@ -70,27 +79,59 @@ async function showDepositMenu(ctx) {
 composer.callbackQuery('deposit:paytm', async (ctx) => {
   await ctx.answerCallbackQuery();
   const pool = ctx.dbPool;
-  const minAmount = await settingsRepo.getSetting(pool, 'paytm_min_amount') || 10;
+  const minAmount = parseInt(await settingsRepo.getSetting(pool, 'paytm_min_amount')) || 10;
   const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'paytm_max_amount')) || 0;
-  const displayName = await settingsRepo.getSetting(pool, 'paytm_display_name') || 'Pay via Automatic Gateway';
 
-  const kb = new InlineKeyboard().text('❌ Cancel', 'deposit:cancel_state');
+  let text =
+    `💰 <b>Select Deposit Amount</b>\n\n` +
+    `📌 <b>Min:</b> ₹${minAmount}` +
+    (maxAmount ? `  •  <b>Max:</b> ₹${maxAmount}` : '') + `\n\n` +
+    `👇 <b>Choose an amount or enter custom</b>`;
 
-  // Always use delete+reply (safe for both text and photo parent messages)
+  const presets = [10, 50, 100, 300, 500, 1000, 5000, 10000].filter(a => a >= minAmount && (!maxAmount || a <= maxAmount));
+  const kb = new InlineKeyboard();
+  for (let i = 0; i < presets.length; i += 2) {
+    kb.text(`₹${presets[i]}`, `deposit:paytm_amt:${presets[i]}`);
+    if (presets[i + 1]) kb.text(`₹${presets[i + 1]}`, `deposit:paytm_amt:${presets[i + 1]}`);
+    kb.row();
+  }
+  kb.text('💲 Custom Amount', 'deposit:paytm_custom').row();
+  kb.text('‹ Back', 'deposit:menu').text('❌ Cancel', 'deposit:close');
+
+  await safeReply(ctx, text, { parse_mode: 'HTML', reply_markup: kb });
+});
+
+// ── Paytm: preset amount clicked ────────────────────────────────
+composer.callbackQuery(/^deposit:paytm_amt:\d+$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const amount = parseFloat(ctx.callbackQuery.data.split(':')[2]);
+  ctx.message = { text: String(amount) };
+  await handlePaytmAmount(ctx, amount);
+});
+
+// ── Paytm: custom amount requested ─────────────────────────────
+composer.callbackQuery('deposit:paytm_custom', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const pool = ctx.dbPool;
+  const minAmount = parseInt(await settingsRepo.getSetting(pool, 'paytm_min_amount')) || 10;
+  const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'paytm_max_amount')) || 0;
+
   await safeReply(ctx,
-    `💳 <b>${escapeHtml(displayName)}</b>\n\n` +
-    `Enter the amount you want to deposit.\n` +
-    `<b>Minimum:</b> ₹${minAmount}` +
-    (maxAmount ? `\n<b>Maximum:</b> ₹${maxAmount}` : ''),
-    { parse_mode: 'HTML', reply_markup: kb }
+    `💲 <b>Enter Custom Amount</b>\n\n` +
+    `Type the amount you want to deposit.\n\n` +
+    `<b>Example:</b> <code>100</code> , <code>500</code> , <code>1000</code>\n\n` +
+    `📌 <b>Min:</b> ₹${minAmount}` +
+    (maxAmount ? `  •  <b>Max:</b> ₹${maxAmount}` : '') + `\n\n` +
+    `✅ Just type the amount below, payment link will appear instantly.`,
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('‹ Back', 'deposit:paytm').text('❌ Cancel', 'deposit:cancel_state') }
   );
   userStates.set(ctx.chat.id, { step: 'paytm_amount' });
 });
 
 // ── Paytm: receive amount → generate QR ─────────────────────────
-async function handlePaytmAmount(ctx) {
+async function handlePaytmAmount(ctx, presetAmount = null) {
   const pool = ctx.dbPool;
-  const amount = parseFloat(ctx.message.text.trim());
+  const amount = presetAmount || parseFloat(ctx.message.text.trim());
   const minAmount = await settingsRepo.getSetting(pool, 'paytm_min_amount') || 10;
   const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'paytm_max_amount')) || 0;
 
@@ -109,7 +150,8 @@ async function handlePaytmAmount(ctx) {
 
   userStates.delete(ctx.chat.id);
   const upiId = await settingsRepo.getSetting(pool, 'paytm_upi_id');
-  const timeLimit = await settingsRepo.getSetting(pool, 'paytm_time_limit') || 600;
+  const timeLimitRaw = await settingsRepo.getSetting(pool, 'paytm_time_limit');
+  const timeLimit = (timeLimitRaw === 0 || timeLimitRaw === '0') ? 0 : (parseInt(timeLimitRaw) || 600);
   const payeeName = await settingsRepo.getSetting(pool, 'paytm_payee_name') || 'Paytm Merchant';
   const paytmQr = await settingsRepo.getSetting(pool, 'paytm_qr_code') || '';
 
@@ -122,7 +164,7 @@ async function handlePaytmAmount(ctx) {
   const { upiLink, txnRef } = paytmService.generatePaymentQR(upiId, amount, orderId, payeeName, paytmQr);
 
   await walletRepo.ensureWallet(pool, ctx.from.id);
-  const expiresAt = new Date(Date.now() + timeLimit * 1000);
+  const expiresAt = timeLimit > 0 ? new Date(Date.now() + timeLimit * 1000) : null;
   await transactionRepo.createTransaction(pool, {
     userId: ctx.from.id, gateway: 'paytm', orderId, amount,
     gatewayData: { txnRef, upiId },
@@ -131,7 +173,7 @@ async function handlePaytmAmount(ctx) {
 
 
 
-  const minutes = Math.floor(timeLimit / 60);
+  const minutes = timeLimit > 0 ? Math.floor(timeLimit / 60) : 0;
   const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTPBOT';
 
   // Generate branded QR image
@@ -146,15 +188,16 @@ async function handlePaytmAmount(ctx) {
 
   const displayName = await settingsRepo.getSetting(pool, 'paytm_display_name') || 'Pay via Automatic Gateway';
   
+  const timeText = timeLimit > 0 ? `⏰ Expires in <b>${minutes} minutes</b>` : '⏰ <b>No time limit</b>';
   const caption =
     `💳 <b>${escapeHtml(displayName)}</b>\n\n` +
     `🏪 <b>${escapeHtml(botName)}</b>\n` +
     `💰 <b>Amount:</b> ₹${amount.toFixed(2)}\n` +
     `📋 <b>Order:</b> <code>${orderId}</code>\n` +
     `💎 <b>Ref:</b> <code>${txnRef}</code>\n\n` +
-    `⏰ Expires in <b>${minutes} minutes</b>\n\n` +
+    `${timeText}\n\n` +
     `Scan the QR code with any UPI app.\n` +
-    `<i>Order ID will appear in your bank statement.</i>`;
+    `<i>Ref will appear in your bank statement.</i>`;
 
   const kb = new InlineKeyboard()
     .text('🔄 Check Payment', `deposit:check:${orderId}`).row()
@@ -229,10 +272,11 @@ async function _doPaytmCheck(ctx, pool, orderId) {
     return;
   }
 
-  // Check time limit
-  const timeLimit = await settingsRepo.getSetting(pool, 'paytm_time_limit') || 600;
+  // Check time limit (0 = no limit)
+  const timeLimitRaw = await settingsRepo.getSetting(pool, 'paytm_time_limit');
+  const timeLimit = (timeLimitRaw === 0 || timeLimitRaw === '0') ? 0 : (parseInt(timeLimitRaw) || 600);
   const elapsed = (Date.now() - new Date(txn.created_at).getTime()) / 1000;
-  if (elapsed > timeLimit) {
+  if (timeLimit > 0 && elapsed > timeLimit) {
     await transactionRepo.updateStatus(pool, orderId, 'expired');
     try { await ctx.deleteMessage(); } catch { /* ignore */ }
 

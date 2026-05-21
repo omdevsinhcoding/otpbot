@@ -70,7 +70,7 @@ async function showPaytmSettings(ctx) {
     `🔑 <b>MID:</b> ${merchantKey ? `<code>${escapeHtml(String(merchantKey))}</code>` : '❌ Not set'}\n` +
     `📱 <b>QR Code ID:</b> ${paytmQrCode ? `<code>${escapeHtml(String(paytmQrCode))}</code>` : '❌ Not set — Google Pay will decline!'}\n` +
     `👤 <b>Payee Name:</b> ${payeeName || 'Paytm Merchant'}\n` +
-    `⏱ <b>Time Limit:</b> ${timeLimit || 600}s\n` +
+    `⏱ <b>Time Limit:</b> ${(!timeLimit || timeLimit === '0' || timeLimit === 0) ? '♾️ No Limit' : timeLimit + 's'}\n` +
     `💰 <b>Min Amount:</b> ₹${minAmount || 10}\n` +
     `📈 <b>Max Amount:</b> ${maxAmount ? '₹' + maxAmount : 'No Limit'}`;
 
@@ -86,7 +86,10 @@ async function showPaytmSettings(ctx) {
   if (paytmQrCode) kb.text('🗑 Clear QR', 'pay:paytm:clear:paytm_qr_code');
   kb.row()
     .text('👤 Payee Name', 'pay:paytm:edit:paytm_payee_name').row()
-    .text('⏱ Time Limit', 'pay:paytm:edit:paytm_time_limit').row()
+    .text('⏱ Time Limit', 'pay:paytm:edit:paytm_time_limit');
+  const timeLimitVal = parseInt(timeLimit) || 0;
+  if (timeLimitVal > 0) kb.text('♾️ No Limit', 'pay:paytm:nolimit_time');
+  kb.row()
     .text('💰 Min Amount', 'pay:paytm:edit:paytm_min_amount').row()
     .text('📈 Max Amount', 'pay:paytm:edit:paytm_max_amount');
   if (maxAmount) kb.text('🚫 No Limit', 'pay:paytm:nolimit:paytm_max_amount');
@@ -95,6 +98,14 @@ async function showPaytmSettings(ctx) {
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
 }
+
+composer.callbackQuery('pay:paytm:nolimit_time', adminRequired, async (ctx) => {
+  const pool = ctx.dbPool;
+  await settingsRepo.setSetting(pool, 'paytm_time_limit', 0, ctx.from.id);
+  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key: 'paytm_time_limit', value: 'No Limit' });
+  await ctx.answerCallbackQuery('✅ Time Limit set to No Limit!');
+  await showPaytmSettings(ctx);
+});
 
 composer.callbackQuery('pay:paytm:toggle', adminRequired, async (ctx) => {
   await ctx.answerCallbackQuery();
