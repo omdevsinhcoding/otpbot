@@ -4,6 +4,7 @@ import * as settingsRepo from '../database/repositories/settingsRepo.js';
 import { ActionType } from '../utils/constants.js';
 import { escapeHtml } from '../utils/formatters.js';
 import logger from '../utils/logger.js';
+import * as cryptomusService from '../services/cryptomusService.js';
 
 const composer = new Composer();
 const editStates = new Map(); // chatId → { step, key, gateway }
@@ -214,19 +215,25 @@ composer.callbackQuery('pay:cryptomus', adminRequired, async (ctx) => {
 
 async function showCryptomusSettings(ctx) {
   const pool = ctx.dbPool;
-  const [enabled, apiKey, merchantId, minAmount, maxAmount] = await Promise.all([
+  const [enabled, apiKey, merchantId, minAmount, maxAmount, selectedCurrenciesRaw] = await Promise.all([
     settingsRepo.getSetting(pool, 'cryptomus_enabled'),
     settingsRepo.getSetting(pool, 'cryptomus_api_key'),
     settingsRepo.getSetting(pool, 'cryptomus_merchant_id'),
     settingsRepo.getSetting(pool, 'cryptomus_min_amount'),
     settingsRepo.getSetting(pool, 'cryptomus_max_amount'),
+    settingsRepo.getSetting(pool, 'cryptomus_currencies'),
   ]);
 
+  let selectedList = [];
+  try { selectedList = JSON.parse(selectedCurrenciesRaw || '[]'); } catch { selectedList = []; }
+  const currDisplay = selectedList.length > 0 ? selectedList.map(c => `${c.currency} (${c.network})`).join(', ') : 'None selected';
+
   const text =
-    `₿ <b>Cryptomus Settings</b>\n\n` +
+    `🪙 <b>Cryptomus Settings</b>\n\n` +
     `📊 <b>Status:</b> ${enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
     `🔑 <b>API Key:</b> ${apiKey ? '✅ Set' : '❌ Not set'}\n` +
     `🏪 <b>Merchant ID:</b> ${merchantId ? '✅ Set' : '❌ Not set'}\n` +
+    `🪙 <b>Currencies:</b> ${currDisplay}\n` +
     `💰 <b>Min Amount:</b> ₹${minAmount || 10}\n` +
     `📈 <b>Max Amount:</b> ₹${maxAmount || 10000}`;
 
@@ -237,8 +244,9 @@ async function showCryptomusSettings(ctx) {
   kb.row()
     .text('🏪 Set Merchant ID', 'pay:cryptomus:edit:cryptomus_merchant_id');
   if (merchantId) kb.text('🗑 Clear', 'pay:cryptomus:clear:cryptomus_merchant_id');
-  kb.row()
-    .text('💰 Min Amount', 'pay:cryptomus:edit:cryptomus_min_amount');
+  kb.row();
+  if (apiKey && merchantId) kb.text('🪙 Select Currencies', 'pay:cryptomus:currencies').row();
+  kb.text('💰 Min Amount', 'pay:cryptomus:edit:cryptomus_min_amount');
   if (minAmount) kb.text('🗑 Clear', 'pay:cryptomus:clear:cryptomus_min_amount');
   kb.row()
     .text('📈 Max Amount', 'pay:cryptomus:edit:cryptomus_max_amount');
@@ -256,6 +264,92 @@ composer.callbackQuery('pay:cryptomus:toggle', adminRequired, async (ctx) => {
   await settingsRepo.setSetting(pool, 'cryptomus_enabled', !current, ctx.from.id);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key: 'cryptomus_enabled', value: !current });
   await showCryptomusSettings(ctx);
+});
+
+// ── Cryptomus: Select Currencies ─────────────────────────────
+composer.callbackQuery('pay:cryptomus:currencies', adminRequired, async (ctx) => {
+  await ctx.answerCallbackQuery('🔄 Fetching currencies...');
+  const pool = ctx.dbPool;
+  const apiKey = await settingsRepo.getSetting(pool, 'cryptomus_api_key');
+  const merchantId = await settingsRepo.getSetting(pool, 'cryptomus_merchant_id');
+
+  const services = await cryptomusService.listServices(apiKey, merchantId);
+  if (services.length === 0) {
+    await ctx.editMessageText('⚠️ Could not fetch currencies from Cryptomus. Check API Key & Merchant ID.', {
+      reply_markup: new InlineKeyboard().text('‹ Back', 'pay:cryptomus'),
+    });
+    return;
+  }
+
+  let selectedList = [];
+  try {
+    const raw = await settingsRepo.getSetting(pool, 'cryptomus_currencies');
+    selectedList = JSON.parse(raw || '[]');
+  } catch { selectedList = []; }
+
+  const isSelected = (currency, network) => selectedList.some(s => s.currency === currency && s.network === network);
+
+  const kb = new InlineKeyboard();
+  const seen = new Set();
+  for (const svc of services) {
+    const key = `${svc.currency}_${svc.network}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const selected = isSelected(svc.currency, svc.network);
+    const label = `${selected ? '✅' : '⬜'} ${svc.currency} (${svc.network})`;
+    kb.text(label, `pay:cryptomus:toggle_cur:${svc.currency}:${svc.network}`).row();
+  }
+  kb.text('💾 Save & Back', 'pay:cryptomus');
+
+  await ctx.editMessageText('🪙 <b>Select Currencies</b>\n\nToggle which currencies users can pay with:', {
+    parse_mode: 'HTML', reply_markup: kb,
+  });
+});
+
+// ── Cryptomus: Toggle a currency on/off ─────────────────────
+composer.callbackQuery(/^pay:cryptomus:toggle_cur:/, adminRequired, async (ctx) => {
+  const parts = ctx.callbackQuery.data.split(':');
+  const currency = parts[3];
+  const network = parts[4];
+  const pool = ctx.dbPool;
+
+  let selectedList = [];
+  try {
+    const raw = await settingsRepo.getSetting(pool, 'cryptomus_currencies');
+    selectedList = JSON.parse(raw || '[]');
+  } catch { selectedList = []; }
+
+  const idx = selectedList.findIndex(s => s.currency === currency && s.network === network);
+  if (idx >= 0) {
+    selectedList.splice(idx, 1);
+  } else {
+    selectedList.push({ currency, network });
+  }
+
+  await settingsRepo.setSetting(pool, 'cryptomus_currencies', JSON.stringify(selectedList), ctx.from.id);
+  await ctx.answerCallbackQuery(`${idx >= 0 ? '❌ Removed' : '✅ Added'} ${currency} (${network})`);
+
+  // Re-show currency list
+  const apiKey = await settingsRepo.getSetting(pool, 'cryptomus_api_key');
+  const merchantId = await settingsRepo.getSetting(pool, 'cryptomus_merchant_id');
+  const services = await cryptomusService.listServices(apiKey, merchantId);
+
+  const isSelected = (c, n) => selectedList.some(s => s.currency === c && s.network === n);
+  const kb = new InlineKeyboard();
+  const seen = new Set();
+  for (const svc of services) {
+    const key = `${svc.currency}_${svc.network}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const selected = isSelected(svc.currency, svc.network);
+    const label = `${selected ? '✅' : '⬜'} ${svc.currency} (${svc.network})`;
+    kb.text(label, `pay:cryptomus:toggle_cur:${svc.currency}:${svc.network}`).row();
+  }
+  kb.text('💾 Save & Back', 'pay:cryptomus');
+
+  await ctx.editMessageText('🪙 <b>Select Currencies</b>\n\nToggle which currencies users can pay with:', {
+    parse_mode: 'HTML', reply_markup: kb,
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════

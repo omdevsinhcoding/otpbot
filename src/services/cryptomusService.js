@@ -10,21 +10,54 @@ function makeSign(apiKey, data) {
 }
 
 /**
- * Create a Cryptomus invoice
- * @param {string} apiKey - Cryptomus API key
- * @param {string} merchantId - Cryptomus merchant ID
- * @param {{ amount: number, currency?: string, orderId: string, callbackUrl?: string }} params
- * @returns {Promise<{ success: boolean, paymentUrl?: string, uuid?: string, error?: string }>}
+ * List available payment services (currencies + networks)
+ * @param {string} apiKey
+ * @param {string} merchantId
+ * @returns {Promise<Array<{ currency: string, network: string, is_available: boolean, commission: object, limit: object }>>}
  */
-export async function createInvoice(apiKey, merchantId, { amount, currency = 'USD', orderId, callbackUrl }) {
+export async function listServices(apiKey, merchantId) {
+  try {
+    const data = {};
+    const sign = makeSign(apiKey, data);
+    const response = await fetch(`${CRYPTOMUS_API}/payment/services`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'merchant': merchantId,
+        'sign': sign,
+      },
+      body: JSON.stringify(data),
+    });
+    const result = await response.json();
+    if (result.result && Array.isArray(result.result)) {
+      return result.result.filter(s => s.is_available);
+    }
+    logger.error(`Cryptomus listServices error: ${result.message || 'Unknown'}`);
+    return [];
+  } catch (err) {
+    logger.error(`Cryptomus listServices failed: ${err.message}`);
+    return [];
+  }
+}
+
+/**
+ * Create a Cryptomus invoice with specific currency + network (gets direct address)
+ * @param {string} apiKey
+ * @param {string} merchantId
+ * @param {{ amount: number, currency?: string, toCurrency: string, network: string, orderId: string, lifetime?: number }} params
+ * @returns {Promise<{ success: boolean, paymentUrl?: string, uuid?: string, address?: string, payAmount?: string, payCurrency?: string, error?: string }>}
+ */
+export async function createInvoice(apiKey, merchantId, { amount, currency = 'INR', toCurrency, network, orderId, lifetime = 3600 }) {
   try {
     const data = {
       amount: String(amount),
       currency,
       order_id: orderId,
-      lifetime: 3600,
+      lifetime,
+      is_payment_multiple: false,
     };
-    if (callbackUrl) data.url_callback = callbackUrl;
+    if (toCurrency) data.to_currency = toCurrency;
+    if (network) data.network = network;
 
     const sign = makeSign(apiKey, data);
     const response = await fetch(`${CRYPTOMUS_API}/payment`, {
@@ -38,7 +71,16 @@ export async function createInvoice(apiKey, merchantId, { amount, currency = 'US
     });
     const result = await response.json();
     if (result.result) {
-      return { success: true, paymentUrl: result.result.url, uuid: result.result.uuid };
+      const r = result.result;
+      return {
+        success: true,
+        paymentUrl: r.url,
+        uuid: r.uuid,
+        address: r.address || null,
+        payAmount: r.payer_amount || r.payment_amount || r.amount,
+        payCurrency: r.payer_currency || r.currency,
+        network: r.network || network,
+      };
     }
     return { success: false, error: result.message || 'Unknown error' };
   } catch (err) {
@@ -49,8 +91,8 @@ export async function createInvoice(apiKey, merchantId, { amount, currency = 'US
 
 /**
  * Check Cryptomus payment status
- * @param {string} apiKey - Cryptomus API key
- * @param {string} merchantId - Cryptomus merchant ID
+ * @param {string} apiKey
+ * @param {string} merchantId
  * @param {string} uuid - Payment UUID from createInvoice
  * @returns {Promise<{ success: boolean, status: string, amount: number|null }>}
  */

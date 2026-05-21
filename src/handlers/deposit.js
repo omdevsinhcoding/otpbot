@@ -611,36 +611,108 @@ async function handleBharatpayUTR(ctx) {
 composer.callbackQuery('deposit:cryptomus', async (ctx) => {
   await ctx.answerCallbackQuery();
   const pool = ctx.dbPool;
-  const minAmount = await settingsRepo.getSetting(pool, 'cryptomus_min_amount') || 1;
-  const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_max_amount')) || 0;
 
-  const kb = new InlineKeyboard().text('❌ Cancel', 'deposit:cancel_state');
-  await safeReply(ctx,
-    `₿ <b>Cryptomus Deposit</b>\n\n` +
-    `Enter the amount in <b>USD</b>.\n` +
-    `<b>Minimum:</b> $${minAmount}` +
-    (maxAmount ? `  |  <b>Maximum:</b> $${maxAmount}` : ''),
-    { parse_mode: 'HTML', reply_markup: kb }
-  );
-  userStates.set(ctx.chat.id, { step: 'cryptomus_amount' });
+  // Fetch admin-selected currencies
+  let selectedCurrencies = [];
+  try {
+    const raw = await settingsRepo.getSetting(pool, 'cryptomus_currencies');
+    selectedCurrencies = JSON.parse(raw || '[]');
+  } catch { selectedCurrencies = []; }
+
+  if (selectedCurrencies.length === 0) {
+    await safeReply(ctx, '⚠️ No crypto currencies configured. Contact admin.', { parse_mode: 'HTML' });
+    return;
+  }
+
+  let text =
+    `🪙 <b>Crypto Deposit</b>\n\n` +
+    `Select your payment currency:\n\n` +
+    `👇 <b>Choose one below</b>`;
+
+  const kb = new InlineKeyboard();
+  for (const cur of selectedCurrencies) {
+    const icon = cur.currency === 'USDT' ? '💵' : cur.currency === 'TRX' ? '⚡' : cur.currency === 'BTC' ? '🟠' : cur.currency === 'ETH' ? '🔷' : '🪙';
+    kb.text(`${icon} ${cur.currency} (${cur.network})`, `deposit:crypto_cur:${cur.currency}:${cur.network}`).row();
+  }
+  kb.text('‹ Back', 'deposit:menu').text('❌ Cancel', 'deposit:close');
+
+  await safeReply(ctx, text, { parse_mode: 'HTML', reply_markup: kb });
 });
 
-async function handleCryptomusAmount(ctx) {
+// ── Crypto: currency selected → show amount buttons ─────────────
+composer.callbackQuery(/^deposit:crypto_cur:/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const parts = ctx.callbackQuery.data.split(':');
+  const currency = parts[2];
+  const network = parts[3];
   const pool = ctx.dbPool;
-  const amount = parseFloat(ctx.message.text.trim());
-  const minAmount = await settingsRepo.getSetting(pool, 'cryptomus_min_amount') || 1;
+  const minAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_min_amount')) || 10;
+  const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_max_amount')) || 0;
+
+  let text =
+    `🪙 <b>${currency} (${network})</b>\n\n` +
+    `💰 <b>Select Deposit Amount (INR)</b>\n\n` +
+    `📌 <b>Min:</b> ₹${minAmount}` +
+    (maxAmount ? `  •  <b>Max:</b> ₹${maxAmount}` : '') + `\n\n` +
+    `👇 <b>Choose an amount or enter custom</b>`;
+
+  const presets = [100, 300, 500, 1000, 2000, 5000, 10000].filter(a => a >= minAmount && (!maxAmount || a <= maxAmount));
+  const kb = new InlineKeyboard();
+  for (let i = 0; i < presets.length; i += 2) {
+    kb.text(`₹${presets[i]}`, `deposit:crypto_amt:${currency}:${network}:${presets[i]}`);
+    if (presets[i + 1]) kb.text(`₹${presets[i + 1]}`, `deposit:crypto_amt:${currency}:${network}:${presets[i + 1]}`);
+    kb.row();
+  }
+  kb.text('💲 Custom Amount', `deposit:crypto_custom:${currency}:${network}`).row();
+  kb.text('‹ Back', 'deposit:cryptomus').text('❌ Cancel', 'deposit:close');
+
+  await safeReply(ctx, text, { parse_mode: 'HTML', reply_markup: kb });
+});
+
+// ── Crypto: preset amount clicked ───────────────────────────────
+composer.callbackQuery(/^deposit:crypto_amt:/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const parts = ctx.callbackQuery.data.split(':');
+  const currency = parts[2];
+  const network = parts[3];
+  const amount = parseFloat(parts[4]);
+  await handleCryptomusDeposit(ctx, currency, network, amount);
+});
+
+// ── Crypto: custom amount requested ─────────────────────────────
+composer.callbackQuery(/^deposit:crypto_custom:/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const parts = ctx.callbackQuery.data.split(':');
+  const currency = parts[2];
+  const network = parts[3];
+  const pool = ctx.dbPool;
+  const minAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_min_amount')) || 10;
+  const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_max_amount')) || 0;
+
+  await safeReply(ctx,
+    `💲 <b>Enter Custom Amount (INR)</b>\n\n` +
+    `Paying via <b>${currency} (${network})</b>\n\n` +
+    `<b>Example:</b> <code>100</code> , <code>500</code> , <code>1000</code>\n\n` +
+    `📌 <b>Min:</b> ₹${minAmount}` +
+    (maxAmount ? `  •  <b>Max:</b> ₹${maxAmount}` : '') + `\n\n` +
+    `✅ Type the amount below:`,
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('‹ Back', `deposit:crypto_cur:${currency}:${network}`).text('❌ Cancel', 'deposit:cancel_state') }
+  );
+  userStates.set(ctx.chat.id, { step: 'cryptomus_amount', currency, network });
+});
+
+// ── Crypto: process deposit — create invoice + show QR ──────────
+async function handleCryptomusDeposit(ctx, currency, network, amount) {
+  const pool = ctx.dbPool;
+  const minAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_min_amount')) || 10;
   const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_max_amount')) || 0;
 
   if (isNaN(amount) || amount < minAmount) {
-    await ctx.reply(`⚠️ Minimum is $${minAmount}.`, {
-      reply_markup: new InlineKeyboard().text('❌ Cancel', 'deposit:cancel_state')
-    });
+    await ctx.reply(`⚠️ Minimum deposit is ₹${minAmount}.`);
     return;
   }
   if (maxAmount > 0 && amount > maxAmount) {
-    await ctx.reply(`⚠️ Maximum is $${maxAmount}.`, {
-      reply_markup: new InlineKeyboard().text('❌ Cancel', 'deposit:cancel_state')
-    });
+    await ctx.reply(`⚠️ Maximum deposit is ₹${maxAmount}.`);
     return;
   }
 
@@ -653,9 +725,12 @@ async function handleCryptomusAmount(ctx) {
     return;
   }
 
-  const orderId = `CRYPTO_${ctx.from.id}_${Date.now()}`;
+  const orderId = `CX-${Date.now().toString().slice(-8)}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
   await walletRepo.ensureWallet(pool, ctx.from.id);
-  const result = await cryptomusService.createInvoice(apiKey, merchantId, { amount, currency: 'USD', orderId });
+
+  const result = await cryptomusService.createInvoice(apiKey, merchantId, {
+    amount, currency: 'INR', toCurrency: currency, network, orderId,
+  });
 
   if (!result.success) {
     await ctx.reply(`⚠️ Failed to create invoice: ${result.error}`);
@@ -664,25 +739,110 @@ async function handleCryptomusAmount(ctx) {
 
   await transactionRepo.createTransaction(pool, {
     userId: ctx.from.id, gateway: 'cryptomus', orderId, amount,
-    gatewayData: { uuid: result.uuid, paymentUrl: result.paymentUrl },
+    gatewayData: { uuid: result.uuid, paymentUrl: result.paymentUrl, address: result.address, payAmount: result.payAmount, payCurrency: result.payCurrency, network: result.network },
   });
 
+  const caption =
+    `🪙 <b>Crypto Payment</b>\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━━\n` +
+    `💰 <b>Amount:</b> ₹${amount.toFixed(2)}\n` +
+    `🪙 <b>Pay:</b> ${result.payAmount} ${result.payCurrency}\n` +
+    `🔗 <b>Network:</b> ${result.network || network}\n` +
+    `📋 <b>Order:</b> <code>${orderId}</code>\n` +
+    `━━━━━━━━━━━━━━━━━━━━━\n\n` +
+    (result.address ? `📮 <b>Address:</b>\n<code>${result.address}</code>\n\n` : '') +
+    `⚠️ <b>Send exact amount to the address above.</b>\n` +
+    `⏰ Payment expires in <b>60 minutes</b>`;
 
-
-  const kb = new InlineKeyboard()
-    .url('🔗 Pay Now', result.paymentUrl).row()
-    .text('✅ Check Payment', `deposit:check_crypto:${orderId}`).row()
+  const kb = new InlineKeyboard();
+  if (result.paymentUrl) kb.url('🌐 Pay via Web', result.paymentUrl).row();
+  kb.text('✅ Check Payment', `deposit:check_crypto:${orderId}`).row()
     .text('❌ Cancel', `deposit:cancel_txn:${orderId}`);
 
-  await ctx.reply(
-    `₿ <b>Cryptomus Payment</b>\n\n💰 <b>Amount:</b> $${amount}\n📋 <b>Order:</b> <code>${orderId}</code>\n\nClick below to pay. All currencies accepted.`,
-    { parse_mode: 'HTML', reply_markup: kb }
-  );
+  if (result.address) {
+    // Generate QR with crypto address
+    const qrImageBuffer = await generateBrandedQR({
+      storeName: `${currency} (${network})`,
+      amount: result.payAmount,
+      currency: result.payCurrency,
+      refId: orderId,
+      upiLink: result.address,
+      developer: '@Erroroo',
+    });
+
+    const sentMsg = await ctx.replyWithPhoto(new InputFile(qrImageBuffer, 'crypto_qr.png'), {
+      caption, parse_mode: 'HTML', reply_markup: kb,
+    });
+
+    const photoFileId = sentMsg.photo?.[sentMsg.photo.length - 1]?.file_id;
+    if (photoFileId) {
+      await transactionRepo.updateGatewayData(pool, orderId, {
+        uuid: result.uuid, address: result.address, photoFileId, qrMsgId: sentMsg.message_id,
+      });
+    }
+  } else {
+    // No address returned — show text-only with web link
+    await ctx.reply(caption, { parse_mode: 'HTML', reply_markup: kb });
+  }
 }
 
 // ── Cryptomus: check payment ────────────────────────────────────
+composer.callbackQuery(/^deposit:check_crypto:CX-/, async (ctx) => {
+  const orderId = ctx.callbackQuery.data.replace('deposit:check_crypto:', '');
+  const chatId = ctx.chat.id;
+  const pool = ctx.dbPool;
+
+  // Rate limit
+  const lastCheck = checkCooldowns.get(chatId);
+  if (lastCheck && Date.now() - lastCheck < COOLDOWN_MS) {
+    const waitSec = Math.ceil((COOLDOWN_MS - (Date.now() - lastCheck)) / 1000);
+    await ctx.answerCallbackQuery({ text: `⏳ Wait ${waitSec}s`, show_alert: false });
+    return;
+  }
+  if (activeChecks.has(chatId)) {
+    await ctx.answerCallbackQuery({ text: '🔄 Already checking...', show_alert: false });
+    return;
+  }
+
+  await ctx.answerCallbackQuery('🔍 Checking...');
+  activeChecks.add(chatId);
+  checkCooldowns.set(chatId, Date.now());
+
+  try {
+    const txn = await transactionRepo.getByOrderId(pool, orderId);
+    if (!txn) { await ctx.reply('⚠️ Order not found.'); return; }
+    if (txn.status === 'success') { await ctx.answerCallbackQuery('✅ Already verified!'); return; }
+
+    const apiKey = await settingsRepo.getSetting(pool, 'cryptomus_api_key');
+    const merchantId = await settingsRepo.getSetting(pool, 'cryptomus_merchant_id');
+    const uuid = txn.gateway_data?.uuid;
+    if (!apiKey || !merchantId || !uuid) { await ctx.reply('⚠️ Config error.'); return; }
+
+    const result = await cryptomusService.checkPayment(apiKey, merchantId, uuid);
+
+    if (result.success) {
+      const creditAmount = parseFloat(txn.amount);
+      await transactionRepo.updateStatus(pool, orderId, 'success', uuid, { cryptomus_status: result.status });
+      await walletRepo.addBalance(pool, ctx.from.id, creditAmount);
+      try { await ctx.deleteMessage(); } catch { /* ignore */ }
+      const newBalance = await walletRepo.getBalance(pool, ctx.from.id);
+      await ctx.reply(
+        `✅ <b>Crypto Payment Successful!</b>\n\n` +
+        `💰 <b>Credited:</b> ₹${creditAmount.toFixed(2)}\n` +
+        `💳 <b>New Balance:</b> ₹${formatNumber(newBalance)}\n\n` +
+        `🎉 Thank you!`,
+        { parse_mode: 'HTML' }
+      );
+    } else {
+      await ctx.answerCallbackQuery({ text: `⏳ Status: ${result.status}. Try again later.`, show_alert: true });
+    }
+  } finally {
+    activeChecks.delete(chatId);
+  }
+});
+
+// ── Backward compat: old CRYPTO_ order check ────────────────────
 composer.callbackQuery(/^deposit:check_crypto:CRYPTO_/, async (ctx) => {
-  await ctx.answerCallbackQuery('🔍 Checking…');
   const orderId = ctx.callbackQuery.data.replace('deposit:check_crypto:', '');
   const pool = ctx.dbPool;
 
@@ -700,14 +860,13 @@ composer.callbackQuery(/^deposit:check_crypto:CRYPTO_/, async (ctx) => {
   const result = await cryptomusService.checkPayment(apiKey, merchantId, uuid);
 
   if (result.success) {
-    const creditAmount = result.amount || parseFloat(txn.amount);
+    const creditAmount = parseFloat(txn.amount);
     await transactionRepo.updateStatus(pool, orderId, 'success', uuid, result);
     await walletRepo.addBalance(pool, ctx.from.id, creditAmount);
-
     try { await ctx.deleteMessage(); } catch { /* ignore */ }
     const newBalance = await walletRepo.getBalance(pool, ctx.from.id);
     await ctx.reply(
-      `✅ <b>Crypto Payment Successful!</b>\n\n💰 <b>Amount:</b> $${creditAmount}\n💳 <b>New Balance:</b> ₹${formatNumber(newBalance)}\n\n🎉`,
+      `✅ <b>Crypto Payment Successful!</b>\n\n💰 <b>Credited:</b> ₹${creditAmount.toFixed(2)}\n💳 <b>New Balance:</b> ₹${formatNumber(newBalance)}\n\n🎉`,
       { parse_mode: 'HTML' }
     );
   } else {
@@ -781,7 +940,7 @@ composer.on('message:text', async (ctx, next) => {
   switch (state.step) {
     case 'paytm_amount': return handlePaytmAmount(ctx);
     case 'bharatpay_utr': return handleBharatpayUTR(ctx);
-    case 'cryptomus_amount': return handleCryptomusAmount(ctx);
+    case 'cryptomus_amount': return handleCryptomusDeposit(ctx, state.currency, state.network, parseFloat(ctx.message.text.trim()));
     default: return next();
   }
 });
