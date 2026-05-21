@@ -1,39 +1,42 @@
 /**
  * Paytm UPI Payment Service
- * Mirrors Python DreamX bot upi.py EXACTLY — zero logging.
+ * Mirrors PHP get.php EXACTLY — this is what works with Google Pay.
+ *
+ * PHP format:
+ *   $rnd = mt_rand(10000000, 9999999999999999);
+ *   upi://pay?pa={vpa}&pn=Paytm%20Merchant&paytmqr={qr}&tr={$rnd}&am={amount}&cu=INR
+ *   NO &tn= parameter
  */
 
 /**
  * Generate UPI payment link + txn ref.
- *
- * Python DreamX upi.py param order:
- *   upi://pay?pa={vpa}&pn={payee}[&paytmqr={qr}]&tr={txn_ref}&tn={note}&am={amount}&cu=INR
+ * Matches PHP get.php exactly.
  */
 export function generatePaymentQR(upiId, amount, orderId, payeeName = 'Paytm Merchant', paytmQr = '', existingTxnRef = null) {
   let txnRef;
   if (existingTxnRef) {
     txnRef = existingTxnRef;
   } else {
-    const timestamp = Math.floor(Date.now() / 1000);
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let randomStr = '';
-    for (let i = 0; i < 8; i++) randomStr += chars[Math.floor(Math.random() * chars.length)];
-    txnRef = `TXN_${timestamp}_${randomStr}`;
+    // Mirrors PHP: mt_rand(10000000, 9999999999999999) — NUMERIC ONLY
+    txnRef = String(Math.floor(10000000 + Math.random() * 9999989999999999));
   }
 
-  // Mirrors Python DreamX upi.py EXACTLY — same param order
-  // Python: f"upi://pay?pa={vpa}&pn={payee}&tr={txn_ref_id}&tn={note}&am={amount:.2f}&cu=INR"
-  // tn= uses orderId so it shows in bank statement for manual verification
-  let upiLink = `upi://pay?pa=${upiId}&pn=${payeeName}`;
+  // Mirrors PHP EXACTLY:
+  //   upi://pay?pa={vpa}&pn=Paytm%20Merchant&paytmqr={qr}&tr={$rnd}&am={amount}&cu=INR
+  //   - pn is URL-encoded (spaces → %20)
+  //   - NO &tn= parameter
+  //   - tr is numeric only
+  const encodedPayee = encodeURIComponent(payeeName);
+  let upiLink = `upi://pay?pa=${upiId}&pn=${encodedPayee}`;
   if (paytmQr) upiLink += `&paytmqr=${paytmQr}`;
-  upiLink += `&tr=${txnRef}&tn=${orderId}&am=${amount.toFixed(2)}&cu=INR`;
+  upiLink += `&tr=${txnRef}&am=${amount.toFixed(2)}&cu=INR`;
 
   return { upiLink, txnRef };
 }
 
 /**
  * Check payment status via Paytm GET API.
- * Mirrors Python DreamX verifier.py: GET /order/status?JsonData={"MID":..,"ORDERID":..}
+ * GET /order/status?JsonData={"MID":"...","ORDERID":"..."}
  */
 export async function checkPaymentStatus(mid, orderId, expectedAmount = 0) {
   if (!mid || !/^[A-Za-z0-9]+$/.test(mid)) {
