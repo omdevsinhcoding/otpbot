@@ -57,6 +57,9 @@ export async function checkPaymentStatus(mid, orderId) {
 
     const jsonBody = JSON.stringify(payload);
 
+    logger.info(`[PAYTM DEBUG] Request → POST /merchant-status/getTxnStatus`);
+    logger.info(`[PAYTM DEBUG] Body: ${jsonBody}`);
+
     // POST to /merchant-status/getTxnStatus — mirrors PHP check.php exactly
     const response = await fetch('https://securegw.paytm.in/merchant-status/getTxnStatus', {
       method: 'POST',
@@ -65,7 +68,7 @@ export async function checkPaymentStatus(mid, orderId) {
     });
     const result = await response.json();
 
-    logger.debug(`Paytm status for ${orderId}: STATUS=${result.STATUS}, TXNAMOUNT=${result.TXNAMOUNT}`);
+    logger.info(`[PAYTM DEBUG] Response: ${JSON.stringify(result)}`);
 
     const status = result.STATUS || 'UNKNOWN';
     const responseAmount = parseFloat(result.TXNAMOUNT) || 0;
