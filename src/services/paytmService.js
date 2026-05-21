@@ -28,11 +28,10 @@ export function generatePaymentQR(upiId, amount, orderId, payeeName = 'Paytm Mer
     txnRef = `TXN_${timestamp}_${randomStr}`;
   }
 
-  // Mirrors Python: f"upi://pay?pa={vpa}&pn={payee}&am={amount}&cu={currency}&tn={note}&tr={txn_ref}"
-  const encodedPayee = payeeName.replace(/ /g, '%20');
-  let upiLink = `upi://pay?pa=${upiId}&pn=${encodedPayee}`;
-  if (paytmQr) upiLink += `&paytmqr=${paytmQr}`;
-  upiLink += `&am=${amount.toFixed(2)}&cu=INR&tn=Deposit&tr=${txnRef}`;
+  // Mirrors Python EXACTLY: f"upi://pay?pa={vpa}&pn={payee}&am={amount}&cu={currency}&tn={note}&tr={txn_ref}"
+  // Python does NOT encode spaces or any params — raw string
+  let upiLink = `upi://pay?pa=${upiId}&pn=${payeeName}&am=${amount.toFixed(2)}&cu=INR&tn=Deposit&tr=${txnRef}`;
+  if (paytmQr) upiLink = `upi://pay?pa=${upiId}&pn=${payeeName}&paytmqr=${paytmQr}&am=${amount.toFixed(2)}&cu=INR&tn=Deposit&tr=${txnRef}`;
 
   logger.info(`[PAYTM] UPI link generated: tr=${txnRef}, amount=${amount.toFixed(2)}, pa=${upiId}`);
 
