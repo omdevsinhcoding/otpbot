@@ -310,44 +310,31 @@ composer.callbackQuery('profile:deposit_history', async (ctx) => {
      WHERE user_id = $1 AND status = 'success' ORDER BY created_at DESC LIMIT 20`, [ctx.from.id]
   );
   if (rows.length === 0) {
-    await ctx.reply(
-      '╔══════════════════════╗\n' +
-      '      📭 <b>No Deposits Yet</b>\n' +
-      '╚══════════════════════╝\n\n' +
-      'Tap 💰 <b>DEPOSIT</b> to add funds.',
-      { parse_mode: 'HTML' }
-    );
+    await ctx.reply('📭 No deposit history found.', { parse_mode: 'HTML' });
     return;
   }
 
   const total = rows.reduce((s, r) => s + parseFloat(r.amount), 0);
-  const gw = (g) => g === 'paytm' ? '🔵 Paytm' : g === 'bharatpay' ? '🟢 BharatPe' : g === 'cryptomus' ? '🟡 Crypto' : g;
 
-  let text = '╔══════════════════════╗\n';
-  text += '   💎 <b>DEPOSIT HISTORY</b>\n';
-  text += '╚══════════════════════╝\n\n';
-  text += `  💰 Total: <b>₹${total.toFixed(2)}</b>    📊 Count: <b>${rows.length}</b>\n\n`;
+  let text = `💰 <b>Deposit History</b>\n`;
+  text += `💲 <b>Total Deposit:</b> ₹${total.toFixed(2)}\n\n`;
 
   rows.forEach((r, i) => {
-    const date = new Date(r.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+    const date = new Date(r.created_at).toISOString().replace('T', ' ').slice(0, 19);
     const ref = r.gateway_data?.txnRef || r.gateway_data?.paytm_utr || '—';
     const utr = r.gateway_data?.paytm_utr || r.gateway_data?.utr || '';
 
-    text += `▸ <b>₹${parseFloat(r.amount).toFixed(2)}</b>  ✅\n`;
-    text += `   ${gw(r.gateway)}  •  ${date}\n`;
-    text += `   ID: <code>${r.order_id}</code>\n`;
-    text += `   Ref: <code>${ref}</code>\n`;
-    if (utr && utr !== ref) text += `   UTR: <code>${utr}</code>\n`;
+    text += `<b>${i + 1}.</b> 💰 <b>Amount:</b> ₹${parseFloat(r.amount).toFixed(2)}\n`;
+    text += `     📋 <b>Order ID:</b> <code>${r.order_id}</code>\n`;
+    text += `     🔢 <b>Ref:</b> <code>${ref}</code>\n`;
+    if (utr && utr !== ref) text += `     🏦 <b>UTR:</b> <code>${utr}</code>\n`;
+    text += `     📅 <b>Date:</b> ${date}\n`;
     if (i < rows.length - 1) text += '\n';
   });
 
-  text += '\n╔══════════════════════╗\n';
-  text += '   <i>Tap any code to copy</i>\n';
-  text += '╚══════════════════════╝';
-
   await ctx.reply(text, {
     parse_mode: 'HTML',
-    reply_markup: new InlineKeyboard().text('✖️ Close', 'profile:close_history')
+    reply_markup: new InlineKeyboard().text('📁 Close', 'profile:close_history')
   });
 });
 
