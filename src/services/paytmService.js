@@ -6,14 +6,6 @@ import logger from '../utils/logger.js';
  * Mirrors the WORKING Python script exactly:
  *   txn_ref = f"TXN_{timestamp}_{random_8_chars}"
  *   url = f"upi://pay?pa={vpa}&pn={payee}&am={amount}&cu={currency}&tn={note}&tr={txn_ref}"
- *
- * @param {string} upiId   - Merchant UPI VPA
- * @param {number} amount  - Amount in INR
- * @param {string} orderId - Internal order ID (not sent to Paytm)
- * @param {string} payeeName - Payee display name
- * @param {string} paytmQr - Optional paytmqr param (if you have one)
- * @param {string|null} existingTxnRef - Re-use existing ref (for QR rebuild after failed check)
- * @returns {{ upiLink: string, txnRef: string }}
  */
 export function generatePaymentQR(upiId, amount, orderId, payeeName = 'Paytm Merchant', paytmQr = '', existingTxnRef = null) {
   let txnRef;
@@ -33,7 +25,8 @@ export function generatePaymentQR(upiId, amount, orderId, payeeName = 'Paytm Mer
   let upiLink = `upi://pay?pa=${upiId}&pn=${payeeName}&am=${amount.toFixed(2)}&cu=INR&tn=Deposit&tr=${txnRef}`;
   if (paytmQr) upiLink = `upi://pay?pa=${upiId}&pn=${payeeName}&paytmqr=${paytmQr}&am=${amount.toFixed(2)}&cu=INR&tn=Deposit&tr=${txnRef}`;
 
-  logger.info(`[PAYTM] UPI link generated: tr=${txnRef}, amount=${amount.toFixed(2)}, pa=${upiId}`);
+  // Production-safe log — NO sensitive data
+  logger.info(`[PAYTM] QR generated: tr=${txnRef}, amount=${amount.toFixed(2)}`);
 
   return { upiLink, txnRef };
 }
@@ -48,13 +41,14 @@ export function generatePaymentQR(upiId, amount, orderId, payeeName = 'Paytm Mer
  *
  *   if status == "TXN_SUCCESS" and mid == MERCHANT_MID and orderid == txn_ref and amount matches:
  *       return True
- *
- * @param {string} mid     - Paytm Merchant ID
- * @param {string} orderId - The txnRef (same as tr= in UPI link)
- * @param {number} expectedAmount - Amount to verify against
- * @returns {Promise<{ success: boolean, amount: number|null, status: string, utr: string|null, txnId: string|null, failed: boolean }>}
  */
 export async function checkPaymentStatus(mid, orderId, expectedAmount = 0) {
+  // Validate MID before calling API
+  if (!mid || !/^[A-Za-z0-9]+$/.test(mid)) {
+    logger.error(`[PAYTM] Invalid MID detected: "${mid ? mid.substring(0, 10) : 'null'}..." — fix it in Admin → Payments → Set MID`);
+    return { success: false, amount: null, status: 'INVALID_MID', utr: null, txnId: null, failed: false };
+  }
+
   try {
     // Mirrors Python: payload = {"MID": mid, "ORDERID": order_id}
     const payload = { MID: mid, ORDERID: orderId };
@@ -63,14 +57,16 @@ export async function checkPaymentStatus(mid, orderId, expectedAmount = 0) {
     // Mirrors Python: requests.get(STATUS_API_URL, params={"JsonData": json_data})
     const url = `https://securegw.paytm.in/order/status?JsonData=${encodeURIComponent(jsonData)}`;
 
-    logger.info(`[PAYTM] GET /order/status → MID=${mid}, ORDERID=${orderId}`);
+    logger.debug(`[PAYTM] Checking: ORDERID=${orderId}`);
 
-    const response = await fetch(url, { method: 'GET', timeout: 10000 });
+    const response = await fetch(url, { method: 'GET' });
     const result = await response.json();
 
-    logger.info(`[PAYTM] Response: ${JSON.stringify(result)}`);
-
     const status = result.STATUS || 'UNKNOWN';
+
+    // Production-safe log — only status, no MID/keys
+    logger.info(`[PAYTM] Status: ${status} for ${orderId}${status === 'TXN_SUCCESS' ? ` amount=${result.TXNAMOUNT}` : ''}`);
+
     const responseAmount = parseFloat(result.TXNAMOUNT) || 0;
     const midFromResponse = result.MID || '';
     const orderIdFromResponse = result.ORDERID || '';
@@ -86,7 +82,7 @@ export async function checkPaymentStatus(mid, orderId, expectedAmount = 0) {
       orderIdFromResponse === orderId &&
       (expectedAmount <= 0 || Math.round(responseAmount * 100) === Math.round(expectedAmount * 100))
     ) {
-      logger.info(`[PAYTM] ✅ VERIFIED: order=${orderId}, amount=₹${responseAmount}, UTR=${utr}, TXNID=${txnId}`);
+      logger.info(`[PAYTM] ✅ VERIFIED: order=${orderId}, UTR=${utr}`);
       return { success: true, amount: responseAmount, status, utr, txnId, failed: false };
     }
 
@@ -104,8 +100,8 @@ export async function checkPaymentStatus(mid, orderId, expectedAmount = 0) {
  * Check if Paytm payment definitively failed.
  *
  * IMPORTANT: Paytm returns TXN_FAILURE for orders it doesn't know about.
- * The Python script treats TXN_FAILURE as a hard stop, but that's wrong
- * for direct UPI QR — "order not found" is not a real failure.
+ * "order not found" is NOT a real failure — it just means Paytm hasn't
+ * processed the UPI payment yet.
  */
 function isPaymentFailed(response) {
   if (response.STATUS !== 'TXN_FAILURE') return false;
@@ -117,11 +113,11 @@ function isPaymentFailed(response) {
     'invalid order',
     'order does not exist',
     'no transaction',
+    'system error',
   ];
 
   for (const indicator of notFoundIndicators) {
     if (respMsg.includes(indicator)) {
-      logger.debug(`[PAYTM] Order not found (not a real failure): ${respMsg}`);
       return false;
     }
   }
@@ -133,6 +129,5 @@ function isPaymentFailed(response) {
   }
 
   // Conservative: no txn IDs → treat as pending
-  logger.debug(`[PAYTM] TXN_FAILURE but no txn IDs, treating as pending: ${respMsg}`);
   return false;
 }

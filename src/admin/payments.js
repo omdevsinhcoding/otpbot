@@ -350,6 +350,28 @@ composer.on('message:text', async (ctx, next) => {
       value = num;
     }
 
+    // Validate MID — must be alphanumeric only (e.g. MgjdFH15397320634096)
+    if (state.key === 'paytm_merchant_key') {
+      if (!/^[A-Za-z0-9]+$/.test(value)) {
+        await ctx.reply(
+          `⚠️ <b>Invalid Merchant ID!</b>\n\nMID must be alphanumeric (letters + numbers only).\nYou entered: <code>${escapeHtml(value)}</code>\n\nExample: <code>MgjdFH15397320634096</code>`,
+          { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔄 Try Again', `pay:${state.gateway}:edit:${state.key}`).text('‹ Back', `pay:${state.gateway}`) }
+        );
+        return;
+      }
+    }
+
+    // Validate UPI ID — must contain @
+    if (state.key === 'paytm_upi_id' || state.key === 'bharatpay_upi_id') {
+      if (!value.includes('@')) {
+        await ctx.reply(
+          `⚠️ <b>Invalid UPI ID!</b>\n\nUPI ID must contain @.\nYou entered: <code>${escapeHtml(value)}</code>\n\nExample: <code>merchant@paytm</code>`,
+          { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔄 Try Again', `pay:${state.gateway}:edit:${state.key}`).text('‹ Back', `pay:${state.gateway}`) }
+        );
+        return;
+      }
+    }
+
     await settingsRepo.setSetting(ctx.dbPool, state.key, value, ctx.from.id);
     ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key: state.key });
     await ctx.reply(`✅ <b>${escapeHtml(state.key)}</b> updated successfully!`, {

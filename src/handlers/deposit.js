@@ -261,6 +261,12 @@ async function _doPaytmCheck(ctx, pool, orderId) {
     await ctx.reply('⚠️ Verification not configured. Contact admin.');
     return;
   }
+  // Validate MID format — must be alphanumeric (e.g. MgjdFH15397320634096)
+  if (!/^[A-Za-z0-9]+$/.test(mid)) {
+    logger.error(`[PAYTM] MID is invalid (contains emojis/spaces). Current value starts with: "${String(mid).substring(0, 5)}...". Admin must fix it.`);
+    await ctx.reply('⚠️ Paytm MID is invalid. Admin needs to re-set it in Payments → Paytm → Set MID.');
+    return;
+  }
 
   // ── Step 1: Delete the QR photo message ──────────────────────
   try { await ctx.deleteMessage(); } catch { /* ignore */ }
