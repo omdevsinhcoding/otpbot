@@ -14,6 +14,25 @@ import logger from '../utils/logger.js';
 const composer = new Composer();
 const userStates = new Map(); // chatId → { step, gateway, msgId }
 
+// ── Per-user rate limit for Check Payment (anti-spam at 400K scale) ──
+const checkCooldowns = new Map(); // chatId → timestamp of last check
+const COOLDOWN_MS = 5_000; // 5 seconds between checks per user
+
+// ── Concurrent check guard (prevents double-click issues) ───────────
+const activeChecks = new Set(); // chatIds currently being verified
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  SAFE REPLY HELPER
+//  Telegram cannot editMessageText on a photo message.
+//  This helper always works: delete old message → send new one.
+// ═══════════════════════════════════════════════════════════════════
+async function safeReply(ctx, text, opts = {}) {
+  try { await ctx.deleteMessage(); } catch { /* old or already deleted */ }
+  return ctx.reply(text, opts);
+}
+
+
 // ═══════════════════════════════════════════════════════════════════
 //  DEPOSIT ENTRY — show payment method buttons
 // ═══════════════════════════════════════════════════════════════════
@@ -41,11 +60,8 @@ async function showDepositMenu(ctx) {
   if (!paytmOn && !bharatpayOn && !cryptomusOn) text += '\n\n⚠️ No payment methods available.';
   kb.text('❌ Cancel', 'deposit:close');
 
-  if (ctx.callbackQuery) {
-    try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); } catch { /* ignore */ }
-  } else {
-    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
-  }
+  // Always use delete+reply (safe for both text and photo parent messages)
+  await safeReply(ctx, text, { parse_mode: 'HTML', reply_markup: kb });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -59,7 +75,9 @@ composer.callbackQuery('deposit:paytm', async (ctx) => {
   const displayName = await settingsRepo.getSetting(pool, 'paytm_display_name') || 'Pay via Automatic Gateway';
 
   const kb = new InlineKeyboard().text('❌ Cancel', 'deposit:cancel_state');
-  const sent = await ctx.editMessageText(
+
+  // Always use delete+reply (safe for both text and photo parent messages)
+  await safeReply(ctx,
     `💳 <b>${escapeHtml(displayName)}</b>\n\n` +
     `Enter the amount you want to deposit.\n` +
     `<b>Minimum:</b> ₹${minAmount}` +
@@ -157,10 +175,40 @@ async function handlePaytmAmount(ctx) {
 
 // ── Paytm: check payment (manual click) ─────────────────────────
 composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  const chatId = ctx.chat.id;
   const orderId = ctx.callbackQuery.data.replace('deposit:check:', '');
   const pool = ctx.dbPool;
 
+  // ── Rate limit: 1 check per 5s per user (protects Paytm API at scale) ──
+  const lastCheck = checkCooldowns.get(chatId);
+  if (lastCheck && Date.now() - lastCheck < COOLDOWN_MS) {
+    const waitSec = Math.ceil((COOLDOWN_MS - (Date.now() - lastCheck)) / 1000);
+    await ctx.answerCallbackQuery({ text: `⏳ Please wait ${waitSec}s before checking again.`, show_alert: false });
+    return;
+  }
+
+  // ── Concurrent guard: prevent double-click spam ──
+  if (activeChecks.has(chatId)) {
+    await ctx.answerCallbackQuery({ text: '🔄 Already checking...', show_alert: false });
+    return;
+  }
+
+  await ctx.answerCallbackQuery();
+  activeChecks.add(chatId);
+  checkCooldowns.set(chatId, Date.now());
+
+  try {
+    await _doPaytmCheck(ctx, pool, orderId);
+  } finally {
+    activeChecks.delete(chatId);
+  }
+});
+
+/**
+ * Core Paytm check logic — extracted for clarity.
+ * Handles: expired, failed, success, and "not yet received" states.
+ */
+async function _doPaytmCheck(ctx, pool, orderId) {
   const txn = await transactionRepo.getByOrderId(pool, orderId);
   if (!txn) {
     await ctx.reply('⚠️ Order not found.', {
@@ -236,7 +284,6 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
 
     if (result.success) {
       // ── Payment verified! ──────────────────────────────────
-      // Clear auto-expiry timer
       const creditAmount = result.amount || parseFloat(txn.amount);
       await transactionRepo.updateStatus(pool, orderId, 'success', txnRef, {
         paytm_txnId: result.txnId,
@@ -292,7 +339,6 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
   // Re-fetch transaction to get stored photoFileId
   const freshTxn = await transactionRepo.getByOrderId(pool, orderId);
   const storedFileId = freshTxn?.gateway_data?.photoFileId;
-  const storedCaption = freshTxn?.gateway_data?.caption;
   const remaining = Math.max(0, Math.ceil((timeLimit - elapsed) / 60));
 
   const resendKb = new InlineKeyboard()
@@ -360,7 +406,7 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
     `<i>💡 If you already paid, please wait 1-2 minutes and try again.</i>`,
     { parse_mode: 'HTML' }
   );
-});
+}
 
 // ═══════════════════════════════════════════════════════════════════
 //  BHARAT PAY FLOW
@@ -373,13 +419,9 @@ composer.callbackQuery('deposit:bharatpay', async (ctx) => {
   const minAmount = await settingsRepo.getSetting(pool, 'bharatpay_min_amount') || 10;
 
   if (!qrFileId) {
-    try {
-      await ctx.editMessageText('⚠️ Bharat Pay is not configured yet. Contact admin.', {
-        reply_markup: new InlineKeyboard().text('‹ Back', 'deposit:menu')
-      });
-    } catch {
-      await ctx.reply('⚠️ Bharat Pay is not configured yet. Contact admin.');
-    }
+    await safeReply(ctx, '⚠️ Bharat Pay is not configured yet. Contact admin.', {
+      reply_markup: new InlineKeyboard().text('‹ Back', 'deposit:menu')
+    });
     return;
   }
 
@@ -392,6 +434,8 @@ composer.callbackQuery('deposit:bharatpay', async (ctx) => {
 
   userStates.set(ctx.chat.id, { step: 'bharatpay_utr' });
   const kb = new InlineKeyboard().text('❌ Cancel', 'deposit:cancel_state');
+  // Delete old message first (safe for photo messages), then send QR
+  try { await ctx.deleteMessage(); } catch { /* ignore */ }
   await ctx.replyWithPhoto(qrFileId, { caption: text, parse_mode: 'HTML', reply_markup: kb });
 });
 
@@ -471,7 +515,7 @@ composer.callbackQuery('deposit:cryptomus', async (ctx) => {
   const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_max_amount')) || 0;
 
   const kb = new InlineKeyboard().text('❌ Cancel', 'deposit:cancel_state');
-  await ctx.editMessageText(
+  await safeReply(ctx,
     `₿ <b>Cryptomus Deposit</b>\n\n` +
     `Enter the amount in <b>USD</b>.\n` +
     `<b>Minimum:</b> $${minAmount}` +
@@ -643,4 +687,3 @@ composer.on('message:text', async (ctx, next) => {
 });
 
 export default composer;
-

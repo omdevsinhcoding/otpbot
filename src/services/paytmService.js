@@ -26,35 +26,42 @@ export function generatePaymentQR(upiId, amount, orderId, payeeName = 'Paytm Mer
     txnRef = `TXN_${timestamp}_${randomStr}`;
   }
 
-  // Build UPI URL — mirrors Python exactly
-  let upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}`;
-  if (paytmQr) upiLink += `&paytmqr=${encodeURIComponent(paytmQr)}`;
-  upiLink += `&tr=${txnRef}&tn=${encodeURIComponent('Deposit')}&am=${amount.toFixed(2)}&cu=INR`;
+  // Build UPI URL — mirrors PHP get.php exactly (no URL encoding for UPI params)
+  // PHP: "upi://pay?pa=paytmqr...@paytm&pn=Paytm%20Merchant&paytmqr=1jr3q358rp&tr=$rnd..."
+  const encodedPayee = payeeName.replace(/ /g, '%20');
+  let upiLink = `upi://pay?pa=${upiId}&pn=${encodedPayee}`;
+  if (paytmQr) upiLink += `&paytmqr=${paytmQr}`;
+  upiLink += `&tr=${txnRef}&tn=Deposit&am=${amount.toFixed(2)}&cu=INR`;
 
   return { upiLink, txnRef };
 }
 
 /**
- * Check payment status via Paytm GET API
- * Mirrors Python verifier.py: check_paytm_status()
+ * Check payment status via Paytm merchant-status API.
+ * Mirrors PHP check.php exactly:
+ *   POST https://securegw.paytm.in/merchant-status/getTxnStatus
+ *   Body: {"MID":"...","ORDERID":"...","CHECKSUMHASH":"hmac-sha256(...)"}
  *
- * IMPORTANT: Uses GET with JsonData query param — NOT POST with checksum!
- * URL: https://securegw.paytm.in/order/status?JsonData={"MID":"...","ORDERID":"..."}
- *
- * @param {string} mid - Paytm Merchant ID
- * @param {string} orderId - The txnRef (ORDERID for Paytm)
+ * @param {string} mid - Paytm Merchant ID (also used as HMAC key)
+ * @param {string} orderId - The txnRef (ORDERID for Paytm, same as tr= in UPI link)
  * @returns {Promise<{ success: boolean, amount: number|null, status: string, utr: string|null, txnId: string|null, failed: boolean }>}
  */
 export async function checkPaymentStatus(mid, orderId) {
   try {
     const payload = { MID: mid, ORDERID: orderId };
-    const jsonData = JSON.stringify(payload);
 
-    const url = `https://securegw.paytm.in/order/status?JsonData=${encodeURIComponent(jsonData)}`;
+    // Generate CHECKSUMHASH — mirrors PHP: hash_hmac('sha256', json_encode($data), $paytm_merchant_key)
+    const checksumData = JSON.stringify(payload);
+    const checksum = crypto.createHmac('sha256', mid).update(checksumData).digest('hex');
+    payload.CHECKSUMHASH = checksum;
 
-    const response = await fetch(url, {
-      method: 'GET',
-      timeout: 10000,
+    const jsonBody = JSON.stringify(payload);
+
+    // POST to /merchant-status/getTxnStatus — mirrors PHP check.php exactly
+    const response = await fetch('https://securegw.paytm.in/merchant-status/getTxnStatus', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: jsonBody,
     });
     const result = await response.json();
 
