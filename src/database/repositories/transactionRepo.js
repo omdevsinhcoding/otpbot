@@ -22,7 +22,7 @@ export async function updateStatus(pool, orderId, status, gatewayTxnId = null, g
     `UPDATE transactions
      SET status = $2,
          gateway_txn_id = COALESCE($3, gateway_txn_id),
-         gateway_data = COALESCE($4::jsonb, gateway_data),
+         gateway_data = gateway_data || $4::jsonb,
          verified_at = ${verifiedAt ? 'NOW()' : 'verified_at'}
      WHERE order_id = $1
      RETURNING *`,

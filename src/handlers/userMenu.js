@@ -307,44 +307,47 @@ composer.callbackQuery('profile:deposit_history', async (ctx) => {
   const pool = ctx.dbPool;
   const { rows } = await pool.query(
     `SELECT order_id, gateway, amount, status, gateway_data, created_at FROM transactions
-     WHERE user_id = $1 AND status = 'success' ORDER BY created_at DESC LIMIT 10`, [ctx.from.id]
+     WHERE user_id = $1 AND status = 'success' ORDER BY created_at DESC LIMIT 20`, [ctx.from.id]
   );
   if (rows.length === 0) {
     await ctx.reply(
-      '📭 <b>No Successful Deposits</b>\n\n' +
-      'You haven\'t made any deposits yet.\n' +
-      'Tap 💰 DEPOSIT to add funds.',
+      '╔══════════════════════╗\n' +
+      '      📭 <b>No Deposits Yet</b>\n' +
+      '╚══════════════════════╝\n\n' +
+      'Tap 💰 <b>DEPOSIT</b> to add funds.',
       { parse_mode: 'HTML' }
     );
     return;
   }
 
-  const totalDeposit = rows.reduce((sum, r) => sum + parseFloat(r.amount), 0);
-  const gateway = (g) => g === 'paytm' ? '🟦 Paytm' : g === 'bharatpay' ? '🟩 BharatPe' : g === 'cryptomus' ? '🟨 Crypto' : g;
+  const total = rows.reduce((s, r) => s + parseFloat(r.amount), 0);
+  const gw = (g) => g === 'paytm' ? '🔵 Paytm' : g === 'bharatpay' ? '🟢 BharatPe' : g === 'cryptomus' ? '🟡 Crypto' : g;
 
-  let text = '━━━━━━━━━━━━━━━━━━━━━\n';
-  text += '💎 <b>Deposit History</b>\n';
-  text += `💰 <b>Total Deposited:</b> ₹${totalDeposit.toFixed(2)}\n`;
-  text += '━━━━━━━━━━━━━━━━━━━━━\n\n';
+  let text = '╔══════════════════════╗\n';
+  text += '   💎 <b>DEPOSIT HISTORY</b>\n';
+  text += '╚══════════════════════╝\n\n';
+  text += `  💰 Total: <b>₹${total.toFixed(2)}</b>    📊 Count: <b>${rows.length}</b>\n\n`;
 
   rows.forEach((r, i) => {
-    const date = new Date(r.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
-    const ref = r.gateway_data?.txnRef || '—';
-    const utr = r.gateway_data?.utr || '';
+    const date = new Date(r.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+    const ref = r.gateway_data?.txnRef || r.gateway_data?.paytm_utr || '—';
+    const utr = r.gateway_data?.paytm_utr || r.gateway_data?.utr || '';
 
-    text += `<b>${i + 1}.</b> ✅ <b>₹${parseFloat(r.amount).toFixed(2)}</b>\n`;
-    text += `    📋 <code>${r.order_id}</code>\n`;
-    text += `    🔢 Ref: <code>${ref}</code>\n`;
-    if (utr) text += `    🏦 UTR: <code>${utr}</code>\n`;
-    text += `    ${gateway(r.gateway)} • ${date}\n`;
-    if (i < rows.length - 1) text += '   ─────────────────\n';
+    text += `▸ <b>₹${parseFloat(r.amount).toFixed(2)}</b>  ✅\n`;
+    text += `   ${gw(r.gateway)}  •  ${date}\n`;
+    text += `   ID: <code>${r.order_id}</code>\n`;
+    text += `   Ref: <code>${ref}</code>\n`;
+    if (utr && utr !== ref) text += `   UTR: <code>${utr}</code>\n`;
+    if (i < rows.length - 1) text += '\n';
   });
 
-  text += '\n━━━━━━━━━━━━━━━━━━━━━';
+  text += '\n╔══════════════════════╗\n';
+  text += '   <i>Tap any code to copy</i>\n';
+  text += '╚══════════════════════╝';
 
   await ctx.reply(text, {
     parse_mode: 'HTML',
-    reply_markup: new InlineKeyboard().text('❌ Close', 'profile:close_history')
+    reply_markup: new InlineKeyboard().text('✖️ Close', 'profile:close_history')
   });
 });
 
