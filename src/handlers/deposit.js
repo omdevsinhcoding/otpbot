@@ -57,7 +57,7 @@ async function showDepositMenu(ctx) {
     `👋 <b>Hey ${escapeHtml(name)}!</b>\n\n` +
     `💰 <b>Deposit Information</b>\n\n` +
     `💳 <b>Balance:</b> ₹${formatNumber(balance)}\n` +
-    `📌 <b>Min Deposit:</b> ₹${minAmount || 10}\n\n` +
+    `📌 <b>Min Deposit:</b> ₹${minAmount || 1}\n\n` +
     `⚠️ <b>Note:</b> Once deposited, funds are non-refundable.\n` +
     `You can use your balance for all services.\n\n` +
     `👇 <b>Select Payment Method</b>`;
@@ -79,7 +79,7 @@ async function showDepositMenu(ctx) {
 composer.callbackQuery('deposit:paytm', async (ctx) => {
   await ctx.answerCallbackQuery();
   const pool = ctx.dbPool;
-  const minAmount = parseInt(await settingsRepo.getSetting(pool, 'paytm_min_amount')) || 10;
+  const minAmount = parseInt(await settingsRepo.getSetting(pool, 'paytm_min_amount')) || 1;
   const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'paytm_max_amount')) || 0;
 
   let text =
@@ -112,7 +112,7 @@ composer.callbackQuery(/^deposit:paytm_amt:\d+$/, async (ctx) => {
 composer.callbackQuery('deposit:paytm_custom', async (ctx) => {
   await ctx.answerCallbackQuery();
   const pool = ctx.dbPool;
-  const minAmount = parseInt(await settingsRepo.getSetting(pool, 'paytm_min_amount')) || 10;
+  const minAmount = parseInt(await settingsRepo.getSetting(pool, 'paytm_min_amount')) || 1;
   const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'paytm_max_amount')) || 0;
 
   await safeReply(ctx,
@@ -131,7 +131,7 @@ composer.callbackQuery('deposit:paytm_custom', async (ctx) => {
 async function handlePaytmAmount(ctx, presetAmount = null) {
   const pool = ctx.dbPool;
   const amount = presetAmount || parseFloat(ctx.message.text.trim());
-  const minAmount = await settingsRepo.getSetting(pool, 'paytm_min_amount') || 10;
+  const minAmount = await settingsRepo.getSetting(pool, 'paytm_min_amount') || 1;
   const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'paytm_max_amount')) || 0;
 
   if (isNaN(amount) || amount < minAmount) {
@@ -516,7 +516,7 @@ composer.callbackQuery('deposit:bharatpay', async (ctx) => {
   const pool = ctx.dbPool;
   const qrFileId = await settingsRepo.getSetting(pool, 'bharatpay_qr_file_id');
   const upiId = await settingsRepo.getSetting(pool, 'bharatpay_upi_id');
-  const minAmount = await settingsRepo.getSetting(pool, 'bharatpay_min_amount') || 10;
+  const minAmount = await settingsRepo.getSetting(pool, 'bharatpay_min_amount') || 1;
 
   if (!qrFileId) {
     await safeReply(ctx, '⚠️ Bharat Pay is not configured yet. Contact admin.', {
@@ -570,7 +570,7 @@ async function handleBharatpayUTR(ctx) {
 
   const merchantId = await settingsRepo.getSetting(pool, 'bharatpay_merchant_id');
   const token = await settingsRepo.getSetting(pool, 'bharatpay_token');
-  const minAmount = await settingsRepo.getSetting(pool, 'bharatpay_min_amount') || 10;
+  const minAmount = await settingsRepo.getSetting(pool, 'bharatpay_min_amount') || 1;
 
   if (!merchantId || !token) {
     await ctx.reply('⚠️ Bharat Pay verification not configured. Contact admin.');
@@ -646,7 +646,7 @@ composer.callbackQuery(/^deposit:crypto_cur:/, async (ctx) => {
   const currency = parts[2];
   const network = parts[3];
   const pool = ctx.dbPool;
-  const minAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_min_amount')) || 10;
+  const minAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_min_amount')) || 1;
   const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_max_amount')) || 0;
 
   let text =
@@ -686,7 +686,7 @@ composer.callbackQuery(/^deposit:crypto_custom:/, async (ctx) => {
   const currency = parts[2];
   const network = parts[3];
   const pool = ctx.dbPool;
-  const minAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_min_amount')) || 10;
+  const minAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_min_amount')) || 1;
   const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_max_amount')) || 0;
 
   await safeReply(ctx,
@@ -704,7 +704,7 @@ composer.callbackQuery(/^deposit:crypto_custom:/, async (ctx) => {
 // ── Crypto: process deposit — create invoice + show QR ──────────
 async function handleCryptomusDeposit(ctx, currency, network, amount) {
   const pool = ctx.dbPool;
-  const minAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_min_amount')) || 10;
+  const minAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_min_amount')) || 1;
   const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_max_amount')) || 0;
 
   if (isNaN(amount) || amount < minAmount) {

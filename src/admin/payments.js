@@ -69,10 +69,9 @@ async function showPaytmSettings(ctx) {
     `📊 <b>Status:</b> ${enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
     `💳 <b>UPI ID:</b> ${upiId ? `<code>${escapeHtml(upiId)}</code>` : '❌ Not set'}\n` +
     `🔑 <b>MID:</b> ${merchantKey ? `<code>${escapeHtml(String(merchantKey))}</code>` : '❌ Not set'}\n` +
-    `📱 <b>QR Code ID:</b> ${paytmQrCode ? `<code>${escapeHtml(String(paytmQrCode))}</code>` : '⚠️ Not set (Recommended)'}\n` +
     `👤 <b>Payee Name:</b> ${payeeName || 'Paytm Merchant'}\n` +
     `⏱ <b>Time Limit:</b> ${(!timeLimit || timeLimit === '0' || timeLimit === 0) ? '♾️ No Limit' : timeLimit + 's'}\n` +
-    `💰 <b>Min Amount:</b> ₹${minAmount || 10}\n` +
+    `💰 <b>Min Amount:</b> ${minAmount ? '₹' + minAmount : 'Not set'}\n` +
     `📈 <b>Max Amount:</b> ${maxAmount ? '₹' + maxAmount : 'No Limit'}`;
 
   const kb = new InlineKeyboard()
@@ -82,9 +81,6 @@ async function showPaytmSettings(ctx) {
   kb.row()
     .text('🔑 Set MID', 'pay:paytm:edit:paytm_merchant_key');
   if (merchantKey) kb.text('🗑 Clear MID', 'pay:paytm:clear:paytm_merchant_key');
-  kb.row()
-    .text('📱 Set QR Code ID', 'pay:paytm:edit:paytm_qr_code');
-  if (paytmQrCode) kb.text('🗑 Clear QR', 'pay:paytm:clear:paytm_qr_code');
   kb.row()
     .text('👤 Payee Name', 'pay:paytm:edit:paytm_payee_name');
   if (payeeName) kb.text('🗑 Clear', 'pay:paytm:clear:paytm_payee_name');
@@ -147,7 +143,7 @@ async function showBharatpaySettings(ctx) {
     `🏪 <b>Merchant ID:</b> ${merchantId ? `<code>${escapeHtml(String(merchantId))}</code>` : '❌ Not set'}\n` +
     `🔑 <b>Token:</b> ${token ? `<code>${escapeHtml(String(token))}</code>` : '❌ Not set'}\n` +
     `💳 <b>UPI ID:</b> ${upiId ? `<code>${escapeHtml(upiId)}</code>` : '❌ Not set'}\n` +
-    `💰 <b>Min Amount:</b> ₹${minAmount || 10}\n` +
+    `💰 <b>Min Amount:</b> ${minAmount ? '₹' + minAmount : 'Not set'}\n` +
     `📈 <b>Max Amount:</b> ${maxAmount ? '₹' + maxAmount : 'No Limit'}\n` +
     `🖼 <b>QR Image:</b> ${qrFileId ? '✅ Uploaded' : '❌ Not uploaded'}`;
 
@@ -234,8 +230,8 @@ async function showCryptomusSettings(ctx) {
     `🔑 <b>API Key:</b> ${apiKey ? '✅ Set' : '❌ Not set'}\n` +
     `🏪 <b>Merchant ID:</b> ${merchantId ? '✅ Set' : '❌ Not set'}\n` +
     `🪙 <b>Currencies:</b> ${currDisplay}\n` +
-    `💰 <b>Min Amount:</b> ₹${minAmount || 10}\n` +
-    `📈 <b>Max Amount:</b> ₹${maxAmount || 10000}`;
+    `💰 <b>Min Amount:</b> ${minAmount ? '₹' + minAmount : 'Not set'}\n` +
+    `📈 <b>Max Amount:</b> ${maxAmount ? '₹' + maxAmount : 'No Limit'}`;
 
   const kb = new InlineKeyboard()
     .text(enabled ? '🔴 Disable' : '🟢 Enable', 'pay:cryptomus:toggle').row()
@@ -379,8 +375,8 @@ composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):edit:.+$/, adminRequire
     bharatpay_display_name: 'BharatPe Button Name (shown to user in deposit menu)',
     cryptomus_api_key: 'Cryptomus API Key',
     cryptomus_merchant_id: 'Cryptomus Merchant ID',
-    cryptomus_min_amount: 'Minimum Amount ($)',
-    cryptomus_max_amount: 'Maximum Amount ($)',
+    cryptomus_min_amount: 'Minimum Amount (₹)',
+    cryptomus_max_amount: 'Maximum Amount (₹)',
   };
 
   const kb = new InlineKeyboard().text('❌ Cancel', `pay:cancel_edit:${gateway}`);
@@ -415,7 +411,7 @@ composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):clear:.+$/, adminRequir
   const key = parts.slice(3).join(':');
   const pool = ctx.dbPool;
 
-  await settingsRepo.setSetting(pool, key, '', ctx.from.id);
+  await settingsRepo.deleteSetting(pool, key);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key, value: '(cleared)' });
   await ctx.answerCallbackQuery(`✅ ${key} cleared!`);
 
@@ -435,7 +431,7 @@ composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):nolimit:.+$/, adminRequ
   const key = parts.slice(3).join(':');
   const pool = ctx.dbPool;
 
-  await settingsRepo.setSetting(pool, key, 0, ctx.from.id);
+  await settingsRepo.deleteSetting(pool, key);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key, value: 'No Limit' });
   await ctx.answerCallbackQuery('✅ Max Amount set to No Limit!');
 
