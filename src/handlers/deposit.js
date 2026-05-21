@@ -105,7 +105,6 @@ composer.callbackQuery('deposit:paytm', async (ctx) => {
 composer.callbackQuery(/^deposit:paytm_amt:\d+$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const amount = parseFloat(ctx.callbackQuery.data.split(':')[2]);
-  ctx.message = { text: String(amount) };
   await handlePaytmAmount(ctx, amount);
 });
 
