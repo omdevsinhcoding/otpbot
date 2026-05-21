@@ -1,11 +1,13 @@
 /**
  * Paytm UPI Payment Service
- * Mirrors the WORKING Python script exactly — zero logging for production scale.
+ * Mirrors Python DreamX bot upi.py EXACTLY — zero logging.
  */
 
 /**
  * Generate UPI payment link + txn ref.
- * Mirrors Python: f"upi://pay?pa={vpa}&pn={payee}&am={amount}&cu={currency}&tn={note}&tr={txn_ref}"
+ *
+ * Python DreamX upi.py param order:
+ *   upi://pay?pa={vpa}&pn={payee}[&paytmqr={qr}]&tr={txn_ref}&tn={note}&am={amount}&cu=INR
  */
 export function generatePaymentQR(upiId, amount, orderId, payeeName = 'Paytm Merchant', paytmQr = '', existingTxnRef = null) {
   let txnRef;
@@ -19,15 +21,19 @@ export function generatePaymentQR(upiId, amount, orderId, payeeName = 'Paytm Mer
     txnRef = `TXN_${timestamp}_${randomStr}`;
   }
 
-  let upiLink = `upi://pay?pa=${upiId}&pn=${payeeName}&am=${amount.toFixed(2)}&cu=INR&tn=Deposit&tr=${txnRef}`;
-  if (paytmQr) upiLink = `upi://pay?pa=${upiId}&pn=${payeeName}&paytmqr=${paytmQr}&am=${amount.toFixed(2)}&cu=INR&tn=Deposit&tr=${txnRef}`;
+  // Mirrors Python DreamX upi.py EXACTLY — same param order
+  // Python: f"upi://pay?pa={vpa}&pn={payee}&tr={txn_ref_id}&tn={note}&am={amount:.2f}&cu=INR"
+  // tn= uses orderId so it shows in bank statement for manual verification
+  let upiLink = `upi://pay?pa=${upiId}&pn=${payeeName}`;
+  if (paytmQr) upiLink += `&paytmqr=${paytmQr}`;
+  upiLink += `&tr=${txnRef}&tn=${orderId}&am=${amount.toFixed(2)}&cu=INR`;
 
   return { upiLink, txnRef };
 }
 
 /**
  * Check payment status via Paytm GET API.
- * Mirrors Python: requests.get("https://securegw.paytm.in/order/status", params={"JsonData": json.dumps({"MID":..,"ORDERID":..})})
+ * Mirrors Python DreamX verifier.py: GET /order/status?JsonData={"MID":..,"ORDERID":..}
  */
 export async function checkPaymentStatus(mid, orderId, expectedAmount = 0) {
   if (!mid || !/^[A-Za-z0-9]+$/.test(mid)) {
@@ -67,13 +73,9 @@ export async function checkPaymentStatus(mid, orderId, expectedAmount = 0) {
 
 function isPaymentFailed(response) {
   if (response.STATUS !== 'TXN_FAILURE') return false;
-
   const respMsg = (response.RESPMSG || '').toLowerCase();
   const notFound = ['order not found', 'no record found', 'invalid order', 'order does not exist', 'no transaction', 'system error'];
-  for (const s of notFound) {
-    if (respMsg.includes(s)) return false;
-  }
-
+  for (const s of notFound) { if (respMsg.includes(s)) return false; }
   if (response.TXNID || response.BANKTXNID) return true;
   return false;
 }

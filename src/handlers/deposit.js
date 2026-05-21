@@ -153,8 +153,8 @@ async function handlePaytmAmount(ctx) {
     `📋 <b>Order:</b> <code>${orderId}</code>\n` +
     `💎 <b>Ref:</b> <code>${txnRef}</code>\n\n` +
     `⏰ Expires in <b>${minutes} minutes</b>\n\n` +
-    `Scan the QR code with any UPI app.\n\n` +
-    `<i>Payment will be auto-detected. You can also click Check Payment below.</i>`;
+    `Scan the QR code with any UPI app.\n` +
+    `<i>Order ID will appear in your bank statement.</i>`;
 
   const kb = new InlineKeyboard()
     .text('🔄 Check Payment', `deposit:check:${orderId}`).row()
