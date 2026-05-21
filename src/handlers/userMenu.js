@@ -306,25 +306,56 @@ composer.callbackQuery('profile:deposit_history', async (ctx) => {
   await ctx.answerCallbackQuery();
   const pool = ctx.dbPool;
   const { rows } = await pool.query(
-    `SELECT gateway, amount, status, created_at FROM transactions
-     WHERE user_id = $1 ORDER BY created_at DESC LIMIT 10`, [ctx.from.id]
+    `SELECT order_id, gateway, amount, status, gateway_data, created_at FROM transactions
+     WHERE user_id = $1 AND status = 'success' ORDER BY created_at DESC LIMIT 10`, [ctx.from.id]
   );
   if (rows.length === 0) {
-    await ctx.reply('📭 No deposit history found.');
+    await ctx.reply(
+      '📭 <b>No Successful Deposits</b>\n\n' +
+      'You haven\'t made any deposits yet.\n' +
+      'Tap 💰 DEPOSIT to add funds.',
+      { parse_mode: 'HTML' }
+    );
     return;
   }
-  let text = '💵 <b>Deposit History</b> (Last 10)\n\n';
-  for (const r of rows) {
-    const icon = r.status === 'success' ? '✅' : r.status === 'pending' ? '🟡' : '❌';
-    const date = new Date(r.created_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' });
-    text += `${icon} ₹${r.amount} — ${r.gateway} — ${date}\n`;
-  }
-  await ctx.reply(text, { parse_mode: 'HTML' });
+
+  const totalDeposit = rows.reduce((sum, r) => sum + parseFloat(r.amount), 0);
+  const gateway = (g) => g === 'paytm' ? '🟦 Paytm' : g === 'bharatpay' ? '🟩 BharatPe' : g === 'cryptomus' ? '🟨 Crypto' : g;
+
+  let text = '━━━━━━━━━━━━━━━━━━━━━\n';
+  text += '💎 <b>Deposit History</b>\n';
+  text += `💰 <b>Total Deposited:</b> ₹${totalDeposit.toFixed(2)}\n`;
+  text += '━━━━━━━━━━━━━━━━━━━━━\n\n';
+
+  rows.forEach((r, i) => {
+    const date = new Date(r.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+    const ref = r.gateway_data?.txnRef || '—';
+    const utr = r.gateway_data?.utr || '';
+
+    text += `<b>${i + 1}.</b> ✅ <b>₹${parseFloat(r.amount).toFixed(2)}</b>\n`;
+    text += `    📋 <code>${r.order_id}</code>\n`;
+    text += `    🔢 Ref: <code>${ref}</code>\n`;
+    if (utr) text += `    🏦 UTR: <code>${utr}</code>\n`;
+    text += `    ${gateway(r.gateway)} • ${date}\n`;
+    if (i < rows.length - 1) text += '   ─────────────────\n';
+  });
+
+  text += '\n━━━━━━━━━━━━━━━━━━━━━';
+
+  await ctx.reply(text, {
+    parse_mode: 'HTML',
+    reply_markup: new InlineKeyboard().text('❌ Close', 'profile:close_history')
+  });
 });
 
 composer.callbackQuery('profile:otp_history', async (ctx) => {
   await ctx.answerCallbackQuery();
   await ctx.reply('📠 <b>OTP History</b>\n\nNo OTP orders yet.', { parse_mode: 'HTML' });
+});
+
+composer.callbackQuery('profile:close_history', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  try { await ctx.deleteMessage(); } catch { /* ignore */ }
 });
 
 composer.callbackQuery('profile:email_history', async (ctx) => {

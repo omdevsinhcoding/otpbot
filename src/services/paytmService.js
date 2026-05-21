@@ -29,7 +29,7 @@ export function generatePaymentQR(upiId, amount, orderId, payeeName = 'Paytm Mer
   const encodedPayee = encodeURIComponent(payeeName);
   let upiLink = `upi://pay?pa=${upiId}&pn=${encodedPayee}`;
   if (paytmQr) upiLink += `&paytmqr=${paytmQr}`;
-  upiLink += `&tr=${txnRef}&tn=${encodeURIComponent(`${orderId} Ref:${txnRef}`)}&am=${amount.toFixed(2)}&cu=INR`;
+  upiLink += `&tr=${txnRef}&tn=${txnRef}&am=${amount.toFixed(2)}&cu=INR`;
 
   return { upiLink, txnRef };
 }
