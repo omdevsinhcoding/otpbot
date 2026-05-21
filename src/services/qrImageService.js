@@ -34,13 +34,13 @@ export async function generateBrandedQR({
   developer = '@Erroroo',
 }) {
   try {
-    // ── QR code — huge, nearly full width ────────────────────
+    // ── QR code — matches working Python: border=4, ERROR_CORRECT_L ──
     const qrSize = 700;
     const qrBuffer = await QRCode.toBuffer(upiLink, {
       width: qrSize,
-      margin: 1,
+      margin: 4,
       color: { dark: '#000000', light: '#FFFFFF' },
-      errorCorrectionLevel: 'H',
+      errorCorrectionLevel: 'L',
     });
 
     // ── Canvas — clean, minimal ──────────────────────────────
