@@ -68,7 +68,7 @@ async function showPaytmSettings(ctx) {
     `📊 <b>Status:</b> ${enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
     `💳 <b>UPI ID:</b> ${upiId ? `<code>${escapeHtml(upiId)}</code>` : '❌ Not set'}\n` +
     `🔑 <b>MID:</b> ${merchantKey ? `<code>${escapeHtml(String(merchantKey))}</code>` : '❌ Not set'}\n` +
-    `📱 <b>QR Code ID:</b> ${paytmQrCode ? `<code>${escapeHtml(String(paytmQrCode))}</code>` : 'Not set (optional)'}\n` +
+    `📱 <b>QR Code ID:</b> ${paytmQrCode ? `<code>${escapeHtml(String(paytmQrCode))}</code>` : '❌ Not set — Google Pay will decline!'}\n` +
     `👤 <b>Payee Name:</b> ${payeeName || 'Paytm Merchant'}\n` +
     `⏱ <b>Time Limit:</b> ${timeLimit || 600}s\n` +
     `💰 <b>Min Amount:</b> ₹${minAmount || 10}\n` +
