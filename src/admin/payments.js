@@ -211,26 +211,32 @@ composer.callbackQuery('pay:cryptomus', adminRequired, async (ctx) => {
 
 async function showCryptomusSettings(ctx) {
   const pool = ctx.dbPool;
-  const [enabled, apiKey, merchantId, minAmount, maxAmount, selectedCurrenciesRaw] = await Promise.all([
+  const [enabled, apiKey, merchantId, minAmount, maxAmount, selectedCurrenciesRaw, mode] = await Promise.all([
     settingsRepo.getSetting(pool, 'cryptomus_enabled'),
     settingsRepo.getSetting(pool, 'cryptomus_api_key'),
     settingsRepo.getSetting(pool, 'cryptomus_merchant_id'),
     settingsRepo.getSetting(pool, 'cryptomus_min_amount'),
     settingsRepo.getSetting(pool, 'cryptomus_max_amount'),
     settingsRepo.getSetting(pool, 'cryptomus_currencies'),
+    settingsRepo.getSetting(pool, 'cryptomus_mode'),
   ]);
 
+  const currentMode = mode || 'web';
   let selectedList = [];
   try { selectedList = JSON.parse(selectedCurrenciesRaw || '[]'); } catch { selectedList = []; }
   const currDisplay = selectedList.length > 0 ? selectedList.map(c => `${c.currency} (${c.network})`).join(', ') : 'None selected';
 
-  const text =
+  let text =
     `🪙 <b>Cryptomus Settings</b>\n\n` +
     `📊 <b>Status:</b> ${enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
     `🔑 <b>API Key:</b> ${apiKey ? '✅ Set' : '❌ Not set'}\n` +
     `🏪 <b>Merchant ID:</b> ${merchantId ? '✅ Set' : '❌ Not set'}\n` +
-    `🪙 <b>Currencies:</b> ${currDisplay}\n` +
-    `💰 <b>Min Amount:</b> ${minAmount ? '₹' + minAmount : 'Not set'}\n` +
+    `⚙️ <b>Mode:</b> ${currentMode === 'inline' ? '🤖 Inline (QR in Bot)' : '🌐 Web (Cryptomus Page)'}\n`;
+
+  if (currentMode === 'inline') {
+    text += `🪙 <b>Currencies:</b> ${currDisplay}\n`;
+  }
+  text += `💰 <b>Min Amount:</b> ${minAmount ? '₹' + minAmount : 'Not set'}\n` +
     `📈 <b>Max Amount:</b> ${maxAmount ? '₹' + maxAmount : 'No Limit'}`;
 
   const kb = new InlineKeyboard()
@@ -241,7 +247,10 @@ async function showCryptomusSettings(ctx) {
     .text('🏪 Set Merchant ID', 'pay:cryptomus:edit:cryptomus_merchant_id');
   if (merchantId) kb.text('🗑 Clear', 'pay:cryptomus:clear:cryptomus_merchant_id');
   kb.row();
-  if (apiKey && merchantId) kb.text('🪙 Select Currencies', 'pay:cryptomus:currencies').row();
+  // Mode toggle
+  kb.text(currentMode === 'inline' ? '🌐 Switch to Web Mode' : '🤖 Switch to Inline Mode', 'pay:cryptomus:toggle_mode').row();
+  // Currency selection only in inline mode
+  if (currentMode === 'inline' && apiKey && merchantId) kb.text('🪙 Select Currencies', 'pay:cryptomus:currencies').row();
   kb.text('💰 Min Amount', 'pay:cryptomus:edit:cryptomus_min_amount');
   if (minAmount) kb.text('🗑 Clear', 'pay:cryptomus:clear:cryptomus_min_amount');
   kb.row()
@@ -259,6 +268,15 @@ composer.callbackQuery('pay:cryptomus:toggle', adminRequired, async (ctx) => {
   const current = await settingsRepo.getSetting(pool, 'cryptomus_enabled');
   await settingsRepo.setSetting(pool, 'cryptomus_enabled', !current, ctx.from.id);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key: 'cryptomus_enabled', value: !current });
+  await showCryptomusSettings(ctx);
+});
+
+composer.callbackQuery('pay:cryptomus:toggle_mode', adminRequired, async (ctx) => {
+  const pool = ctx.dbPool;
+  const current = await settingsRepo.getSetting(pool, 'cryptomus_mode') || 'web';
+  const newMode = current === 'inline' ? 'web' : 'inline';
+  await settingsRepo.setSetting(pool, 'cryptomus_mode', newMode, ctx.from.id);
+  await ctx.answerCallbackQuery(`✅ Switched to ${newMode === 'inline' ? 'Inline (QR in Bot)' : 'Web (Cryptomus Page)'}`);
   await showCryptomusSettings(ctx);
 });
 
