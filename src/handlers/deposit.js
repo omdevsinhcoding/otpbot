@@ -280,7 +280,7 @@ async function _doPaytmCheck(ctx, pool, orderId) {
   let finalResult = null;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const result = await paytmService.checkPaymentStatus(mid, txnRef);
+    const result = await paytmService.checkPaymentStatus(mid, txnRef, parseFloat(txn.amount));
 
     if (result.success) {
       // ── Payment verified! ──────────────────────────────────

@@ -52,10 +52,11 @@ composer.callbackQuery('pay:paytm', adminRequired, async (ctx) => {
 
 async function showPaytmSettings(ctx) {
   const pool = ctx.dbPool;
-  const [enabled, upiId, merchantKey, payeeName, timeLimit, minAmount, maxAmount] = await Promise.all([
+  const [enabled, upiId, merchantKey, paytmQrCode, payeeName, timeLimit, minAmount, maxAmount] = await Promise.all([
     settingsRepo.getSetting(pool, 'paytm_enabled'),
     settingsRepo.getSetting(pool, 'paytm_upi_id'),
     settingsRepo.getSetting(pool, 'paytm_merchant_key'),
+    settingsRepo.getSetting(pool, 'paytm_qr_code'),
     settingsRepo.getSetting(pool, 'paytm_payee_name'),
     settingsRepo.getSetting(pool, 'paytm_time_limit'),
     settingsRepo.getSetting(pool, 'paytm_min_amount'),
@@ -67,6 +68,7 @@ async function showPaytmSettings(ctx) {
     `📊 <b>Status:</b> ${enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
     `💳 <b>UPI ID:</b> ${upiId ? `<code>${escapeHtml(upiId)}</code>` : '❌ Not set'}\n` +
     `🔑 <b>MID:</b> ${merchantKey ? `<code>${escapeHtml(String(merchantKey))}</code>` : '❌ Not set'}\n` +
+    `📱 <b>QR Code ID:</b> ${paytmQrCode ? `<code>${escapeHtml(String(paytmQrCode))}</code>` : '⚠️ Not set (REQUIRED!)'}\n` +
     `👤 <b>Payee Name:</b> ${payeeName || 'Paytm Merchant'}\n` +
     `⏱ <b>Time Limit:</b> ${timeLimit || 600}s\n` +
     `💰 <b>Min Amount:</b> ₹${minAmount || 10}\n` +
@@ -79,6 +81,9 @@ async function showPaytmSettings(ctx) {
   kb.row()
     .text('🔑 Set MID', 'pay:paytm:edit:paytm_merchant_key');
   if (merchantKey) kb.text('🗑 Clear MID', 'pay:paytm:clear:paytm_merchant_key');
+  kb.row()
+    .text('📱 Set QR Code ID', 'pay:paytm:edit:paytm_qr_code');
+  if (paytmQrCode) kb.text('🗑 Clear QR', 'pay:paytm:clear:paytm_qr_code');
   kb.row()
     .text('👤 Payee Name', 'pay:paytm:edit:paytm_payee_name').row()
     .text('⏱ Time Limit', 'pay:paytm:edit:paytm_time_limit').row()

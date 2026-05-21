@@ -1,107 +1,112 @@
-import crypto from 'crypto';
 import logger from '../utils/logger.js';
 
 /**
- * Generate a UPI payment link
- * Mirrors Python upi.py: generate_upi_intent_url()
+ * Generate a UPI payment link + txn ref.
  *
- * @param {string} upiId - Paytm UPI address
- * @param {number} amount - Amount in INR
- * @param {string} orderId - Order reference (not used in UPI link)
+ * Mirrors the WORKING Python script exactly:
+ *   txn_ref = f"TXN_{timestamp}_{random_8_chars}"
+ *   url = f"upi://pay?pa={vpa}&pn={payee}&am={amount}&cu={currency}&tn={note}&tr={txn_ref}"
+ *
+ * @param {string} upiId   - Merchant UPI VPA
+ * @param {number} amount  - Amount in INR
+ * @param {string} orderId - Internal order ID (not sent to Paytm)
  * @param {string} payeeName - Payee display name
- * @param {string} paytmQr - Paytm QR code ID (optional)
+ * @param {string} paytmQr - Optional paytmqr param (if you have one)
+ * @param {string|null} existingTxnRef - Re-use existing ref (for QR rebuild after failed check)
  * @returns {{ upiLink: string, txnRef: string }}
  */
 export function generatePaymentQR(upiId, amount, orderId, payeeName = 'Paytm Merchant', paytmQr = '', existingTxnRef = null) {
   let txnRef;
   if (existingTxnRef) {
-    // Re-use existing txnRef when rebuilding QR after failed check
     txnRef = existingTxnRef;
   } else {
-    // Generate numeric-only ref — mirrors PHP: mt_rand(10000000, 9999999999999999)
-    // Paytm UPI requires numeric tr= value, letters/underscores get rejected
-    // JS can't safely do Math.random on 16-digit ints, so build from parts
-    const part1 = Math.floor(Math.random() * 90000000 + 10000000); // 8 digits
-    const part2 = Math.floor(Math.random() * 90000000 + 10000000); // 8 digits
-    txnRef = `${part1}${part2}`; // 16-digit numeric string
+    // Mirrors Python: f"TXN_{int(time.time())}_{random_8_chars}"
+    const timestamp = Math.floor(Date.now() / 1000);
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let randomStr = '';
+    for (let i = 0; i < 8; i++) randomStr += chars[Math.floor(Math.random() * chars.length)];
+    txnRef = `TXN_${timestamp}_${randomStr}`;
   }
 
-  // Build UPI URL — mirrors PHP get.php exactly (no URL encoding for UPI params)
-  // PHP: "upi://pay?pa=paytmqr...@paytm&pn=Paytm%20Merchant&paytmqr=1jr3q358rp&tr=$rnd..."
+  // Mirrors Python: f"upi://pay?pa={vpa}&pn={payee}&am={amount}&cu={currency}&tn={note}&tr={txn_ref}"
   const encodedPayee = payeeName.replace(/ /g, '%20');
   let upiLink = `upi://pay?pa=${upiId}&pn=${encodedPayee}`;
   if (paytmQr) upiLink += `&paytmqr=${paytmQr}`;
-  upiLink += `&tr=${txnRef}&tn=Deposit&am=${amount.toFixed(2)}&cu=INR`;
+  upiLink += `&am=${amount.toFixed(2)}&cu=INR&tn=Deposit&tr=${txnRef}`;
+
+  logger.info(`[PAYTM] UPI link generated: tr=${txnRef}, amount=${amount.toFixed(2)}, pa=${upiId}`);
 
   return { upiLink, txnRef };
 }
 
 /**
- * Check payment status via Paytm merchant-status API.
- * Mirrors PHP check.php exactly:
- *   POST https://securegw.paytm.in/merchant-status/getTxnStatus
- *   Body: {"MID":"...","ORDERID":"...","CHECKSUMHASH":"hmac-sha256(...)"}
+ * Check payment status via Paytm GET API.
  *
- * @param {string} mid - Paytm Merchant ID (also used as HMAC key)
- * @param {string} orderId - The txnRef (ORDERID for Paytm, same as tr= in UPI link)
+ * Mirrors the WORKING Python script exactly:
+ *   payload = {"MID": MERCHANT_MID, "ORDERID": txn_ref_id}
+ *   json_data = json.dumps(payload)
+ *   response = requests.get("https://securegw.paytm.in/order/status", params={"JsonData": json_data})
+ *
+ *   if status == "TXN_SUCCESS" and mid == MERCHANT_MID and orderid == txn_ref and amount matches:
+ *       return True
+ *
+ * @param {string} mid     - Paytm Merchant ID
+ * @param {string} orderId - The txnRef (same as tr= in UPI link)
+ * @param {number} expectedAmount - Amount to verify against
  * @returns {Promise<{ success: boolean, amount: number|null, status: string, utr: string|null, txnId: string|null, failed: boolean }>}
  */
-export async function checkPaymentStatus(mid, orderId) {
+export async function checkPaymentStatus(mid, orderId, expectedAmount = 0) {
   try {
+    // Mirrors Python: payload = {"MID": mid, "ORDERID": order_id}
     const payload = { MID: mid, ORDERID: orderId };
+    const jsonData = JSON.stringify(payload);
 
-    // Generate CHECKSUMHASH — mirrors PHP: hash_hmac('sha256', json_encode($data), $paytm_merchant_key)
-    const checksumData = JSON.stringify(payload);
-    const checksum = crypto.createHmac('sha256', mid).update(checksumData).digest('hex');
-    payload.CHECKSUMHASH = checksum;
+    // Mirrors Python: requests.get(STATUS_API_URL, params={"JsonData": json_data})
+    const url = `https://securegw.paytm.in/order/status?JsonData=${encodeURIComponent(jsonData)}`;
 
-    const jsonBody = JSON.stringify(payload);
+    logger.info(`[PAYTM] GET /order/status → MID=${mid}, ORDERID=${orderId}`);
 
-    logger.info(`[PAYTM DEBUG] Request → POST /merchant-status/getTxnStatus`);
-    logger.info(`[PAYTM DEBUG] Body: ${jsonBody}`);
-
-    // POST to /merchant-status/getTxnStatus — mirrors PHP check.php exactly
-    const response = await fetch('https://securegw.paytm.in/merchant-status/getTxnStatus', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: jsonBody,
-    });
+    const response = await fetch(url, { method: 'GET', timeout: 10000 });
     const result = await response.json();
 
-    logger.info(`[PAYTM DEBUG] Response: ${JSON.stringify(result)}`);
+    logger.info(`[PAYTM] Response: ${JSON.stringify(result)}`);
 
     const status = result.STATUS || 'UNKNOWN';
     const responseAmount = parseFloat(result.TXNAMOUNT) || 0;
-    const responseOrderId = result.ORDERID || '';
+    const midFromResponse = result.MID || '';
+    const orderIdFromResponse = result.ORDERID || '';
     const txnId = result.TXNID || null;
     const utr = result.BANKTXNID || null;
 
-    // Verify: STATUS == TXN_SUCCESS, MID present, ORDERID matches
+    // Mirrors Python exactly:
+    // if status == "TXN_SUCCESS" and mid_from_response == MERCHANT_MID
+    //    and orderid_from_response == txn_ref_id and response_amount == expected_amount
     if (
       status === 'TXN_SUCCESS' &&
-      result.MID &&
-      responseOrderId === orderId
+      midFromResponse === mid &&
+      orderIdFromResponse === orderId &&
+      (expectedAmount <= 0 || Math.round(responseAmount * 100) === Math.round(expectedAmount * 100))
     ) {
-      logger.debug(`Paytm VERIFIED: order=${orderId}, amount=${responseAmount}, UTR=${utr}, TXNID=${txnId}`);
+      logger.info(`[PAYTM] ✅ VERIFIED: order=${orderId}, amount=₹${responseAmount}, UTR=${utr}, TXNID=${txnId}`);
       return { success: true, amount: responseAmount, status, utr, txnId, failed: false };
     }
 
-    // Check if genuinely failed (mirrors is_payment_failed from Python)
+    // Check if genuinely failed (not just "order not found")
     const failed = isPaymentFailed(result);
 
     return { success: false, amount: null, status, utr: null, txnId: null, failed };
   } catch (err) {
-    logger.error(`Paytm check failed: ${err.message}`);
+    logger.error(`[PAYTM] API error: ${err.message}`);
     return { success: false, amount: null, status: 'API_ERROR', utr: null, txnId: null, failed: false };
   }
 }
 
 /**
  * Check if Paytm payment definitively failed.
- * Mirrors Python verifier.py: is_payment_failed()
  *
  * IMPORTANT: Paytm returns TXN_FAILURE for orders it doesn't know about.
- * We must NOT treat "order not found" as a real payment failure.
+ * The Python script treats TXN_FAILURE as a hard stop, but that's wrong
+ * for direct UPI QR — "order not found" is not a real failure.
  */
 function isPaymentFailed(response) {
   if (response.STATUS !== 'TXN_FAILURE') return false;
@@ -117,18 +122,18 @@ function isPaymentFailed(response) {
 
   for (const indicator of notFoundIndicators) {
     if (respMsg.includes(indicator)) {
-      logger.debug(`Paytm order not found (not a real failure): ${respMsg}`);
+      logger.debug(`[PAYTM] Order not found (not a real failure): ${respMsg}`);
       return false;
     }
   }
 
-  // If there's a TXNID or BANKTXNID, user actually attempted payment and it failed
+  // If there's a TXNID or BANKTXNID, user actually attempted and it failed
   if (response.TXNID || response.BANKTXNID) {
-    logger.debug(`Paytm payment genuinely failed: ${respMsg}`);
+    logger.info(`[PAYTM] Payment genuinely failed: ${respMsg}`);
     return true;
   }
 
-  // Conservative: don't mark as failed without transaction IDs
-  logger.debug(`Paytm TXN_FAILURE but no txn IDs, treating as pending: ${respMsg}`);
+  // Conservative: no txn IDs → treat as pending
+  logger.debug(`[PAYTM] TXN_FAILURE but no txn IDs, treating as pending: ${respMsg}`);
   return false;
 }
