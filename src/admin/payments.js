@@ -68,7 +68,7 @@ async function showPaytmSettings(ctx) {
     `📊 <b>Status:</b> ${enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
     `💳 <b>UPI ID:</b> ${upiId ? `<code>${escapeHtml(upiId)}</code>` : '❌ Not set'}\n` +
     `🔑 <b>MID:</b> ${merchantKey ? `<code>${escapeHtml(String(merchantKey))}</code>` : '❌ Not set'}\n` +
-    `📱 <b>QR Code ID:</b> ${paytmQrCode ? `<code>${escapeHtml(String(paytmQrCode))}</code>` : '❌ Not set — Google Pay will decline!'}\n` +
+    `📱 <b>QR Code ID:</b> ${paytmQrCode ? `<code>${escapeHtml(String(paytmQrCode))}</code>` : '⚠️ Not set (Recommended)'}\n` +
     `👤 <b>Payee Name:</b> ${payeeName || 'Paytm Merchant'}\n` +
     `⏱ <b>Time Limit:</b> ${(!timeLimit || timeLimit === '0' || timeLimit === 0) ? '♾️ No Limit' : timeLimit + 's'}\n` +
     `💰 <b>Min Amount:</b> ₹${minAmount || 10}\n` +
@@ -85,12 +85,16 @@ async function showPaytmSettings(ctx) {
     .text('📱 Set QR Code ID', 'pay:paytm:edit:paytm_qr_code');
   if (paytmQrCode) kb.text('🗑 Clear QR', 'pay:paytm:clear:paytm_qr_code');
   kb.row()
-    .text('👤 Payee Name', 'pay:paytm:edit:paytm_payee_name').row()
+    .text('👤 Payee Name', 'pay:paytm:edit:paytm_payee_name');
+  if (payeeName) kb.text('🗑 Clear', 'pay:paytm:clear:paytm_payee_name');
+  kb.row()
     .text('⏱ Time Limit', 'pay:paytm:edit:paytm_time_limit');
   const timeLimitVal = parseInt(timeLimit) || 0;
   if (timeLimitVal > 0) kb.text('♾️ No Limit', 'pay:paytm:nolimit_time');
   kb.row()
-    .text('💰 Min Amount', 'pay:paytm:edit:paytm_min_amount').row()
+    .text('💰 Min Amount', 'pay:paytm:edit:paytm_min_amount');
+  if (minAmount) kb.text('🗑 Clear', 'pay:paytm:clear:paytm_min_amount');
+  kb.row()
     .text('📈 Max Amount', 'pay:paytm:edit:paytm_max_amount');
   if (maxAmount) kb.text('🚫 No Limit', 'pay:paytm:nolimit:paytm_max_amount');
   kb.row()
@@ -157,7 +161,9 @@ async function showBharatpaySettings(ctx) {
     .text('💳 Set UPI ID', 'pay:bharatpay:edit:bharatpay_upi_id');
   if (upiId) kb.text('🗑 Clear', 'pay:bharatpay:clear:bharatpay_upi_id');
   kb.row()
-    .text('💰 Min Amount', 'pay:bharatpay:edit:bharatpay_min_amount').row()
+    .text('💰 Min Amount', 'pay:bharatpay:edit:bharatpay_min_amount');
+  if (minAmount) kb.text('🗑 Clear', 'pay:bharatpay:clear:bharatpay_min_amount');
+  kb.row()
     .text('📈 Max Amount', 'pay:bharatpay:edit:bharatpay_max_amount');
   if (maxAmount) kb.text('🚫 No Limit', 'pay:bharatpay:nolimit:bharatpay_max_amount');
   kb.row()
@@ -221,14 +227,23 @@ async function showCryptomusSettings(ctx) {
     `📊 <b>Status:</b> ${enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
     `🔑 <b>API Key:</b> ${apiKey ? '✅ Set' : '❌ Not set'}\n` +
     `🏪 <b>Merchant ID:</b> ${merchantId ? '✅ Set' : '❌ Not set'}\n` +
-    `💰 <b>Min Amount:</b> $${minAmount || 1}\n` +
-    `📈 <b>Max Amount:</b> $${maxAmount || 10000}`;
+    `💰 <b>Min Amount:</b> ₹${minAmount || 10}\n` +
+    `📈 <b>Max Amount:</b> ₹${maxAmount || 10000}`;
 
   const kb = new InlineKeyboard()
     .text(enabled ? '🔴 Disable' : '🟢 Enable', 'pay:cryptomus:toggle').row()
-    .text('🔑 Set API Key', 'pay:cryptomus:edit:cryptomus_api_key').row()
-    .text('🏪 Set Merchant ID', 'pay:cryptomus:edit:cryptomus_merchant_id').row()
-    .text('💰 Min Amount', 'pay:cryptomus:edit:cryptomus_min_amount').text('📈 Max Amount', 'pay:cryptomus:edit:cryptomus_max_amount').row()
+    .text('🔑 Set API Key', 'pay:cryptomus:edit:cryptomus_api_key');
+  if (apiKey) kb.text('🗑 Clear', 'pay:cryptomus:clear:cryptomus_api_key');
+  kb.row()
+    .text('🏪 Set Merchant ID', 'pay:cryptomus:edit:cryptomus_merchant_id');
+  if (merchantId) kb.text('🗑 Clear', 'pay:cryptomus:clear:cryptomus_merchant_id');
+  kb.row()
+    .text('💰 Min Amount', 'pay:cryptomus:edit:cryptomus_min_amount');
+  if (minAmount) kb.text('🗑 Clear', 'pay:cryptomus:clear:cryptomus_min_amount');
+  kb.row()
+    .text('📈 Max Amount', 'pay:cryptomus:edit:cryptomus_max_amount');
+  if (maxAmount) kb.text('🗑 Clear', 'pay:cryptomus:clear:cryptomus_max_amount');
+  kb.row()
     .text('‹ Back', 'admin:payments');
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
