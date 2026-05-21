@@ -16,7 +16,7 @@ const userStates = new Map(); // chatId → { step, gateway, msgId }
 
 // ── Per-user rate limit for Check Payment (anti-spam at 400K scale) ──
 const checkCooldowns = new Map(); // chatId → timestamp of last check
-const COOLDOWN_MS = 5_000; // 5 seconds between checks per user
+const COOLDOWN_MS = 3_000; // 3 seconds between checks per user
 
 // ── Concurrent check guard (prevents double-click issues) ───────────
 const activeChecks = new Set(); // chatIds currently being verified

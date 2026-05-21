@@ -18,12 +18,12 @@ export function generatePaymentQR(upiId, amount, orderId, payeeName = 'Paytm Mer
     // Re-use existing txnRef when rebuilding QR after failed check
     txnRef = existingTxnRef;
   } else {
-    // Generate new: TXN_{timestamp}_{random_8_chars}
-    const timestamp = Math.floor(Date.now() / 1000);
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let randomStr = '';
-    for (let i = 0; i < 8; i++) randomStr += chars[Math.floor(Math.random() * chars.length)];
-    txnRef = `TXN_${timestamp}_${randomStr}`;
+    // Generate numeric-only ref — mirrors PHP: mt_rand(10000000, 9999999999999999)
+    // Paytm UPI requires numeric tr= value, letters/underscores get rejected
+    // JS can't safely do Math.random on 16-digit ints, so build from parts
+    const part1 = Math.floor(Math.random() * 90000000 + 10000000); // 8 digits
+    const part2 = Math.floor(Math.random() * 90000000 + 10000000); // 8 digits
+    txnRef = `${part1}${part2}`; // 16-digit numeric string
   }
 
   // Build UPI URL — mirrors PHP get.php exactly (no URL encoding for UPI params)
