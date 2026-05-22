@@ -23,8 +23,10 @@ async function showTcPanel(ctx) {
   const enabled = await settingsRepo.getSetting(pool, 'tc_enabled');
   const buttons = await settingsRepo.getSetting(pool, 'tc_buttons') || [];
   const message = await settingsRepo.getSetting(pool, 'tc_message');
-  const acceptColor = await settingsRepo.getSetting(pool, 'tc_accept_color') || 'success';
-  const declineColor = await settingsRepo.getSetting(pool, 'tc_decline_color') || 'danger';
+  const rawAccept = await settingsRepo.getSetting(pool, 'tc_accept_color');
+  const rawDecline = await settingsRepo.getSetting(pool, 'tc_decline_color');
+  const acceptColor = rawAccept !== null && rawAccept !== undefined ? rawAccept : 'success';
+  const declineColor = rawDecline !== null && rawDecline !== undefined ? rawDecline : 'danger';
   const acceptInfo = COLOR_OPTIONS.find(c => c.style === acceptColor) || COLOR_OPTIONS[0];
   const declineInfo = COLOR_OPTIONS.find(c => c.style === declineColor) || COLOR_OPTIONS[2];
 
@@ -204,8 +206,10 @@ composer.callbackQuery('tc:preview', adminRequired, async (ctx) => {
   const buttons = await settingsRepo.getSetting(pool, 'tc_buttons') || [];
   const message = await settingsRepo.getSetting(pool, 'tc_message') ||
     "Dear Users,\nThere Are Some Terms & Conditions Given Please Read Carefully, Else If You Face Any Problem Related To Terms And Conditions So We Can't Help You...";
-  const acceptColor = await settingsRepo.getSetting(pool, 'tc_accept_color') || 'success';
-  const declineColor = await settingsRepo.getSetting(pool, 'tc_decline_color') || 'danger';
+  const rawA = await settingsRepo.getSetting(pool, 'tc_accept_color');
+  const rawD = await settingsRepo.getSetting(pool, 'tc_decline_color');
+  const acceptColor = rawA !== null && rawA !== undefined ? rawA : 'success';
+  const declineColor = rawD !== null && rawD !== undefined ? rawD : 'danger';
 
   const kb = new InlineKeyboard();
   for (const btn of buttons) {
@@ -346,17 +350,18 @@ composer.callbackQuery('tc:cancel', adminRequired, async (ctx) => {
 // ── Accept button color picker ──────────────────────────────────
 composer.callbackQuery('tc:accept_color', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
-  const current = await settingsRepo.getSetting(ctx.dbPool, 'tc_accept_color') || 'success';
+  const current = await settingsRepo.getSetting(ctx.dbPool, 'tc_accept_color');
+  const acceptColor = current !== null && current !== undefined ? current : 'success';
   const kb = new InlineKeyboard();
   for (const c of COLOR_OPTIONS) {
-    const active = (c.style || '') === (current || '') ? ' ✓' : '';
+    const active = (c.style || '') === (acceptColor || '') ? ' ✓' : '';
     kb.text(`${c.label}${active}`, `tc:set_accept_color:${c.style || 'none'}`);
     if (c.style) kb.style(c.style);
     kb.row();
   }
   kb.text('◀ Back', 'admin:tc');
   await ctx.editMessageText(
-    `✅ <b>Accept Button Color</b>\n\nCurrent: <b>${(COLOR_OPTIONS.find(c => c.style === current) || COLOR_OPTIONS[0]).label}</b>\n\nSelect a new color:`,
+    `✅ <b>Accept Button Color</b>\n\nCurrent: <b>${(COLOR_OPTIONS.find(c => c.style === acceptColor) || COLOR_OPTIONS[0]).label}</b>\n\nSelect a new color:`,
     { parse_mode: 'HTML', reply_markup: kb }
   );
 });
@@ -372,17 +377,18 @@ composer.callbackQuery(/^tc:set_accept_color:.+$/, adminRequired, async (ctx) =>
 // ── Decline button color picker ─────────────────────────────────
 composer.callbackQuery('tc:decline_color', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
-  const current = await settingsRepo.getSetting(ctx.dbPool, 'tc_decline_color') || 'danger';
+  const current = await settingsRepo.getSetting(ctx.dbPool, 'tc_decline_color');
+  const declineColor = current !== null && current !== undefined ? current : 'danger';
   const kb = new InlineKeyboard();
   for (const c of COLOR_OPTIONS) {
-    const active = (c.style || '') === (current || '') ? ' ✓' : '';
+    const active = (c.style || '') === (declineColor || '') ? ' ✓' : '';
     kb.text(`${c.label}${active}`, `tc:set_decline_color:${c.style || 'none'}`);
     if (c.style) kb.style(c.style);
     kb.row();
   }
   kb.text('◀ Back', 'admin:tc');
   await ctx.editMessageText(
-    `❌ <b>Decline Button Color</b>\n\nCurrent: <b>${(COLOR_OPTIONS.find(c => c.style === current) || COLOR_OPTIONS[2]).label}</b>\n\nSelect a new color:`,
+    `❌ <b>Decline Button Color</b>\n\nCurrent: <b>${(COLOR_OPTIONS.find(c => c.style === declineColor) || COLOR_OPTIONS[2]).label}</b>\n\nSelect a new color:`,
     { parse_mode: 'HTML', reply_markup: kb }
   );
 });

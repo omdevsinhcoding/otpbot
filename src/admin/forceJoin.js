@@ -25,7 +25,8 @@ async function showForceJoinPanel(ctx) {
   const channels = await forceJoinRepo.getActiveChannels(pool);
   const count = channels.length;
   const customMsg = await settingsRepo.getSetting(pool, 'fj_message');
-  const verifyColor = await settingsRepo.getSetting(pool, 'fj_verify_color') || 'success';
+  const rawVerifyColor = await settingsRepo.getSetting(pool, 'fj_verify_color');
+  const verifyColor = rawVerifyColor !== null && rawVerifyColor !== undefined ? rawVerifyColor : 'success';
   const verifyInfo = COLOR_OPTIONS.find(c => c.style === verifyColor) || COLOR_OPTIONS[0];
 
   const statusEmoji = enabled ? '🟢' : '🔴';
@@ -312,7 +313,8 @@ async function showChannelEdit(ctx, channelId) {
 
   let text = `✏️ <b>Edit Channel</b>\n\n`;
   text += `<blockquote>`;
-  text += `📢 <b>Channel:</b> ${escapeHtml(display)}\n`;
+  text += `📢 <b>Channel:</b> ${escapeHtml(ch.channel_title || display)}\n`;
+  text += `🆔 <b>ID:</b> <code>${ch.channel_id}</code>\n`;
   text += `📝 <b>Title:</b> ${escapeHtml(ch.channel_title || 'N/A')}\n`;
   text += `🎨 <b>Button Color:</b> ${colorInfo.label}\n`;
   text += `🏷 <b>Button Text:</b> ${ch.btn_text ? `"${escapeHtml(ch.btn_text)}"` : '📢 Join Channel (default)'}\n`;
@@ -468,17 +470,18 @@ composer.callbackQuery('forcejoin:reset_msg', adminRequired, async (ctx) => {
 // ── Verify button color picker ──────────────────────────────────
 composer.callbackQuery('forcejoin:verify_color', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
-  const current = await settingsRepo.getSetting(ctx.dbPool, 'fj_verify_color') || 'success';
+  const raw = await settingsRepo.getSetting(ctx.dbPool, 'fj_verify_color');
+  const verifyColor = raw !== null && raw !== undefined ? raw : 'success';
   const kb = new InlineKeyboard();
   for (const c of COLOR_OPTIONS) {
-    const active = (c.style || '') === (current || '') ? ' ✓' : '';
+    const active = (c.style || '') === (verifyColor || '') ? ' ✓' : '';
     kb.text(`${c.label}${active}`, `forcejoin:set_verify_color:${c.style || 'none'}`);
     if (c.style) kb.style(c.style);
     kb.row();
   }
   kb.text('◀ Back', 'admin:forcejoin');
   await ctx.editMessageText(
-    `✅ <b>Verify Button Color</b>\n\nCurrent: <b>${(COLOR_OPTIONS.find(c => c.style === current) || COLOR_OPTIONS[0]).label}</b>\n\nThis is the "✅ Joined" button users see.\nSelect a color:`,
+    `✅ <b>Verify Button Color</b>\n\nCurrent: <b>${(COLOR_OPTIONS.find(c => c.style === verifyColor) || COLOR_OPTIONS[0]).label}</b>\n\nThis is the "✅ Joined" button users see.\nSelect a color:`,
     { parse_mode: 'HTML', reply_markup: kb }
   );
 });

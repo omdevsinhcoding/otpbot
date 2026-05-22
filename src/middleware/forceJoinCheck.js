@@ -6,8 +6,9 @@ const NUM_LABELS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨
 /**
  * Build channel buttons keyboard.
  * Uses custom btn_text if set, otherwise generic numbered labels.
+ * verifyStyle: null = no style applied (telegram default)
  */
-function buildChannelKb(channelList, verifyStyle = 'success') {
+function buildChannelKb(channelList, verifyStyle) {
   const kb = new InlineKeyboard();
   for (let i = 0; i < channelList.length; i++) {
     const ch = channelList[i];
@@ -73,14 +74,15 @@ export async function checkForceJoin(ctx) {
     if (notJoined.length === 0) return true; // All joined → proceed
 
     // User hasn't joined → show channel buttons
-    const verifyColor = await getSetting(pool, 'fj_verify_color') || 'success';
+    // null/undefined = no color saved → default to 'success'
+    const rawColor = await getSetting(pool, 'fj_verify_color');
+    const verifyColor = rawColor !== null && rawColor !== undefined ? rawColor : 'success';
     const kb = buildChannelKb(notJoined, verifyColor);
 
     const firstName = ctx.from.first_name || 'User';
     const userMention = `<a href="tg://user?id=${ctx.from.id}">${firstName.replace(/[<>&]/g, '')}</a>`;
 
-    const getSetting2 = getSetting;
-    const customMsg = await getSetting2(pool, 'fj_message');
+    const customMsg = await getSetting(pool, 'fj_message');
     let text;
     if (customMsg) {
       text = customMsg
@@ -127,7 +129,8 @@ export async function verifyForceJoin(ctx) {
     if (notJoined.length === 0) return true;
 
     // Still not joined — show which ones are missing
-    const verifyColor = await getSetting(pool, 'fj_verify_color') || 'success';
+    const rawColor = await getSetting(pool, 'fj_verify_color');
+    const verifyColor = rawColor !== null && rawColor !== undefined ? rawColor : 'success';
     const kb = buildChannelKb(notJoined, verifyColor);
 
     const totalRequired = channels.length;

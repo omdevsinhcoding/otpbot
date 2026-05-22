@@ -123,8 +123,10 @@ composer.command('start', async (ctx) => {
           tcKb.row();
         }
       }
-      const acceptColor = await settingsRepo.getSetting(pool, 'tc_accept_color') || 'success';
-      const declineColor = await settingsRepo.getSetting(pool, 'tc_decline_color') || 'danger';
+      const rawAccept = await settingsRepo.getSetting(pool, 'tc_accept_color');
+      const rawDecline = await settingsRepo.getSetting(pool, 'tc_decline_color');
+      const acceptColor = rawAccept !== null && rawAccept !== undefined ? rawAccept : 'success';
+      const declineColor = rawDecline !== null && rawDecline !== undefined ? rawDecline : 'danger';
       tcKb.text('✅ Accept', 'tc:accept');
       if (acceptColor) tcKb.style(acceptColor);
       tcKb.text('❌ Decline', 'tc:decline');
@@ -190,8 +192,10 @@ composer.callbackQuery('fjcheck:verify', async (ctx) => {
             tcKb.row();
           }
         }
-        const acceptColor2 = await settingsRepo.getSetting(pool, 'tc_accept_color') || 'success';
-        const declineColor2 = await settingsRepo.getSetting(pool, 'tc_decline_color') || 'danger';
+        const rawAccept2 = await settingsRepo.getSetting(pool, 'tc_accept_color');
+        const rawDecline2 = await settingsRepo.getSetting(pool, 'tc_decline_color');
+        const acceptColor2 = rawAccept2 !== null && rawAccept2 !== undefined ? rawAccept2 : 'success';
+        const declineColor2 = rawDecline2 !== null && rawDecline2 !== undefined ? rawDecline2 : 'danger';
         tcKb.text('✅ Accept', 'tc:accept');
         if (acceptColor2) tcKb.style(acceptColor2);
         tcKb.text('❌ Decline', 'tc:decline');

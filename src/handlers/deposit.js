@@ -888,7 +888,7 @@ async function handleCryptoWebDeposit(ctx, amount) {
         `⚠️ <b>Amount Too Low</b>\n\n` +
         `Gateway requires minimum <b>₹${Math.ceil(parseFloat(minMatch[1]))}</b> for this payment.\n\n` +
         `<i>Please try again with a higher amount.</i>`,
-        { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Try Again', 'deposit:crypto').text('‹ Back', 'deposit:menu') }
+        { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Try Again', 'deposit:cryptomus').text('‹ Back', 'deposit:menu') }
       );
     } else {
       await ctx.reply(`⚠️ Invoice error: ${result.error}`);
@@ -1057,7 +1057,7 @@ async function handleCryptomusDeposit(ctx, currency, network, amount) {
         `⚠️ <b>Amount Too Low</b>\n\n` +
         `Gateway requires minimum <b>₹${Math.ceil(parseFloat(minMatch[1]))}</b> for ${_coinEmoji(currency)} <b>${currency}</b> on <b>${_networkLabel(network)}</b>.\n\n` +
         `<i>Please try again with a higher amount.</i>`,
-        { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Try Again', 'deposit:crypto').text('‹ Back', 'deposit:menu') }
+        { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Try Again', 'deposit:cryptomus').text('‹ Back', 'deposit:menu') }
       );
     } else {
       await ctx.reply(`⚠️ Invoice error: ${result.error}`);
