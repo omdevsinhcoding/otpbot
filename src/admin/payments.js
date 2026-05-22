@@ -347,10 +347,47 @@ composer.callbackQuery('pay:cryptomus:toggle_mode', adminRequired, async (ctx) =
 });
 
 // ═══════════════════════════════════════════════════════════════════
-//  STEP 1 — COIN SELECTION (categorized, cached, premium)
+//  STEP 1 — COIN SELECTION (search, paginated, cached)
 // ═══════════════════════════════════════════════════════════════════
+const COINS_PER_PAGE = 20;
+const coinSearchState = new Map(); // chatId → { query, page }
+
 composer.callbackQuery('pay:cryptomus:currencies', adminRequired, async (ctx) => {
   await ctx.answerCallbackQuery();
+  coinSearchState.delete(ctx.chat.id); // Reset search on fresh entry
+  await showCoinList(ctx, 0, null);
+});
+
+// ── Pagination ──────────────────────────────────────────────────
+composer.callbackQuery(/^pay:cryptomus:coins_page:\d+$/, adminRequired, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const page = parseInt(ctx.callbackQuery.data.split(':')[3]);
+  const search = coinSearchState.get(ctx.chat.id)?.query || null;
+  await showCoinList(ctx, page, search);
+});
+
+// ── Search button → prompt for input ────────────────────────────
+composer.callbackQuery('pay:cryptomus:coin_search', adminRequired, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  editStates.set(ctx.chat.id, { step: 'coin_search', gateway: 'cryptomus' });
+  await ctx.editMessageText(
+    `🔍  <b>Search Coins</b>\n\n` +
+    `Type a coin name or ticker.\n` +
+    `Example: <code>USDT</code>, <code>bitcoin</code>, <code>doge</code>\n\n` +
+    `<i>Send the text below:</i>`,
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('✗  Cancel', 'pay:cryptomus:currencies') }
+  );
+});
+
+// ── Clear search ────────────────────────────────────────────────
+composer.callbackQuery('pay:cryptomus:coin_search_clear', adminRequired, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  coinSearchState.delete(ctx.chat.id);
+  await showCoinList(ctx, 0, null);
+});
+
+// ── Core: render coin list (with optional search filter + pagination) ──
+async function showCoinList(ctx, page, searchQuery) {
   const pool = ctx.dbPool;
   const apiKey = await settingsRepo.getSetting(pool, 'cryptomus_api_key');
   const merchantId = await settingsRepo.getSetting(pool, 'cryptomus_merchant_id');
@@ -376,37 +413,72 @@ composer.callbackQuery('pay:cryptomus:currencies', adminRequired, async (ctx) =>
   }
 
   // Sort coins by rank
-  const sortedCoins = [...coinMap.entries()].sort((a, b) => coinSortKey(a[0]) - coinSortKey(b[0]));
+  let sortedCoins = [...coinMap.entries()].sort((a, b) => coinSortKey(a[0]) - coinSortKey(b[0]));
 
-  // Build keyboard — 2 per row, clean labels
+  // Apply search filter
+  const q = searchQuery?.toUpperCase().trim();
+  if (q) {
+    sortedCoins = sortedCoins.filter(([coin]) => coin.toUpperCase().includes(q));
+  }
+
+  const totalCoins = sortedCoins.length;
+  const totalPages = Math.ceil(totalCoins / COINS_PER_PAGE);
+  const safePage = Math.max(0, Math.min(page, totalPages - 1));
+  const pageCoins = sortedCoins.slice(safePage * COINS_PER_PAGE, (safePage + 1) * COINS_PER_PAGE);
+
+  // Build keyboard
   const kb = new InlineKeyboard();
-  for (let i = 0; i < sortedCoins.length; i += 2) {
-    const [c1, n1] = sortedCoins[i];
-    const a1 = n1.filter(n => sel.some(s => s.currency === c1 && s.network === n.network)).length;
-    const dot1 = a1 > 0 ? '●' : '○';
-    kb.text(`${dot1}  ${c1}  ${a1}∕${n1.length}`, `pay:cryptomus:coin_networks:${c1}`);
 
-    if (i + 1 < sortedCoins.length) {
-      const [c2, n2] = sortedCoins[i + 1];
+  // Coin buttons — 2 per row
+  for (let i = 0; i < pageCoins.length; i += 2) {
+    const [c1, n1] = pageCoins[i];
+    const a1 = n1.filter(n => sel.some(s => s.currency === c1 && s.network === n.network)).length;
+    kb.text(`${a1 > 0 ? '●' : '○'}  ${c1}  ${a1}∕${n1.length}`, `pay:cryptomus:coin_networks:${c1}`);
+
+    if (i + 1 < pageCoins.length) {
+      const [c2, n2] = pageCoins[i + 1];
       const a2 = n2.filter(n => sel.some(s => s.currency === c2 && s.network === n.network)).length;
-      const dot2 = a2 > 0 ? '●' : '○';
-      kb.text(`${dot2}  ${c2}  ${a2}∕${n2.length}`, `pay:cryptomus:coin_networks:${c2}`);
+      kb.text(`${a2 > 0 ? '●' : '○'}  ${c2}  ${a2}∕${n2.length}`, `pay:cryptomus:coin_networks:${c2}`);
     }
     kb.row();
   }
 
+  // Pagination nav
+  if (totalPages > 1) {
+    if (safePage > 0) kb.text('‹ Prev', `pay:cryptomus:coins_page:${safePage - 1}`);
+    kb.text(`${safePage + 1} ∕ ${totalPages}`, 'pay:cryptomus:noop');
+    if (safePage < totalPages - 1) kb.text('Next ›', `pay:cryptomus:coins_page:${safePage + 1}`);
+    kb.row();
+  }
+
+  // Search + Clear search
+  if (q) {
+    kb.text('✗  Clear Search', 'pay:cryptomus:coin_search_clear').text('🔍  New Search', 'pay:cryptomus:coin_search').row();
+  } else {
+    kb.text('🔍  Search Coin', 'pay:cryptomus:coin_search').row();
+  }
+
   kb.text('◀  Back', 'pay:cryptomus');
 
-  const total = sel.length;
-  const coinCount = sortedCoins.length;
-  await ctx.editMessageText(
+  const totalActive = sel.length;
+  const allCoinsCount = coinMap.size;
+  let headerText =
     `⬡  <b>S E L E C T   C O I N S</b>\n\n` +
     `Tap a coin to configure its networks.\n\n` +
     `  ●  active networks\n` +
-    `  ○  none selected\n\n` +
-    `<b>${total}</b> active pair${total !== 1 ? 's' : ''}  ·  <b>${coinCount}</b> coins available`,
-    { parse_mode: 'HTML', reply_markup: kb }
-  );
+    `  ○  none selected\n\n`;
+
+  if (q) {
+    headerText += `🔍  Search: "<b>${escapeHtml(q)}</b>"  ·  ${totalCoins} result${totalCoins !== 1 ? 's' : ''}\n`;
+  }
+  headerText += `<b>${totalActive}</b> active pair${totalActive !== 1 ? 's' : ''}  ·  <b>${allCoinsCount}</b> coins total`;
+
+  await ctx.editMessageText(headerText, { parse_mode: 'HTML', reply_markup: kb });
+}
+
+// ── No-op for page indicator button ─────────────────────────────
+composer.callbackQuery('pay:cryptomus:noop', adminRequired, async (ctx) => {
+  await ctx.answerCallbackQuery();
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -628,6 +700,20 @@ composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):nolimit:.+$/, adminRequ
 composer.on('message:text', async (ctx, next) => {
   const state = editStates.get(ctx.chat.id);
   if (!state) return next();
+  // ── Coin search ─────────────────────────────────────────────────
+  if (state.step === 'coin_search') {
+    editStates.delete(ctx.chat.id);
+    const query = ctx.message.text.trim();
+    coinSearchState.set(ctx.chat.id, { query });
+    // We can't editMessageText on a new user message, so we reply fresh
+    // But we need a message to edit — send a placeholder then call showCoinList
+    const placeholder = await ctx.reply('🔍 Searching...', { parse_mode: 'HTML' });
+    // Patch ctx to edit our placeholder message
+    const origEdit = ctx.editMessageText.bind(ctx);
+    ctx.editMessageText = (text, opts) => ctx.api.editMessageText(ctx.chat.id, placeholder.message_id, text, opts);
+    await showCoinList(ctx, 0, query);
+    return;
+  }
 
   if (state.step === 'edit_value') {
     editStates.delete(ctx.chat.id);
