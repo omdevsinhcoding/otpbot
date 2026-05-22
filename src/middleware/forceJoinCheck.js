@@ -33,7 +33,7 @@ export async function checkForceJoin(ctx) {
       const ch = channels[i];
       const link = ch.invite_link || (ch.channel_username ? `https://t.me/${ch.channel_username}` : null);
       if (link) {
-        const label = channels.length > 1 ? `📢 Join Channel ${labels[i] || i + 1}` : '📢 Join Channel';
+        const label = ch.btn_text || (channels.length > 1 ? `📢 Join Channel ${labels[i] || i + 1}` : '📢 Join Channel');
         kb.url(label, link);
         if (ch.btn_style) kb.style(ch.btn_style);
         kb.row();
@@ -112,7 +112,7 @@ export async function verifyForceJoin(ctx) {
       const ch = notJoined[i];
       const link = ch.invite_link || (ch.channel_username ? `https://t.me/${ch.channel_username}` : null);
       if (link) {
-        const label = notJoined.length > 1 ? `📢 Join Channel ${labels[i] || i + 1}` : '📢 Join Channel';
+        const label = ch.btn_text || (notJoined.length > 1 ? `📢 Join Channel ${labels[i] || i + 1}` : '📢 Join Channel');
         kb.url(label, link);
         if (ch.btn_style) kb.style(ch.btn_style);
         kb.row();

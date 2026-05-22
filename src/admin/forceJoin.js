@@ -43,7 +43,8 @@ async function showForceJoinPanel(ctx) {
       const ch = channels[i];
       const display = ch.channel_username ? `@${escapeHtml(ch.channel_username)}` : String(ch.channel_id);
       const chColor = COLOR_OPTIONS.find(c => c.style === (ch.btn_style || '')) || COLOR_OPTIONS[3];
-      text += `${i + 1}. ${chColor.emoji} ${display} — ${escapeHtml(ch.channel_title || 'N/A')}\n`;
+      const btnLabel = ch.btn_text ? ` • "${escapeHtml(ch.btn_text)}"` : '';
+      text += `${i + 1}. ${chColor.emoji} ${display}${btnLabel}\n`;
     }
     text += `</blockquote>`;
   } else {
@@ -54,11 +55,13 @@ async function showForceJoinPanel(ctx) {
     .text(toggleLabel, 'forcejoin:toggle').row()
     .text('➕ Add Channel', 'forcejoin:add').text('💬 Set Message', 'forcejoin:set_msg').row();
 
-  // Channel remove buttons
+  // Edit + Remove per channel
   if (count > 0) {
     for (const ch of channels) {
       const display = ch.channel_username ? `@${ch.channel_username}` : String(ch.channel_id);
-      kb.text(`🗑 ${display}`, `forcejoin:remove:${ch.channel_id}`).row();
+      const short = display.length > 12 ? display.slice(0, 12) + '…' : display;
+      kb.text(`✏️ ${short}`, `forcejoin:edit:${ch.channel_id}`)
+        .text(`🗑 ${short}`, `forcejoin:remove:${ch.channel_id}`).row();
     }
   }
 
@@ -140,6 +143,35 @@ composer.on('message:text', async (ctx, next) => {
     ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'set_fj_message' });
     await ctx.reply('✅ Force join message updated!', {
       reply_markup: new InlineKeyboard().text('◀ Back', 'admin:forcejoin')
+    });
+    return;
+  }
+
+  // ── Handle button text edit ─────────────────────────────────
+  if (state?.step === 'waiting_btn_text' && state.channelId) {
+    addStates.delete(ctx.chat.id);
+    const text = ctx.message.text.trim().slice(0, 100);
+    await forceJoinRepo.updateChannelText(ctx.dbPool, state.channelId, text);
+    await ctx.reply(`✅ Button text updated to "${escapeHtml(text)}"`, {
+      parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard().text('◀ Back', `forcejoin:edit:${state.channelId}`)
+    });
+    return;
+  }
+
+  // ── Handle invite link edit ─────────────────────────────────
+  if (state?.step === 'waiting_link' && state.channelId) {
+    addStates.delete(ctx.chat.id);
+    const link = ctx.message.text.trim();
+    if (!link.startsWith('http')) {
+      await ctx.reply('⚠️ Invalid link. Must start with https://', {
+        reply_markup: new InlineKeyboard().text('◀ Back', `forcejoin:edit:${state.channelId}`)
+      });
+      return;
+    }
+    await forceJoinRepo.updateChannelLink(ctx.dbPool, state.channelId, link);
+    await ctx.reply('✅ Invite link updated!', {
+      reply_markup: new InlineKeyboard().text('◀ Back', `forcejoin:edit:${state.channelId}`)
     });
     return;
   }
@@ -261,6 +293,44 @@ composer.callbackQuery('forcejoin:cancel_add', adminRequired, async (ctx) => {
   await showForceJoinPanel(ctx);
 });
 
+// ── Edit channel detail screen ──────────────────────────────────
+async function showChannelEdit(ctx, channelId) {
+  const ch = await forceJoinRepo.getChannel(ctx.dbPool, Number(channelId));
+  if (!ch) {
+    await ctx.editMessageText('⚠️ Channel not found.', {
+      reply_markup: new InlineKeyboard().text('◀ Back', 'admin:forcejoin')
+    });
+    return;
+  }
+
+  const display = ch.channel_username ? `@${ch.channel_username}` : String(ch.channel_id);
+  const colorInfo = COLOR_OPTIONS.find(c => c.style === (ch.btn_style || '')) || COLOR_OPTIONS[3];
+
+  let text = `✏️ <b>Edit Channel</b>\n\n`;
+  text += `<blockquote>`;
+  text += `📢 <b>Channel:</b> ${escapeHtml(display)}\n`;
+  text += `📝 <b>Title:</b> ${escapeHtml(ch.channel_title || 'N/A')}\n`;
+  text += `🎨 <b>Button Color:</b> ${colorInfo.label}\n`;
+  text += `🏷 <b>Button Text:</b> ${ch.btn_text ? `"${escapeHtml(ch.btn_text)}"` : '📢 Join Channel (default)'}\n`;
+  text += `🔗 <b>Invite Link:</b> ${ch.invite_link ? '✅ Set' : '⚠️ Not set'}`;
+  text += `</blockquote>`;
+
+  const kb = new InlineKeyboard()
+    .text('🎨 Change Color', `forcejoin:ch_color:${ch.channel_id}`).row()
+    .text('🏷 Change Button Text', `forcejoin:ch_text:${ch.channel_id}`).row()
+    .text('🔗 Change Invite Link', `forcejoin:ch_link:${ch.channel_id}`).row()
+    .text('🗑 Remove Channel', `forcejoin:remove:${ch.channel_id}`).row()
+    .text('◀ Back', 'admin:forcejoin');
+
+  await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+}
+
+composer.callbackQuery(/^forcejoin:edit:-?\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const channelId = ctx.callbackQuery.data.split(':').slice(2).join(':');
+  await showChannelEdit(ctx, channelId);
+});
+
 // ── Per-channel color picker ────────────────────────────────────
 composer.callbackQuery(/^forcejoin:ch_color:-?\d+$/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
@@ -283,14 +353,10 @@ composer.callbackQuery(/^forcejoin:ch_color:-?\d+$/, adminRequired, async (ctx) 
     if (c.style) kb.style(c.style);
     kb.row();
   }
-  kb.text('◀ Back', 'admin:forcejoin');
+  kb.text('◀ Back', `forcejoin:edit:${ch.channel_id}`);
 
   await ctx.editMessageText(
-    `🎨 <b>Channel Button Color</b>\n\n` +
-    `Channel: <b>${escapeHtml(display)}</b>\n` +
-    `Title: <b>${escapeHtml(ch.channel_title || 'N/A')}</b>\n` +
-    `Current: <b>${(COLOR_OPTIONS.find(c => c.style === current) || COLOR_OPTIONS[3]).label}</b>\n\n` +
-    `Select a color for this channel's button:`,
+    `🎨 <b>Button Color</b> — ${escapeHtml(display)}\n\nSelect a color:`,
     { parse_mode: 'HTML', reply_markup: kb }
   );
 });
@@ -299,12 +365,72 @@ composer.callbackQuery(/^forcejoin:ch_color:-?\d+$/, adminRequired, async (ctx) 
 composer.callbackQuery(/^forcejoin:set_ch_color:-?\d+:.+$/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const parts = ctx.callbackQuery.data.split(':');
-  // forcejoin:set_ch_color:<channelId>:<style>
   const channelId = Number(parts[2]);
   const style = parts[3] === 'none' ? '' : parts[3];
   await forceJoinRepo.updateChannelStyle(ctx.dbPool, channelId, style);
-  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'fj_channel_style', channel_id: channelId, value: style || 'default' });
-  await showForceJoinPanel(ctx);
+  await showChannelEdit(ctx, channelId);
+});
+
+// ── Edit button text ────────────────────────────────────────────
+composer.callbackQuery(/^forcejoin:ch_text:-?\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const channelId = ctx.callbackQuery.data.split(':').slice(2).join(':');
+  const ch = await forceJoinRepo.getChannel(ctx.dbPool, Number(channelId));
+  if (!ch) return;
+
+  addStates.set(ctx.chat.id, { step: 'waiting_btn_text', channelId: Number(channelId) });
+  const display = ch.channel_username ? `@${ch.channel_username}` : String(ch.channel_id);
+
+  let text = `🏷 <b>Button Text</b> — ${escapeHtml(display)}\n\n`;
+  text += `Current: <b>${ch.btn_text ? `"${escapeHtml(ch.btn_text)}"` : '📢 Join Channel (default)'}</b>\n\n`;
+  text += `Send the new button text, or press Reset for default.`;
+
+  const kb = new InlineKeyboard().text('❌ Cancel', `forcejoin:edit:${channelId}`);
+  if (ch.btn_text) kb.text('🔄 Reset Default', `forcejoin:reset_ch_text:${channelId}`);
+  await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+});
+
+// ── Reset channel button text ───────────────────────────────────
+composer.callbackQuery(/^forcejoin:reset_ch_text:-?\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const channelId = ctx.callbackQuery.data.split(':').slice(2).join(':');
+  await forceJoinRepo.updateChannelText(ctx.dbPool, Number(channelId), '');
+  addStates.delete(ctx.chat.id);
+  await showChannelEdit(ctx, channelId);
+});
+
+// ── Edit invite link ────────────────────────────────────────────
+composer.callbackQuery(/^forcejoin:ch_link:-?\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const channelId = ctx.callbackQuery.data.split(':').slice(2).join(':');
+  const ch = await forceJoinRepo.getChannel(ctx.dbPool, Number(channelId));
+  if (!ch) return;
+
+  addStates.set(ctx.chat.id, { step: 'waiting_link', channelId: Number(channelId) });
+  const display = ch.channel_username ? `@${ch.channel_username}` : String(ch.channel_id);
+
+  let text = `🔗 <b>Invite Link</b> — ${escapeHtml(display)}\n\n`;
+  text += `Current: <code>${ch.invite_link ? escapeHtml(ch.invite_link) : 'Not set'}</code>\n\n`;
+  text += `Send the new invite link (https://t.me/... format).`;
+
+  const kb = new InlineKeyboard()
+    .text('🔄 Auto-Generate', `forcejoin:auto_link:${channelId}`)
+    .text('❌ Cancel', `forcejoin:edit:${channelId}`);
+  await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+});
+
+// ── Auto-generate invite link ───────────────────────────────────
+composer.callbackQuery(/^forcejoin:auto_link:-?\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const channelId = ctx.callbackQuery.data.split(':').slice(2).join(':');
+  try {
+    const link = await ctx.api.createChatInviteLink(Number(channelId));
+    await forceJoinRepo.updateChannelLink(ctx.dbPool, Number(channelId), link.invite_link);
+  } catch (err) {
+    logger.warn(`Cannot create invite link for ${channelId}: ${err.message}`);
+  }
+  addStates.delete(ctx.chat.id);
+  await showChannelEdit(ctx, channelId);
 });
 
 // ── Set Message ─────────────────────────────────────────────────
