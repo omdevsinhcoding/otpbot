@@ -98,11 +98,8 @@ function transformMarkup(raw) {
   try {
     const markup = JSON.parse(JSON.stringify(raw));
 
-    if (markup.inline_keyboard) {
-      markup.inline_keyboard = markup.inline_keyboard.map(row =>
-        row.map(btn => ({ ...btn, text: toBoldSans(btn.text) }))
-      );
-    }
+    // Inline keyboard buttons — keep normal (no font change)
+    // Only reply keyboard (bottom menu) gets bold
 
     if (markup.keyboard) {
       markup.keyboard = markup.keyboard.map(row =>

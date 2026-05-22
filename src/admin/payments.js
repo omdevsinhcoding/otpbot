@@ -318,12 +318,18 @@ async function showCryptomusSettings(ctx) {
     text += `</blockquote>\n\n`;
   }
 
-  // Active coins list
+  // Active coins list (max 10 shown to stay within Telegram message limit)
   if (activeCoinsCount > 0) {
     text += `<blockquote>`;
     text += `🪙 <b>ACTIVE COINS</b>\n\n`;
-    for (const [coin, nets] of Object.entries(groups)) {
+    const entries = Object.entries(groups);
+    const MAX_SHOW = 10;
+    const shown = entries.slice(0, MAX_SHOW);
+    for (const [coin, nets] of shown) {
       text += `  ${coin}  ›  ${nets.join(' · ')}\n`;
+    }
+    if (entries.length > MAX_SHOW) {
+      text += `\n  ...and <b>${entries.length - MAX_SHOW}</b> more coins`;
     }
     text += `</blockquote>`;
   } else {
