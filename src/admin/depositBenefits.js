@@ -78,8 +78,11 @@ async function showDashboard(ctx) {
   const rules = await depositRulesRepo.getAllRules(pool);
   const onoff = enabled ? '🟢 ON' : '🔴 OFF';
   const toggleBtn = enabled ? '🔴 Turn OFF' : '🟢 Turn ON';
+  const telegraphName = await settingsRepo.getSetting(pool, 'telegraph_author_name') || '';
 
   let text = `💎 <b>Deposit Benefits</b>  ${onoff}\n`;
+  if (telegraphName) text += `📝 Telegraph Name: <b>${escapeHtml(telegraphName)}</b>\n`;
+
   if (rules.length === 0) {
     text += `\n<blockquote><b>What is this?</b>\n\n` +
       `Set automatic rules for deposits:\n` +
@@ -102,6 +105,7 @@ async function showDashboard(ctx) {
     kb.text('📋 Edit / Remove', 'benefits:manage').row();
     kb.text('🔮 Test', 'benefits:test').text('📊 Stats', 'benefits:stats').row();
   }
+  kb.text('📝 Set Telegraph Name', 'benefits:set_author').row();
   kb.text('◀ Back', 'admin:back');
   try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
   catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
@@ -111,6 +115,34 @@ composer.callbackQuery('benefits:toggle', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const cur = await settingsRepo.getSetting(ctx.dbPool, 'deposit_benefits_enabled');
   await settingsRepo.setSetting(ctx.dbPool, 'deposit_benefits_enabled', !cur, ctx.from.id);
+  await showDashboard(ctx);
+});
+
+// ── Set Telegraph Author Name ──
+composer.callbackQuery('benefits:set_author', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const current = await settingsRepo.getSetting(ctx.dbPool, 'telegraph_author_name') || '';
+  let text = `📝 <b>Set Telegraph Name</b>\n\n`;
+  text += `<blockquote>This is <b>optional</b>. If you set a name here, it will be shown as the author on the Telegraph rules page instead of the default.\n\n`;
+  text += `Current: <b>${current || '(not set — using default)'}</b></blockquote>\n\n`;
+  text += `Type the name you want to show on Telegraph:`;
+  states.set(ctx.chat.id, { step: 'set_telegraph_author' });
+  const kb = new InlineKeyboard();
+  if (current) kb.text('🗑 Remove Name', 'benefits:remove_author').row();
+  kb.text('❌ Cancel', 'admin:benefits');
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
+});
+
+composer.callbackQuery('benefits:remove_author', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  await settingsRepo.setSetting(ctx.dbPool, 'telegraph_author_name', '', ctx.from.id);
+  // Regenerate Telegraph page with default name
+  try {
+    const { updateRulesPage } = await import('../services/telegraphService.js');
+    await updateRulesPage(ctx.dbPool);
+  } catch {}
+  states.delete(ctx.chat.id);
   await showDashboard(ctx);
 });
 
@@ -498,6 +530,24 @@ composer.on('message:text', async (ctx, next) => {
   const pool = ctx.dbPool;
   const input = ctx.message.text.trim();
   const num = parseFloat(input);
+
+  // ── Telegraph author name ──
+  if (state.step === 'set_telegraph_author') {
+    if (!input || input.length > 64) {
+      await ctx.reply('⚠️ Name must be 1–64 characters:');
+      return;
+    }
+    await settingsRepo.setSetting(pool, 'telegraph_author_name', input, ctx.from.id);
+    // Regenerate Telegraph page with new name
+    try {
+      const { updateRulesPage } = await import('../services/telegraphService.js');
+      await updateRulesPage(pool);
+    } catch {}
+    states.delete(ctx.chat.id);
+    await ctx.reply(`✅ Telegraph name set to: <b>${escapeHtml(input)}</b>`, { parse_mode: 'HTML' });
+    await showDashboard(ctx);
+    return;
+  }
 
   // ── Wizard custom inputs ──
   if (state.customStep) {

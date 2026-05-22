@@ -171,7 +171,8 @@ export async function updateRulesPage(pool) {
     if (rules.length === 0) return null;
 
     const token = await getToken(pool);
-    const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTPBOT';
+    const customName = await settingsRepo.getSetting(pool, 'telegraph_author_name');
+    const botName = customName || await settingsRepo.getSetting(pool, 'bot_name') || 'OTPBOT';
     const content = buildContent(rules, botName);
     const title = `💎 ${botName} — Deposit Benefits`;
 
