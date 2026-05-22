@@ -24,13 +24,14 @@ export function startWebServer(bot, pool, port = 3000) {
   _app.get('/health', (req, res) => res.json({ status: 'ok', uptime: Math.floor(process.uptime()) }));
 
   // Cryptomus webhook — INSTANT payment notification
-  _app.post('/webhook/cryptomus', handleCryptomusWebhook);
+  _app.post('/crypto/webhook', handleCryptomusWebhook);
 
   // Future: Mini App dashboard routes will go here
   // _app.use('/app', express.static('public'));
 
-  _server = _app.listen(port, () => {
-    logger.info(`[WebServer] Running on port ${port}`);
+  const host = process.env.IP || '0.0.0.0';
+  _server = _app.listen(port, host, () => {
+    logger.info(`[WebServer] Running on ${host}:${port}`);
   });
 
   return _app;

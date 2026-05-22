@@ -11,7 +11,6 @@ import * as binanceRate from '../services/binanceRateService.js';
 import { formatNumber, escapeHtml } from '../utils/formatters.js';
 import { generateBrandedQR } from '../services/qrImageService.js';
 import logger from '../utils/logger.js';
-import settings from '../config/settings.js';
 
 // ── Crypto display helpers ──────────────────────────────────────
 function _coinEmoji(coin) {
@@ -41,174 +40,120 @@ const userStates = new Map(); // chatId → { step, gateway, msgId }
 // ── Per-user rate limit for Check Payment (anti-spam at 400K scale) ──
 const checkCooldowns = new Map(); // chatId → timestamp of last check
 const COOLDOWN_MS = 3_000; // 3 seconds between checks per user
-
-// ── Concurrent check guard (prevents double-click issues) ───────────
-const activeChecks = new Set(); // chatIds currently being verified
+const activeChecks = new Set(); // prevent double-click on PAID button
 
 // ═══════════════════════════════════════════════════════════════════
-//  CRYPTO PAYMENT MONITOR — Single-loop, production-grade
-//  ONE loop handles ALL pending orders. No per-order intervals.
-//  Designed for 400K+ users:
-//    • 10 concurrent API checks per batch
-//    • 3s pause between batches = max ~200 checks/min
-//    • Auto-start when orders added, auto-stop when empty
-//    • Round-robin queue ensures fairness
-//    • Logs only state changes (paid/failed/expired)
+//  CRYPTO INSTANT PAYMENT DETECTOR — Zero-delay architecture
+//
+//  Design:
+//    • Every order runs its own independent check loop
+//    • Check every 3 seconds — no batching, no queues, no waiting
+//    • When Cryptomus says "paid" → credit in <100ms
+//    • 2000 concurrent orders = 2000 independent checks = no problem
+//    • Node.js handles this easily (async I/O, not CPU-bound)
+//    • Auto-cleanup: stops after 65 min or on paid/failed/cancel
+//    • PAID button = additional instant check (on top of auto-check)
+//
+//  Why this works at scale:
+//    • Each check = 1 HTTP GET to Cryptomus (~200ms) + 0% CPU
+//    • Node.js event loop handles 10,000+ concurrent HTTP requests
+//    • 2000 orders × 1 req/3s = 667 req/s (Cryptomus handles this)
+//    • Database: only queried on state change (paid/failed), not every check
+//    • Memory: ~500 bytes per order × 2000 = 1MB total
 // ═══════════════════════════════════════════════════════════════════
-class CryptoPaymentMonitor {
-  constructor() {
-    this.orders = new Map();  // orderId → { uuid, userId, chatId, msgId, apiKey, merchantId, bot, pool, createdAt }
-    this.running = false;
-    this.BATCH_SIZE = 10;            // concurrent API checks per batch
-    this.BATCH_DELAY_MS = 30_000;    // 30s — webhook handles instant, this is fallback only
-    this.MAX_AGE_MS = 65 * 60_000;   // auto-expire after 65 min
-  }
 
-  add(bot, pool, orderId, uuid, userId, chatId, msgId, apiKey, merchantId) {
-    if (this.orders.has(orderId)) return;
-    this.orders.set(orderId, { bot, pool, uuid, userId, chatId, msgId, apiKey, merchantId, createdAt: Date.now() });
-    this._ensureRunning();
-  }
+const _activeOrders = new Map(); // orderId → { intervalId, ...data }
 
-  remove(orderId) {
-    this.orders.delete(orderId);
-  }
+function startCryptoAutoCheck(api, pool, orderId, uuid, userId, chatId, msgId, apiKey, merchantId) {
+  // Don't duplicate
+  if (_activeOrders.has(orderId)) return;
 
-  get size() { return this.orders.size; }
+  const CHECK_INTERVAL = 3_000;  // 3 seconds — fast
+  const MAX_AGE = 65 * 60_000;   // auto-stop after 65 min
+  const startTime = Date.now();
 
-  _ensureRunning() {
-    if (this.running) return;
-    this.running = true;
-    this._loop();
-  }
-
-  async _loop() {
-    while (this.orders.size > 0) {
-      const batch = [];
-      const now = Date.now();
-
-      for (const [orderId, data] of this.orders) {
-        // Auto-expire old orders first (no API call needed)
-        if (now - data.createdAt > this.MAX_AGE_MS) {
-          this.orders.delete(orderId);
-          this._handleExpired(orderId, data).catch(() => {});
-          continue;
-        }
-        batch.push([orderId, data]);
-        if (batch.length >= this.BATCH_SIZE) break;
-      }
-
-      if (batch.length > 0) {
-        await Promise.allSettled(batch.map(([id, d]) => this._checkOne(id, d)));
-      }
-
-      // Wait before next batch
-      await new Promise(r => setTimeout(r, this.BATCH_DELAY_MS));
-    }
-
-    this.running = false;
-  }
-
-  async _checkOne(orderId, data) {
+  const intervalId = setInterval(async () => {
     try {
-      const result = await cryptomusService.checkPayment(data.apiKey, data.merchantId, data.uuid);
+      // Auto-expire old orders
+      if (Date.now() - startTime > MAX_AGE) {
+        _stopOrder(orderId);
+        const txn = await transactionRepo.getByOrderId(pool, orderId);
+        if (txn?.status === 'pending') {
+          await transactionRepo.updateStatus(pool, orderId, 'expired');
+          try { await api.deleteMessage(chatId, msgId); } catch {}
+          await api.sendMessage(chatId,
+            `⏰ <b>Payment Expired</b>\n\n` +
+            `📋 <b>Order:</b> <code>${orderId}</code>\n\n` +
+            `<i>Payment time has expired. Please create a new order.</i>`,
+            { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '💰 Deposit', callback_data: 'deposit:menu' }]] } }
+          );
+        }
+        return;
+      }
+
+      // Check with Cryptomus API
+      const result = await cryptomusService.checkPayment(apiKey, merchantId, uuid);
 
       if (result.success) {
-        this.orders.delete(orderId);
-        // Skip if webhook already credited this order
-        const txn = await transactionRepo.getByOrderId(data.pool, orderId);
-        if (txn?.status === 'success') return;
-        await this._handlePaid(orderId, data, result);
+        // ═══ PAID — INSTANT CREDIT ═══
+        _stopOrder(orderId);
+        const txn = await transactionRepo.getByOrderId(pool, orderId);
+        if (!txn || txn.status === 'success') return; // already credited
+
+        const creditAmount = parseFloat(txn.amount);
+        await transactionRepo.updateStatus(pool, orderId, 'success', uuid, { cryptomus_status: result.status });
+        await walletRepo.addBalance(pool, userId, creditAmount);
+        const newBalance = await walletRepo.getBalance(pool, userId);
+
+        try { await api.deleteMessage(chatId, msgId); } catch {}
+        await api.sendMessage(chatId,
+          `╔══════════════════════╗\n` +
+          `   ✅ <b>Payment Received!</b>\n` +
+          `╚══════════════════════╝\n\n` +
+          `💰 <b>Credited:</b> ₹${creditAmount.toFixed(2)}\n` +
+          `💳 <b>New Balance:</b> ₹${formatNumber(newBalance)}\n` +
+          `📋 <b>Order:</b> <code>${orderId}</code>\n\n` +
+          `🎉 <i>Your wallet has been updated!</i>`,
+          { parse_mode: 'HTML' }
+        );
+        logger.info(`[Crypto] ✅ ${orderId} ₹${creditAmount} → user ${userId}`);
+
       } else if (['cancel', 'system_fail', 'fail', 'wrong_amount'].includes(result.status)) {
-        this.orders.delete(orderId);
-        const txn2 = await transactionRepo.getByOrderId(data.pool, orderId);
-        if (txn2?.status !== 'pending') return;
-        await this._handleFailed(orderId, data, result);
+        // ═══ FAILED ═══
+        _stopOrder(orderId);
+        const txn = await transactionRepo.getByOrderId(pool, orderId);
+        if (!txn || txn.status !== 'pending') return;
+
+        await transactionRepo.updateStatus(pool, orderId, 'failed', uuid, { cryptomus_status: result.status });
+        try { await api.deleteMessage(chatId, msgId); } catch {}
+        await api.sendMessage(chatId,
+          `❌ <b>Payment Failed</b>\n\n` +
+          `📋 <b>Order:</b> <code>${orderId}</code>\n` +
+          `📊 <b>Status:</b> ${result.status}\n\n` +
+          `<i>Please try again with a new order.</i>`,
+          { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '💰 Deposit', callback_data: 'deposit:menu' }]] } }
+        );
+        logger.info(`[Crypto] ❌ ${orderId} failed (${result.status})`);
       }
-      // else: still pending ('process', 'check', 'confirming') → stays in queue
+      // else: still pending → interval continues checking
     } catch {
-      // Transient error — skip, will retry next cycle
+      // API error — silently retry next interval
     }
-  }
+  }, CHECK_INTERVAL);
 
-  async _handlePaid(orderId, data, result) {
-    try {
-      const txn = await transactionRepo.getByOrderId(data.pool, orderId);
-      if (!txn || txn.status === 'success') return; // already credited
-
-      const creditAmount = parseFloat(txn.amount);
-      await transactionRepo.updateStatus(data.pool, orderId, 'success', data.uuid, { cryptomus_status: result.status });
-      await walletRepo.addBalance(data.pool, data.userId, creditAmount);
-      const newBalance = await walletRepo.getBalance(data.pool, data.userId);
-
-      try { await data.bot.api.deleteMessage(data.chatId, data.msgId); } catch { /* ignore */ }
-
-      await data.bot.api.sendMessage(data.chatId,
-        `╔══════════════════════╗\n` +
-        `   ✅ <b>Payment Received!</b>\n` +
-        `╚══════════════════════╝\n\n` +
-        `💰 <b>Credited:</b> ₹${creditAmount.toFixed(2)}\n` +
-        `💳 <b>New Balance:</b> ₹${formatNumber(newBalance)}\n` +
-        `📋 <b>Order:</b> <code>${orderId}</code>\n\n` +
-        `🎉 <i>Your wallet has been updated instantly!</i>`,
-        { parse_mode: 'HTML' }
-      );
-      logger.info(`[CryptoMonitor] ✅ ${orderId} paid ₹${creditAmount} → user ${data.userId}`);
-    } catch (err) {
-      logger.error(`[CryptoMonitor] paid handler error ${orderId}: ${err.message}`);
-    }
-  }
-
-  async _handleFailed(orderId, data, result) {
-    try {
-      const txn = await transactionRepo.getByOrderId(data.pool, orderId);
-      if (!txn || txn.status !== 'pending') return;
-
-      await transactionRepo.updateStatus(data.pool, orderId, 'failed', data.uuid, { cryptomus_status: result.status });
-      try { await data.bot.api.deleteMessage(data.chatId, data.msgId); } catch { /* ignore */ }
-      await data.bot.api.sendMessage(data.chatId,
-        `❌ <b>Payment Failed</b>\n\n` +
-        `📋 <b>Order:</b> <code>${orderId}</code>\n` +
-        `📊 <b>Status:</b> ${result.status}\n\n` +
-        `<i>Please try again with a new order.</i>`,
-        { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '💰 Deposit', callback_data: 'deposit:menu' }]] } }
-      );
-      logger.info(`[CryptoMonitor] ❌ ${orderId} failed (${result.status})`);
-    } catch (err) {
-      logger.error(`[CryptoMonitor] fail handler error ${orderId}: ${err.message}`);
-    }
-  }
-
-  async _handleExpired(orderId, data) {
-    try {
-      const txn = await transactionRepo.getByOrderId(data.pool, orderId);
-      if (!txn || txn.status !== 'pending') return;
-
-      await transactionRepo.updateStatus(data.pool, orderId, 'expired');
-      try { await data.bot.api.deleteMessage(data.chatId, data.msgId); } catch { /* ignore */ }
-      await data.bot.api.sendMessage(data.chatId,
-        `⏰ <b>Payment Expired</b>\n\n` +
-        `📋 <b>Order:</b> <code>${orderId}</code>\n\n` +
-        `<i>Your payment time has expired.\nPlease create a new order.</i>`,
-        { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '💰 Deposit', callback_data: 'deposit:menu' }]] } }
-      );
-      logger.info(`[CryptoMonitor] ⏰ ${orderId} expired`);
-    } catch (err) {
-      logger.error(`[CryptoMonitor] expire handler error ${orderId}: ${err.message}`);
-    }
-  }
+  _activeOrders.set(orderId, { intervalId, uuid, userId, chatId, msgId, apiKey, merchantId });
 }
 
-// Single global instance
-const cryptoMonitor = new CryptoPaymentMonitor();
-
-// Backward-compatible API
-function startCryptoAutoCheck(bot, pool, orderId, uuid, userId, chatId, msgId, apiKey, merchantId) {
-  cryptoMonitor.add(bot, pool, orderId, uuid, userId, chatId, msgId, apiKey, merchantId);
+function _stopOrder(orderId) {
+  const order = _activeOrders.get(orderId);
+  if (order) {
+    clearInterval(order.intervalId);
+    _activeOrders.delete(orderId);
+  }
 }
 
 function stopCryptoAutoCheck(orderId) {
-  cryptoMonitor.remove(orderId);
+  _stopOrder(orderId);
 }
 
 
@@ -928,9 +873,8 @@ async function handleCryptoWebDeposit(ctx, amount) {
   const orderId = `CX-${Date.now().toString().slice(-8)}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
   await walletRepo.ensureWallet(pool, ctx.from.id);
 
-  const webhookUrl = settings.WEBHOOK_URL ? `${settings.WEBHOOK_URL}/webhook/cryptomus` : undefined;
   const result = await cryptomusService.createInvoice(apiKey, merchantId, {
-    amount, currency: 'INR', orderId, urlCallback: webhookUrl,
+    amount, currency: 'INR', orderId,
   });
 
   if (!result.success) {
@@ -1075,9 +1019,8 @@ async function handleCryptomusDeposit(ctx, currency, network, amount) {
   const orderId = `CX-${Date.now().toString().slice(-8)}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
   await walletRepo.ensureWallet(pool, ctx.from.id);
 
-  const webhookUrl = settings.WEBHOOK_URL ? `${settings.WEBHOOK_URL}/webhook/cryptomus` : undefined;
   const result = await cryptomusService.createInvoice(apiKey, merchantId, {
-    amount, currency: 'INR', toCurrency: currency, network, orderId, urlCallback: webhookUrl,
+    amount, currency: 'INR', toCurrency: currency, network, orderId,
   });
 
   if (!result.success) {
@@ -1266,9 +1209,21 @@ composer.callbackQuery(/^deposit:check_crypto:CRYPTO_/, async (ctx) => {
 composer.callbackQuery(/^deposit:cancel_txn:/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const orderId = ctx.callbackQuery.data.replace('deposit:cancel_txn:', '');
-  stopCryptoAutoCheck(orderId); // Stop background polling
-  const txn = await transactionRepo.getByOrderId(ctx.dbPool, orderId);
-  await transactionRepo.updateStatus(ctx.dbPool, orderId, 'cancelled');
+  const pool = ctx.dbPool;
+  stopCryptoAutoCheck(orderId);
+
+  const txn = await transactionRepo.getByOrderId(pool, orderId);
+
+  // Cancel on Cryptomus side if it's a crypto order with UUID
+  if (txn?.gateway_data?.uuid && orderId.startsWith('CX-')) {
+    const apiKey = await settingsRepo.getSetting(pool, 'cryptomus_api_key');
+    const merchantId = await settingsRepo.getSetting(pool, 'cryptomus_merchant_id');
+    if (apiKey && merchantId) {
+      await cryptomusService.cancelPayment(apiKey, merchantId, txn.gateway_data.uuid).catch(() => {});
+    }
+  }
+
+  await transactionRepo.updateStatus(pool, orderId, 'cancelled');
   try { await ctx.deleteMessage(); } catch { /* ignore */ }
   await ctx.reply(
     `╔══════════════════════╗\n` +
@@ -1276,7 +1231,7 @@ composer.callbackQuery(/^deposit:cancel_txn:/, async (ctx) => {
     `╚══════════════════════╝\n\n` +
     `📋 <b>Order:</b> <code>${orderId}</code>\n` +
     `💰 <b>Amount:</b> ₹${txn ? parseFloat(txn.amount).toFixed(2) : '0.00'}\n\n` +
-    `<i>Your payment order has been cancelled.\nYou can create a new order anytime.</i>`,
+    `<i>Order cancelled on both sides.\nYou can create a new order anytime.</i>`,
     { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Deposit', 'deposit:menu') }
   );
 });

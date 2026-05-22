@@ -123,3 +123,32 @@ export async function checkPayment(apiKey, merchantId, uuid) {
     return { success: false, status: 'error', amount: null };
   }
 }
+
+/**
+ * Cancel a Cryptomus payment
+ * @param {string} apiKey
+ * @param {string} merchantId
+ * @param {string} uuid - Payment UUID
+ * @returns {Promise<{ success: boolean, error?: string }>}
+ */
+export async function cancelPayment(apiKey, merchantId, uuid) {
+  try {
+    const data = { uuid };
+    const sign = makeSign(apiKey, data);
+    const response = await fetch(`${CRYPTOMUS_API}/payment/cancel`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'merchant': merchantId,
+        'sign': sign,
+      },
+      body: JSON.stringify(data),
+    });
+    const result = await response.json();
+    if (result.result) return { success: true };
+    return { success: false, error: result.message || 'Cancel failed' };
+  } catch (err) {
+    logger.error(`Cryptomus cancel failed: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+}
