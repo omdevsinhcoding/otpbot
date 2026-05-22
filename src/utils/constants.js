@@ -103,21 +103,12 @@ export const BTN_PAY_BACK = "◀️ Back to Admin";
 
 // ── Default welcome message (premium template) ──────────────────────
 export const DEFAULT_WELCOME_TEXT =
-`⭐️ <b>PREMIUM ACCESS GRANTED</b> ⭐️
+`Hey {user}! 👋
 
-Welcome aboard, {user}! 🎉
+<blockquote>Welcome to the bot! We're glad to have you here.
 
-<blockquote>💎 You now have full access to our premium services — fast, secure, and built for the best experience.
+⚡ Fast & Reliable
+🔒 Secure & Private
+💎 Best-in-class Service</blockquote>
 
-✅ Verified & Trusted
-⚡ Instant Processing
-🔒 End-to-End Secure</blockquote>
-
-┏━━━━━━━━━━━━━━━━━━┓
-┃  <b>📋 YOUR PROFILE</b>
-┃  🆔  <code>{id}</code>
-┃  👤  {full_name}
-┃  📎  {username}
-┗━━━━━━━━━━━━━━━━━━┛
-
-<i>👇 Choose an option below to begin!</i>`;
+<i>👇 Tap below to get started!</i>`;

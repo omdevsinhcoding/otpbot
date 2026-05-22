@@ -36,9 +36,15 @@ composer.callbackQuery('admin:welcome', adminRequired, async (ctx) => {
   const kb = new InlineKeyboard()
     .text('📝 Set Message', 'welcome:set').text('👁 Preview', 'welcome:preview').row()
     .text(welcomeEnabled ? '🔴 Disable' : '🟢 Enable', 'welcome:toggle').row()
-    .text('🔘 Manage Buttons', 'welcome:buttons').row()
-    .text('🔄 Reset Default', 'welcome:reset').row()
-    .text('‹ Back', 'admin:back');
+    .text('🔘 Manage Buttons', 'welcome:buttons').row();
+
+  // Only show Reset Default if admin has customized the message
+  const isCustomized = welcome && welcome.message_text && welcome.message_text.trim() !== DEFAULT_WELCOME_TEXT.trim();
+  if (isCustomized) {
+    kb.text('🔄 Reset Default', 'welcome:reset').row();
+  }
+
+  kb.text('‹ Back', 'admin:back');
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
 });
