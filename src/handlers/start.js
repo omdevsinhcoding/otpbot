@@ -25,9 +25,16 @@ async function sendWelcomeAndMenu(ctx) {
       const welcome = await welcomeRepo.getWelcomeMessage(pool);
       if (welcome) {
         const msgText = replaceWelcomePlaceholders(welcome.message_text, ctx.from);
-        const kb = welcome.buttons?.length
-          ? buildInlineButtons(welcome.buttons)
-          : undefined;
+
+        // Build inline buttons — skip any with invalid URLs
+        let kb = undefined;
+        if (welcome.buttons?.length) {
+          try {
+            kb = buildInlineButtons(welcome.buttons);
+          } catch (err) {
+            logger.debug(`Failed to build inline buttons: ${err.message}`);
+          }
+        }
 
         if (welcome.media_type === 'photo' && welcome.media_file_id) {
           await ctx.replyWithPhoto(welcome.media_file_id, {
@@ -55,12 +62,11 @@ async function sendWelcomeAndMenu(ctx) {
     logger.debug(`Welcome message fetch failed: ${err.message}`);
   }
 
-  // Default greeting
-  const existingUser = await userRepo.getUser(pool, ctx.from.id);
-  const isReturning = !!existingUser;
-  const name = ctx.from.first_name || 'User';
+  // Default greeting — with clickable user mention link
+  const firstName = ctx.from.first_name || 'User';
+  const userMention = `<a href="tg://user?id=${ctx.from.id}">${firstName.replace(/[<>&]/g, '')}</a>`;
   await ctx.reply(
-    `👋 <b>Welcome${isReturning ? ' back' : ''}, ${name}!</b>\n\n` +
+    `👋 <b>Welcome, ${userMention}!</b>\n\n` +
     `Use the menu below to get started.`,
     { parse_mode: 'HTML', reply_markup: mainMenu }
   );
@@ -114,7 +120,9 @@ composer.command('start', async (ctx) => {
 
       const tcKb = new InlineKeyboard();
       for (const btn of tcButtons) {
-        tcKb.url(btn.text, btn.url).row();
+        if (btn.url && isValidUrl(btn.url)) {
+          tcKb.url(btn.text, btn.url).row();
+        }
       }
       tcKb.text('✅ Accept', 'tc:accept').style('success');
       tcKb.text('❌ Decline', 'tc:decline').style('danger');
@@ -161,5 +169,17 @@ composer.callbackQuery('fjcheck:verify', async (ctx) => {
     await ctx.editMessageText('✅ Verification passed! Send /start to continue.');
   }
 });
+
+/**
+ * Basic URL validation — checks if a URL has a valid domain with a dot.
+ */
+function isValidUrl(str) {
+  try {
+    const u = new URL(str);
+    return (u.protocol === 'http:' || u.protocol === 'https:') && u.hostname.includes('.');
+  } catch {
+    return false;
+  }
+}
 
 export default composer;

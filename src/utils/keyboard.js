@@ -61,6 +61,18 @@ export const ADMIN_PANEL_KEYBOARD = new InlineKeyboard()
  * Build an InlineKeyboard from a JSON-style nested array.
  * Each inner array = one row. Each button: { text, url } or { text, callback_data }.
  */
+/**
+ * Validates a URL has proper format (protocol + domain with dot).
+ */
+function isValidBtnUrl(str) {
+  try {
+    const u = new URL(str);
+    return (u.protocol === 'http:' || u.protocol === 'https:') && u.hostname.includes('.');
+  } catch {
+    return false;
+  }
+}
+
 export function buildInlineButtons(buttonsJson) {
   const kb = new InlineKeyboard();
   if (!Array.isArray(buttonsJson)) return kb;
@@ -69,8 +81,12 @@ export function buildInlineButtons(buttonsJson) {
     if (!Array.isArray(row)) {
       // flat list — each item is its own row
       const btn = row;
-      if (btn.url) kb.url(btn.text, btn.url);
-      else kb.text(btn.text, btn.callback_data || 'noop');
+      if (btn.url) {
+        if (!isValidBtnUrl(btn.url)) continue; // skip invalid URLs
+        kb.url(btn.text, btn.url);
+      } else {
+        kb.text(btn.text, btn.callback_data || 'noop');
+      }
       // Apply Telegram style (success=green, primary=blue, danger=red)
       if (btn.color && ['success', 'primary', 'danger'].includes(btn.color)) {
         kb.style(btn.color);
@@ -79,8 +95,12 @@ export function buildInlineButtons(buttonsJson) {
       continue;
     }
     for (const btn of row) {
-      if (btn.url) kb.url(btn.text, btn.url);
-      else kb.text(btn.text, btn.callback_data || 'noop');
+      if (btn.url) {
+        if (!isValidBtnUrl(btn.url)) continue; // skip invalid URLs
+        kb.url(btn.text, btn.url);
+      } else {
+        kb.text(btn.text, btn.callback_data || 'noop');
+      }
       if (btn.color && ['success', 'primary', 'danger'].includes(btn.color)) {
         kb.style(btn.color);
       }

@@ -180,8 +180,16 @@ composer.on('message:text', async (ctx, next) => {
     }
 
     const [btnText, btnUrl] = parts;
-    if (!btnUrl.startsWith('http://') && !btnUrl.startsWith('https://')) {
-      await ctx.reply('⚠️ Invalid URL. Must start with <code>http://</code> or <code>https://</code>', {
+
+    // Validate URL has proper domain (not just 'https://url')
+    let validUrl = false;
+    try {
+      const u = new URL(btnUrl);
+      validUrl = (u.protocol === 'http:' || u.protocol === 'https:') && u.hostname.includes('.');
+    } catch {}
+
+    if (!validUrl) {
+      await ctx.reply('⚠️ Invalid URL! Must be a real link like:\n<code>https://telegra.ph/my-article</code>\n<code>https://example.com/terms</code>', {
         parse_mode: 'HTML',
         reply_markup: new InlineKeyboard().text('➕ Try Again', 'tc:add_btn').text('◀ Back', 'admin:tc')
       });

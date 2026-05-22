@@ -225,6 +225,21 @@ composer.on('message:text', async (ctx, next) => {
       return;
     }
 
+    // Validate URL has a proper domain (not just 'https://url')
+    let validUrl = false;
+    try {
+      const u = new URL(parts[1]);
+      validUrl = (u.protocol === 'http:' || u.protocol === 'https:') && u.hostname.includes('.');
+    } catch {}
+
+    if (!validUrl) {
+      await ctx.reply('⚠️ Invalid URL! Must be a real link like:\n<code>https://t.me/mychannel</code>\n<code>https://telegra.ph/my-article</code>', {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('➕ Try Again', 'welcome:add_btn').text('‹ Back', 'welcome:buttons')
+      });
+      return;
+    }
+
     const pool = ctx.dbPool;
     const welcome = await welcomeRepo.getWelcomeMessage(pool);
     if (!welcome) {
