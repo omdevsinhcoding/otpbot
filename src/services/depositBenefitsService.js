@@ -233,69 +233,81 @@ export async function getDepositInfoMessage(pool, userId) {
 
     const rolling30d = userId ? await depositRulesRepo.getUserRolling30d(pool, userId) : 0;
 
-
-
     const lines = [];
-    lines.push(`━━━━━━━━━━━━━━━━`);
-    lines.push(`💎 <b>EXTRA DEPOSIT BENEFITS</b>`);
-    lines.push(`━━━━━━━━━━━━━━━━`);
-    lines.push('');
+    lines.push(``);
+    lines.push(`━━━━━━━━━━━━━━━━━━━━`);
+    lines.push(`💎 <b>Exᴛʀᴀ Dᴇᴘᴏsɪᴛ Bᴇɴᴇғɪᴛs</b>`);
+    lines.push(`━━━━━━━━━━━━━━━━━━━━`);
+    lines.push(``);
 
     // Tax rules
     const taxRules = rules.filter(r => r.rule_type === 'tax');
     for (const r of taxRules) {
-
-      const emoji = r.emoji || '😮‍💨';
       const max = parseFloat(r.max_deposit);
-      const rangeStr = max > 0
-        ? `₹${formatNumber(parseFloat(r.min_deposit))} – ₹${formatNumber(max)}`
-        : `Below ₹${formatNumber(parseFloat(r.min_deposit) || 100)}`;
-      lines.push(`${emoji} Deposit ${rangeStr}`);
-      lines.push(`   → ${parseFloat(r.percentage)}% Tax`);
-      lines.push('');
-    }
-
-    // Bonus rules
-    const bonusRules = rules.filter(r => r.rule_type === 'bonus' || r.rule_type === 'loyalty_bonus');
-    if (bonusRules.length > 0) {
-      lines.push(`🥰 Deposit ₹${formatNumber(parseFloat(bonusRules[0].min_deposit) || 100)}+`);
-      lines.push(`   → Bonus unlocked`);
-      lines.push('');
-
-      for (const r of bonusRules) {
-
-        const emoji = r.emoji || '🤑';
-        const threshold = parseFloat(r.rolling_30d_min) || parseFloat(r.min_deposit) || 0;
-        const isActive = rolling30d >= threshold;
-        const marker = isActive ? '  ✅' : '';
-        lines.push(`${emoji} 30 Days Deposit ₹${formatNumber(threshold)}+`);
-        lines.push(`   → ${parseFloat(r.percentage)}% Extra Bonus${marker}`);
-        lines.push('');
+      const pct = parseFloat(r.percentage);
+      if (max > 0) {
+        lines.push(`😮‍💨 deposit less then ₹${formatNumber(max)}, you pay <b>${pct}% tax</b>.`);
       }
     }
 
-    lines.push(`━━━━━━━━━━━━━━━━`);
-    lines.push(`🎉 <b>YOUR 30 DAYS DEPOSIT</b>`);
-    lines.push(`   ↳ ₹${formatNumber(rolling30d)}`);
-    lines.push(`━━━━━━━━━━━━━━━━`);
-
-    // Current eligible reward
-    let currentReward = null;
-    for (const rule of bonusRules) {
-
-      const threshold = parseFloat(rule.rolling_30d_min) || parseFloat(rule.min_deposit) || 0;
-      if (rolling30d >= threshold) {
-        currentReward = rule;
-      }
+    // Simple bonus rules (no 30-day condition)
+    const simpleBonusRules = rules.filter(r => r.rule_type === 'bonus');
+    for (const r of simpleBonusRules) {
+      const min = parseFloat(r.min_deposit);
+      const pct = parseFloat(r.percentage);
+      lines.push(`🙂 deposit ₹${formatNumber(min)}+, you get <b>${pct}% extra money</b> of deposit.`);
     }
 
-    lines.push('');
-    if (currentReward) {
-      lines.push(`😻 <b>Current Eligible Reward:</b>`);
-      lines.push(`   → +${parseFloat(currentReward.percentage)}% EXTRA BONUS`);
-    } else {
-      lines.push(`💡 <i>Deposit more to unlock bonus rewards!</i>`);
+    // Loyalty rules (sorted by rolling min ascending)
+    const loyaltyRules = rules.filter(r => r.rule_type === 'loyalty_bonus')
+      .sort((a, b) => parseFloat(a.rolling_30d_min) - parseFloat(b.rolling_30d_min));
+
+    for (const r of loyaltyRules) {
+      const min = parseFloat(r.min_deposit) || 0;
+      const rolling = parseFloat(r.rolling_30d_min) || 0;
+      const days = parseInt(r.rolling_period_days) || 30;
+      const pct = parseFloat(r.percentage);
+      const qualified = rolling30d >= rolling;
+      const check = qualified ? ' ✅' : '';
+
+      let desc = '';
+      if (min > 0) desc += `deposit ₹${formatNumber(min)}+ and `;
+      desc += `your last ${days} days deposit is ₹${formatNumber(rolling)}+`;
+      desc += `, you get <b>${pct}% extra money</b> of deposit.${check}`;
+
+      const emojis = ['☺️', '🥰', '🤑', '🥳', '😉', '🤩', '💰'];
+      const idx = loyaltyRules.indexOf(r);
+      const emoji = emojis[idx % emojis.length];
+      lines.push(`${emoji} ${desc}`);
     }
+
+    // User progress
+    lines.push(``);
+    lines.push(`━━━━━━━━━━━━━━━━━━━━`);
+    lines.push(`🏦 <b>Yᴏᴜʀ Lᴀsᴛ 30 Dᴀʏs Dᴇᴘᴏsɪᴛ</b>`);
+    lines.push(`   ━━━━▸ ₹${formatNumber(rolling30d)}`);
+
+    // Current best eligible bonus
+    const allBonusRules = [...simpleBonusRules, ...loyaltyRules];
+    let bestPct = 0;
+    for (const rule of allBonusRules) {
+      const pct = parseFloat(rule.percentage);
+      const rolling = parseFloat(rule.rolling_30d_min) || 0;
+      if (rolling > 0 && rolling30d < rolling) continue;
+      if (pct > bestPct) bestPct = pct;
+    }
+
+    if (bestPct > 0) {
+      lines.push(`🎁 You will get <b>${bestPct}% extra</b> on your current deposit amount`);
+    }
+
+    // Next tier hint
+    const nextTier = loyaltyRules.find(r => parseFloat(r.rolling_30d_min) > rolling30d);
+    if (nextTier) {
+      const needed = parseFloat(nextTier.rolling_30d_min) - rolling30d;
+      lines.push(`<i>(deposit ₹${formatNumber(needed)} more to unlock ${parseFloat(nextTier.percentage)}% bonus!)</i>`);
+    }
+    lines.push(`━━━━━━━━━━━━━━━━━━━━`);
 
     return lines.join('\n');
   } catch (err) {
@@ -303,3 +315,4 @@ export async function getDepositInfoMessage(pool, userId) {
     return null;
   }
 }
+

@@ -255,6 +255,10 @@ async function showDepositMenu(ctx) {
     `You can use your balance for all services.\n\n` +
     `👇 <b>Select Payment Method</b>`;
 
+  // Append benefits info if enabled
+  const benefitsInfo = await depositBenefitsService.getDepositInfoMessage(pool, ctx.from.id);
+  if (benefitsInfo) text += `\n${benefitsInfo}`;
+
   const kb = new InlineKeyboard();
   if (paytmOn) kb.text(`💎 ${paytmDisplayName || 'UPI'}`, 'deposit:paytm');
   if (cryptomusOn) kb.text(`💎 ${cryptoDisplayName || 'CRYPTO'}`, 'deposit:cryptomus');
