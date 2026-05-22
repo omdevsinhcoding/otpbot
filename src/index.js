@@ -13,7 +13,7 @@ import { setupErrorHandler } from './handlers/error.js';
 import settings from './config/settings.js';
 import logger from './utils/logger.js';
 import { startExpiryService, stopExpiryService } from './services/expiryService.js';
-import { boldSansTransformer } from './middleware/smallCapsTransformer.js';
+import { boldSansTransformer, boldSansDecoder } from './middleware/smallCapsTransformer.js';
 
 // ── Handlers & Admin ────────────────────────────────────────────
 import startHandler from './handlers/start.js';
@@ -67,6 +67,10 @@ async function main() {
 
 
   // 5. Middleware (admin tracking is built into admin handlers)
+
+  // 5. Bold text decoder — decode incoming bold Unicode back to ASCII
+  //    MUST be before all hears() handlers so button text matches
+  bot.use(boldSansDecoder);
 
   // 6. Register handlers (admin FIRST so they take priority over text handlers)
   bot.use(adminPanel);
