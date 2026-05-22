@@ -433,15 +433,29 @@ composer.callbackQuery('profile:transfer', async (ctx) => {
 
 composer.callbackQuery('profile:terms', async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
-  await ctx.reply(
-    '📜 <b>Terms And Conditions</b>\n\n' +
-    '1. All payments are non-refundable.\n' +
-    '2. Misuse of services will result in permanent ban.\n' +
-    '3. Contact support for any issues.\n' +
-    '4. We reserve the right to modify services.\n' +
-    '5. By using this bot, you agree to these terms.',
-    { parse_mode: 'HTML' }
-  );
+  const pool = ctx.dbPool;
+
+  const tcButtons = await settingsRepo.getSetting(pool, 'tc_buttons') || [];
+  const tcMessage = await settingsRepo.getSetting(pool, 'tc_message') ||
+    "Dear Users,\nThere Are Some Terms & Conditions Given Please Read Carefully, Else If You Face Any Problem Related To Terms And Conditions So We Can't Help You...";
+
+  const kb = new InlineKeyboard();
+  for (const btn of tcButtons) {
+    if (btn.url) {
+      kb.url(btn.text, btn.url).row();
+    }
+  }
+
+  if (tcButtons.length === 0) {
+    await ctx.reply(
+      '📜 <b>Terms And Conditions</b>\n\n' +
+      '<i>No terms & conditions page has been set up yet. Contact admin for details.</i>',
+      { parse_mode: 'HTML' }
+    );
+    return;
+  }
+
+  await ctx.reply(tcMessage, { parse_mode: 'HTML', reply_markup: kb });
 });
 
 export default composer;

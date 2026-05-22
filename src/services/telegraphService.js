@@ -7,28 +7,19 @@ import * as depositRulesRepo from '../database/repositories/depositRulesRepo.js'
 
 const API = 'https://api.telegra.ph';
 
-async function apiCall(method, params) {
-  const res = await fetch(`${API}/${method}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  });
-  const data = await res.json();
-  if (!data.ok) throw new Error(data.error || 'Telegraph API error');
-  return data.result;
-}
-
 /** Get or create a Telegraph account, store token in DB */
 async function getToken(pool) {
   let token = await settingsRepo.getSetting(pool, 'telegraph_token');
   if (token) return token;
 
   const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTPBOT';
-  const result = await apiCall('createAccount', {
-    short_name: botName,
-    author_name: botName,
-  });
-  token = result.access_token;
+  const params = new URLSearchParams();
+  params.append('short_name', botName);
+  params.append('author_name', botName);
+  const res = await fetch(`${API}/createAccount`, { method: 'POST', body: params });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'createAccount failed');
+  token = data.result.access_token;
   await settingsRepo.setSetting(pool, 'telegraph_token', token);
   return token;
 }
@@ -116,25 +107,6 @@ function buildContent(rules, botName) {
     // Tier table
     nodes.push({ tag: 'hr' });
     nodes.push({ tag: 'h4', children: ['📊 Quick Reference'] });
-
-    const tableHeader = { tag: 'tr', children: [
-      { tag: 'th', children: ['Tier'] },
-      { tag: 'th', children: ['Deposit History'] },
-      { tag: 'th', children: ['Bonus'] },
-    ]};
-
-    const tableRows = loyaltyRules.map((r, i) => {
-      const rolling = parseFloat(r.rolling_30d_min) || 0;
-      const days = parseInt(r.rolling_period_days) || 30;
-      const pct = parseFloat(r.percentage);
-      return {
-        tag: 'tr', children: [
-          { tag: 'td', children: [`${emojis[i % emojis.length]}`] },
-          { tag: 'td', children: [`₹${fmt(rolling)}+ in ${days}d`] },
-          { tag: 'td', children: [{ tag: 'strong', children: [`${pct}%`] }] },
-        ]
-      };
-    });
 
     // Telegraph doesn't support tables, use list instead
     nodes.push({ tag: 'p', children: [{ tag: 'strong', children: ['Tier → Required History → Bonus %'] }] });

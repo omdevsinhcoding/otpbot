@@ -544,8 +544,10 @@ composer.on('message:text', async (ctx, next) => {
       await updateRulesPage(pool);
     } catch {}
     states.delete(ctx.chat.id);
-    await ctx.reply(`✅ Telegraph name set to: <b>${escapeHtml(input)}</b>`, { parse_mode: 'HTML' });
-    await showDashboard(ctx);
+    await ctx.reply(`✅ Telegraph name set to: <b>${escapeHtml(input)}</b>`, {
+      parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard().text('◀ Back to Benefits', 'admin:benefits')
+    });
     return;
   }
 

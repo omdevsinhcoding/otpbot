@@ -33,6 +33,8 @@ async function showTcPanel(ctx) {
   const statusEmoji = enabled ? '🟢' : '🔴';
   const toggleLabel = enabled ? '🔴 Disable' : '🟢 Enable';
 
+  const tcAuthor = await settingsRepo.getSetting(pool, 'tc_telegraph_author') || '';
+
   let text = `📜 <b>TERMS & CONDITIONS</b>\n\n`;
   text += `<blockquote>`;
   text += `${statusEmoji} <b>Status:</b> ${enabled ? 'Active' : 'Inactive'}\n`;
@@ -40,6 +42,7 @@ async function showTcPanel(ctx) {
   text += `💬 <b>Message:</b> ${message ? '✅ Set' : '✅ Default'}\n`;
   text += `✅ <b>Accept Btn:</b> ${acceptInfo.label}\n`;
   text += `❌ <b>Decline Btn:</b> ${declineInfo.label}`;
+  if (tcAuthor) text += `\n📝 <b>Telegraph Name:</b> ${escapeHtml(tcAuthor)}`;
   text += `</blockquote>`;
 
   if (buttons.length > 0) {
@@ -58,6 +61,8 @@ async function showTcPanel(ctx) {
     kb.text('✏️ Edit Button', 'tc:edit_list').text('🗑 Remove Button', 'tc:remove_list').row();
     kb.text('👁 Preview', 'tc:preview').row();
   }
+  kb.text('🌐 Generate Default T&C', 'tc:gen_default').row();
+  kb.text('📝 Set Telegraph Name', 'tc:set_author').row();
   kb.text('◀ Back', 'admin:back');
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
@@ -241,6 +246,8 @@ composer.on('message:text', async (ctx, next) => {
     return;
   }
 
+  const input = ctx.message.text.trim();
+
   if (state.step === 'add_btn') {
     states.delete(ctx.chat.id);
     const parts = ctx.message.text.split('|').map(s => s.trim());
@@ -337,6 +344,20 @@ composer.on('message:text', async (ctx, next) => {
     return;
   }
 
+  if (state.step === 'set_tc_author') {
+    if (!input || input.length > 64) {
+      await ctx.reply('⚠️ Name must be 1–64 characters:');
+      return;
+    }
+    await settingsRepo.setSetting(ctx.dbPool, 'tc_telegraph_author', input, ctx.from.id);
+    states.delete(ctx.chat.id);
+    await ctx.reply(`✅ Telegraph name set to: <b>${escapeHtml(input)}</b>`, {
+      parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard().text('◀ Back to T&C', 'admin:tc')
+    });
+    return;
+  }
+
   return next();
 });
 
@@ -345,6 +366,94 @@ composer.callbackQuery('tc:cancel', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   states.delete(ctx.chat.id);
   await showTcPanel(ctx);
+});
+
+// ── Set Telegraph Author Name ───────────────────────────────────
+composer.callbackQuery('tc:set_author', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const current = await settingsRepo.getSetting(ctx.dbPool, 'tc_telegraph_author') || '';
+  let text = `📝 <b>Set Telegraph Name</b>\n\n`;
+  text += `<blockquote>This is <b>optional</b>. If you set a name here, it will be shown as the author on the Telegraph T&C pages instead of the default.\n\n`;
+  text += `Current: <b>${current || '(not set — using default)'}</b></blockquote>\n\n`;
+  text += `Type the name you want to show on Telegraph:`;
+  states.set(ctx.chat.id, { step: 'set_tc_author' });
+  const kb = new InlineKeyboard();
+  if (current) kb.text('🗑 Remove Name', 'tc:remove_author').row();
+  kb.text('❌ Cancel', 'tc:cancel');
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
+});
+
+composer.callbackQuery('tc:remove_author', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  await settingsRepo.setSetting(ctx.dbPool, 'tc_telegraph_author', '', ctx.from.id);
+  states.delete(ctx.chat.id);
+  await showTcPanel(ctx);
+});
+
+// ── Generate Default T&C ────────────────────────────────────────
+composer.callbackQuery('tc:gen_default', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  await ctx.editMessageText(
+    '🌐 <b>Generate Default T&C</b>\n\n' +
+    '<blockquote>This will create a beautiful, detailed Terms & Conditions page on Telegraph automatically.\n\n' +
+    'Choose a language version:</blockquote>',
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard()
+      .text('🇬🇧 English Version', 'tc:gen_en').row()
+      .text('🇮🇳 Hinglish Version', 'tc:gen_hi').row()
+      .text('◀ Back', 'admin:tc') }
+  );
+});
+
+composer.callbackQuery(/^tc:gen_(en|hi)$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery('⏳ Generating...'); } catch {}
+  const lang = ctx.callbackQuery.data.split('_')[1];
+  const langLabel = lang === 'hi' ? '🇮🇳 Hinglish' : '🇬🇧 English';
+
+  try {
+    const { generateDefaultTcPage } = await import('../services/tcTelegraphService.js');
+    const url = await generateDefaultTcPage(ctx.dbPool, lang);
+    if (!url) throw new Error('Generation failed');
+
+    // Store for auto-add
+    states.set(ctx.chat.id, { step: 'gen_done', data: { url, lang, langLabel } });
+
+    await ctx.editMessageText(
+      `✅ <b>${langLabel} T&C Generated!</b>\n\n` +
+      `<blockquote>📎 <b>URL:</b> ${url}</blockquote>\n\n` +
+      `Would you like to add this as a T&C button?`,
+      { parse_mode: 'HTML', reply_markup: new InlineKeyboard()
+        .text(`➕ Add as T&C Button`, 'tc:auto_add_btn').row()
+        .text('🌐 Generate Other Language', 'tc:gen_default').row()
+        .text('◀ Back', 'admin:tc') }
+    );
+  } catch (err) {
+    await ctx.editMessageText(
+      `❌ <b>Failed to generate ${langLabel} T&C</b>\n\n<i>${escapeHtml(err.message)}</i>`,
+      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔄 Retry', `tc:gen_${lang}`).text('◀ Back', 'admin:tc') }
+    );
+  }
+});
+
+composer.callbackQuery('tc:auto_add_btn', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const state = states.get(ctx.chat.id);
+  if (!state?.data?.url) {
+    await ctx.editMessageText('⚠️ Session expired.', { reply_markup: new InlineKeyboard().text('◀ Back', 'admin:tc') });
+    return;
+  }
+  const { url, langLabel } = state.data;
+  const btnText = langLabel.includes('Hinglish') ? '📖 Terms & Conditions (Hinglish)' : '📖 Terms & Conditions (English)';
+  const pool = ctx.dbPool;
+  const buttons = await settingsRepo.getSetting(pool, 'tc_buttons') || [];
+  buttons.push({ text: btnText, url });
+  await settingsRepo.setSetting(pool, 'tc_buttons', buttons, ctx.from.id);
+  states.delete(ctx.chat.id);
+
+  await ctx.editMessageText(
+    `✅ Button "${escapeHtml(btnText)}" added!\n\n<i>Link: ${url}</i>`,
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Back', 'admin:tc') }
+  );
 });
 
 // ── Accept button color picker ──────────────────────────────────
