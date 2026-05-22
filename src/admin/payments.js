@@ -266,51 +266,89 @@ async function showCryptomusSettings(ctx) {
   let sel = [];
   try { sel = JSON.parse(currRaw || '[]'); } catch { sel = []; }
 
-  // Build active coins summary
+  // Fetch live coin count from Cryptomus API
+  let totalPairs = 0;
+  let totalCoins = 0;
+  if (apiKey && merchantId) {
+    try {
+      const services = await getCachedServices(apiKey, merchantId);
+      totalPairs = services.length;
+      const uniqueCoins = new Set(services.map(s => s.currency));
+      totalCoins = uniqueCoins.size;
+    } catch { /* ignore */ }
+  }
+
+  // Build active coins summary grouped by currency
   const groups = {};
   for (const s of sel) {
     if (!groups[s.currency]) groups[s.currency] = [];
     groups[s.currency].push(nwLabel(s.network));
   }
-  const coinSummary = Object.keys(groups).length > 0
-    ? Object.entries(groups).map(([c, nets]) => `  ${c}  ›  ${nets.join(' · ')}`).join('\n')
-    : '  None configured';
+  const activeCoinsCount = Object.keys(groups).length;
+  const activePairsCount = sel.length;
 
   const limitStr = (minAmt || maxAmt)
-    ? `₹${minAmt || '0'}${maxAmt ? ' — ₹' + maxAmt : '+'}`
-    : 'No limits set';
+    ? `₹${minAmt || '1'} — ₹${maxAmt || '∞'}`
+    : '₹1 — ∞';
 
-  const text =
-    `╭─── ₿  C R Y P T O ───╮\n\n` +
-    ` Status      ${enabled ? '◉ Active' : '○ Inactive'}\n` +
-    ` API Key     ${apiKey ? '✓ Configured' : '✗ Not set'}\n` +
-    ` Merchant    ${merchantId ? '✓ Configured' : '✗ Not set'}\n` +
-    ` Mode        ${md === 'inline' ? '⚡ Inline' : '🌐 Web'}\n` +
-    ` Deposit     ${limitStr}\n\n` +
-    `<b>Active Coins</b>\n${coinSummary}\n\n` +
-    `╰──────────────────────╯` +
-    (!apiKey || !merchantId ? '\n\n⚠️ <i>Configure API credentials first</i>' : '');
+  // ── Premium styled text ──
+  let text = `💎 <b>CRYPTO GATEWAY</b>\n\n`;
+
+  // Status block
+  text += `<blockquote>`;
+  text += `${enabled ? '🟢' : '🔴'} <b>Status:</b> ${enabled ? 'Active' : 'Inactive'}\n`;
+  text += `${apiKey ? '✅' : '❌'} <b>API Key:</b> ${apiKey ? 'Configured' : 'Not Set'}\n`;
+  text += `${merchantId ? '✅' : '❌'} <b>Merchant:</b> ${merchantId ? 'Configured' : 'Not Set'}\n`;
+  text += `⚡ <b>Mode:</b> ${md === 'inline' ? 'Inline (QR)' : 'Web Redirect'}\n`;
+  text += `💰 <b>Deposit:</b> ${limitStr}`;
+  text += `</blockquote>\n\n`;
+
+  // Live stats from API
+  if (totalCoins > 0) {
+    text += `<blockquote>`;
+    text += `📊 <b>GATEWAY STATS</b>\n\n`;
+    text += `🪙 <b>Total Coins:</b> ${totalCoins}\n`;
+    text += `🔗 <b>Total Pairs:</b> ${totalPairs}\n`;
+    text += `✅ <b>Active:</b> ${activePairsCount} pairs (${activeCoinsCount} coins)`;
+    text += `</blockquote>\n\n`;
+  }
+
+  // Active coins list
+  if (activeCoinsCount > 0) {
+    text += `<blockquote>`;
+    text += `🪙 <b>ACTIVE COINS</b>\n\n`;
+    for (const [coin, nets] of Object.entries(groups)) {
+      text += `  ${coin}  ›  ${nets.join(' · ')}\n`;
+    }
+    text += `</blockquote>`;
+  } else {
+    text += `<blockquote>⚠️ No coins selected yet</blockquote>`;
+  }
+
+  if (!apiKey || !merchantId) {
+    text += `\n\n⚠️ <i>Configure API credentials to get started</i>`;
+  }
 
   const kb = new InlineKeyboard();
 
   // Row 1: Enable/Disable
-  kb.text(enabled ? '○  Disable' : '◉  Enable', 'pay:cryptomus:toggle').row();
+  kb.text(enabled ? '🔴 Disable' : '🟢 Enable', 'pay:cryptomus:toggle').row();
 
   // Row 2: Credentials
-  kb.text('🔑  API Key', 'pay:cryptomus:edit:cryptomus_api_key')
-    .text('🏪  Merchant', 'pay:cryptomus:edit:cryptomus_merchant_id').row();
+  kb.text('🔑 API Key', 'pay:cryptomus:edit:cryptomus_api_key')
+    .text('🏪 Merchant ID', 'pay:cryptomus:edit:cryptomus_merchant_id').row();
 
   // Row 3: Mode toggle
-  kb.text(md === 'inline' ? '🌐  Switch to Web' : '⚡  Switch to Inline', 'pay:cryptomus:toggle_mode').row();
+  kb.text(md === 'inline' ? '🌐 Switch → Web' : '⚡ Switch → Inline', 'pay:cryptomus:toggle_mode').row();
 
   // Row 4: Coin selection (inline mode only)
   if (apiKey && merchantId && md === 'inline') {
-    kb.text('⬡  Coins & Networks', 'pay:cryptomus:currencies').row();
+    kb.text(`🪙 Coins & Networks (${activePairsCount}/${totalPairs})`, 'pay:cryptomus:currencies').row();
   }
 
   // Row 5: Limits
-  kb.text('↓  Min Deposit', 'pay:cryptomus:edit:cryptomus_min_amount')
-    .text('↑  Max Deposit', 'pay:cryptomus:edit:cryptomus_max_amount').row();
+  kb.text('⬇️ Min Deposit', 'pay:cryptomus:edit:cryptomus_min_amount')
+    .text('⬆️ Max Deposit', 'pay:cryptomus:edit:cryptomus_max_amount').row();
 
   // Row 6: Clear actions (only if something to clear)
   const clearBtns = [];
@@ -324,7 +362,7 @@ async function showCryptomusSettings(ctx) {
     kb.row();
   }
 
-  kb.text('◀  Back', 'admin:payments');
+  kb.text('◀ Back', 'admin:payments');
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
 }
 
@@ -463,16 +501,17 @@ async function showCoinList(ctx, page, searchQuery) {
 
   const totalActive = sel.length;
   const allCoinsCount = coinMap.size;
-  let headerText =
-    `⬡  <b>S E L E C T   C O I N S</b>\n\n` +
-    `Tap a coin to configure its networks.\n\n` +
-    `  ●  active networks\n` +
-    `  ○  none selected\n\n`;
+  let headerText = `🪙 <b>SELECT COINS</b>\n\n`;
+  headerText += `<blockquote>`;
+  headerText += `Tap a coin to configure its networks.\n\n`;
+  headerText += `● Active Networks\n`;
+  headerText += `○ None Selected\n\n`;
 
   if (q) {
-    headerText += `🔍  Search: "<b>${escapeHtml(q)}</b>"  ·  ${totalCoins} result${totalCoins !== 1 ? 's' : ''}\n`;
+    headerText += `🔍 Search: "<b>${escapeHtml(q)}</b>"  ·  ${totalCoins} result${totalCoins !== 1 ? 's' : ''}\n`;
   }
-  headerText += `<b>${totalActive}</b> active pair${totalActive !== 1 ? 's' : ''}  ·  <b>${allCoinsCount}</b> coins total`;
+  headerText += `✅ <b>${totalActive}</b> active pairs  ·  🪙 <b>${allCoinsCount}</b> coins total`;
+  headerText += `</blockquote>`;
 
   await ctx.editMessageText(headerText, { parse_mode: 'HTML', reply_markup: kb });
 }
