@@ -183,13 +183,30 @@ composer.on('message:text', async (ctx, next) => {
 
   if (state.step === 'set_text') {
     states.delete(ctx.chat.id);
-    await welcomeRepo.setWelcomeMessage(ctx.dbPool, {
-      messageText: ctx.message.text,
-      buttons: [],
-      updatedBy: ctx.from.id,
-    });
+    const pool = ctx.dbPool;
+    const existing = await welcomeRepo.getWelcomeMessage(pool);
+
+    if (existing) {
+      // Update text only — preserve existing buttons, media, etc.
+      await pool.query(
+        `UPDATE welcome_messages SET message_text = $1, updated_by = $2, updated_at = NOW() WHERE id = $3`,
+        [ctx.message.text, ctx.from.id, existing.id]
+      );
+    } else {
+      // First time — create new record
+      await welcomeRepo.setWelcomeMessage(pool, {
+        messageText: ctx.message.text,
+        buttons: [],
+        updatedBy: ctx.from.id,
+      });
+    }
+
     ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'set_welcome_message' });
-    await ctx.reply('✅ Welcome message updated!');
+    await ctx.reply('✅ Welcome message updated!', {
+      reply_markup: new InlineKeyboard()
+        .text('🔘 Manage Buttons', 'welcome:buttons').row()
+        .text('👁 Preview', 'welcome:preview').text('◀ Back', 'admin:welcome')
+    });
     return;
   }
 
