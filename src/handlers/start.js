@@ -163,7 +163,37 @@ composer.callbackQuery('fjcheck:verify', async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const passed = await verifyForceJoin(ctx);
   if (passed) {
-    await ctx.editMessageText('✅ Verification passed! Send /start to continue.');
+    // Remove the force join message
+    try { await ctx.editMessageText('✅ Verification passed!'); } catch {}
+
+    const pool = ctx.dbPool;
+
+    // ── Next step: T&C gate ──
+    try {
+      const tcEnabled = await settingsRepo.getSetting(pool, 'tc_enabled');
+      if (tcEnabled) {
+        const tcButtons = await settingsRepo.getSetting(pool, 'tc_buttons') || [];
+        const tcMessage = await settingsRepo.getSetting(pool, 'tc_message') ||
+          "Dear Users,\nThere Are Some Terms & Conditions Given Please Read Carefully, Else If You Face Any Problem Related To Terms And Conditions So We Can't Help You...";
+
+        const tcKb = new InlineKeyboard();
+        for (const btn of tcButtons) {
+          if (btn.url && isValidUrl(btn.url)) {
+            tcKb.url(btn.text, btn.url).row();
+          }
+        }
+        tcKb.text('✅ Accept', 'tc:accept').style('success');
+        tcKb.text('❌ Decline', 'tc:decline').style('danger');
+
+        await ctx.reply(tcMessage, { parse_mode: 'HTML', reply_markup: tcKb });
+        return; // Wait for accept/decline
+      }
+    } catch (err) {
+      logger.debug(`T&C check after fjcheck failed: ${err.message}`);
+    }
+
+    // ── No T&C → go to welcome ──
+    await sendWelcomeAndMenu(ctx);
   }
 });
 

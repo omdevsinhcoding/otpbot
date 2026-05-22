@@ -39,7 +39,8 @@ async function showTcPanel(ctx) {
     .text(toggleLabel, 'tc:toggle').row()
     .text('➕ Add Button', 'tc:add_btn').text('💬 Set Message', 'tc:set_msg').row();
   if (buttons.length > 0) {
-    kb.text('🗑 Remove Button', 'tc:remove_list').text('👁 Preview', 'tc:preview').row();
+    kb.text('✏️ Edit Button', 'tc:edit_list').text('🗑 Remove Button', 'tc:remove_list').row();
+    kb.text('👁 Preview', 'tc:preview').row();
   }
   kb.text('◀ Back', 'admin:back');
 
@@ -122,6 +123,52 @@ composer.callbackQuery(/^tc:remove:\d+$/, adminRequired, async (ctx) => {
     parse_mode: 'HTML',
     reply_markup: new InlineKeyboard().text('◀ Back', 'admin:tc')
   });
+});
+
+// ── Edit Button List ────────────────────────────────────────────
+composer.callbackQuery('tc:edit_list', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const buttons = await settingsRepo.getSetting(ctx.dbPool, 'tc_buttons') || [];
+
+  if (buttons.length === 0) {
+    await ctx.editMessageText('⚠️ No buttons to edit.', {
+      reply_markup: new InlineKeyboard().text('◀ Back', 'admin:tc')
+    });
+    return;
+  }
+
+  let text = '✏️ <b>Edit T&C Button</b>\n\nSelect a button to edit:\n\n';
+  const kb = new InlineKeyboard();
+  buttons.forEach((btn, i) => {
+    text += `${i + 1}. ${escapeHtml(btn.text)} → ${truncateText(btn.url, 35)}\n`;
+    kb.text(`✏️ #${i + 1} — ${truncateText(btn.text, 20)}`, `tc:edit:${i}`).row();
+  });
+  kb.text('◀ Back', 'admin:tc');
+
+  await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+});
+
+// ── Edit Button Select ──────────────────────────────────────────
+composer.callbackQuery(/^tc:edit:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const idx = Number(ctx.callbackQuery.data.split(':')[2]);
+  const buttons = await settingsRepo.getSetting(ctx.dbPool, 'tc_buttons') || [];
+
+  if (idx < 0 || idx >= buttons.length) {
+    await ctx.editMessageText('⚠️ Button not found.', {
+      reply_markup: new InlineKeyboard().text('◀ Back', 'admin:tc')
+    });
+    return;
+  }
+
+  const btn = buttons[idx];
+  states.set(ctx.chat.id, { step: 'edit_btn', data: { index: idx } });
+  await ctx.editMessageText(
+    `✏️ <b>Edit Button #${idx + 1}</b>\n\n` +
+    `Current:\n<code>${escapeHtml(btn.text)} | ${escapeHtml(btn.url)}</code>\n\n` +
+    `Send the new button in format:\n<code>Button Name | https://url</code>`,
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('❌ Cancel', 'tc:cancel') }
+  );
 });
 
 // ── Set Message ─────────────────────────────────────────────────
@@ -208,6 +255,51 @@ composer.on('message:text', async (ctx, next) => {
       parse_mode: 'HTML',
       reply_markup: new InlineKeyboard().text('➕ Add More', 'tc:add_btn').text('◀ Back', 'admin:tc')
     });
+    return;
+  }
+
+  if (state.step === 'edit_btn') {
+    states.delete(ctx.chat.id);
+    const parts = ctx.message.text.split('|').map(s => s.trim());
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      await ctx.reply('⚠️ Invalid format. Use: <code>Button Name | https://url</code>', {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('✏️ Try Again', `tc:edit:${state.data.index}`).text('◀ Back', 'admin:tc')
+      });
+      return;
+    }
+
+    const [btnText, btnUrl] = parts;
+    let validUrl = false;
+    try {
+      const u = new URL(btnUrl);
+      validUrl = (u.protocol === 'http:' || u.protocol === 'https:') && u.hostname.includes('.');
+    } catch {}
+
+    if (!validUrl) {
+      await ctx.reply('⚠️ Invalid URL! Must be a real link like:\n<code>https://telegra.ph/my-article</code>', {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('✏️ Try Again', `tc:edit:${state.data.index}`).text('◀ Back', 'admin:tc')
+      });
+      return;
+    }
+
+    const pool = ctx.dbPool;
+    const buttons = await settingsRepo.getSetting(pool, 'tc_buttons') || [];
+    const idx = state.data.index;
+    if (idx >= 0 && idx < buttons.length) {
+      buttons[idx] = { text: btnText, url: btnUrl };
+      await settingsRepo.setSetting(pool, 'tc_buttons', buttons, ctx.from.id);
+      ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'edit_tc_button' });
+      await ctx.reply(`✅ Button #${idx + 1} updated to "${escapeHtml(btnText)}"!`, {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('◀ Back', 'admin:tc')
+      });
+    } else {
+      await ctx.reply('⚠️ Button not found.', {
+        reply_markup: new InlineKeyboard().text('◀ Back', 'admin:tc')
+      });
+    }
     return;
   }
 
