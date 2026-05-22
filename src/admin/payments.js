@@ -1,4 +1,4 @@
-﻿import { Composer, InlineKeyboard } from 'grammy';
+import { Composer, InlineKeyboard } from 'grammy';
 import { adminRequired } from '../middleware/auth.js';
 import * as settingsRepo from '../database/repositories/settingsRepo.js';
 import { ActionType } from '../utils/constants.js';
@@ -7,11 +7,11 @@ import logger from '../utils/logger.js';
 import * as cryptomusService from '../services/cryptomusService.js';
 
 const composer = new Composer();
-const editStates = new Map(); // chatId â†’ { step, key, gateway }
+const editStates = new Map(); // chatId → { step, key, gateway }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 //  PAYMENTS MAIN MENU
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery('admin:payments', adminRequired, async (ctx) => {
   await ctx.answerCallbackQuery();
   await showPaymentsMenu(ctx);
@@ -28,24 +28,24 @@ async function showPaymentsMenu(ctx) {
   ]);
 
   const text =
-    `ðŸ’° <b>Payment Settings</b>\n\n` +
-    `ðŸ’³ Paytm: ${paytmOn ? 'âœ… On' : 'âŒ Off'}  âžœ <i>${escapeHtml(paytmName || 'Pay via Automatic Gateway')}</i>\n` +
-    `ðŸ¦ Bharat Pay: ${bharatOn ? 'âœ… On' : 'âŒ Off'}  âžœ <i>${escapeHtml(bharatName || 'Pay via UTR / Transaction ID')}</i>\n` +
-    `â‚¿ Cryptomus: ${cryptoOn ? 'âœ… On' : 'âŒ Off'}`;
+    `💰 <b>Payment Settings</b>\n\n` +
+    `💳 Paytm: ${paytmOn ? '✅ On' : '❌ Off'}  ➜ <i>${escapeHtml(paytmName || 'Pay via Automatic Gateway')}</i>\n` +
+    `🏦 Bharat Pay: ${bharatOn ? '✅ On' : '❌ Off'}  ➜ <i>${escapeHtml(bharatName || 'Pay via UTR / Transaction ID')}</i>\n` +
+    `₿ Cryptomus: ${cryptoOn ? '✅ On' : '❌ Off'}`;
 
   const kb = new InlineKeyboard()
-    .text('ðŸ’³ Paytm Settings', 'pay:paytm').row()
-    .text('ðŸ¦ Bharat Pay Settings', 'pay:bharatpay').row()
-    .text('â‚¿ Cryptomus Settings', 'pay:cryptomus').row()
-    .text('âœï¸ Rename Paytm', 'pay:paytm:edit:paytm_display_name').text('âœï¸ Rename BharatPe', 'pay:bharatpay:edit:bharatpay_display_name').row()
-    .text('â€¹ Back', 'admin:back');
+    .text('💳 Paytm Settings', 'pay:paytm').row()
+    .text('🏦 Bharat Pay Settings', 'pay:bharatpay').row()
+    .text('₿ Cryptomus Settings', 'pay:cryptomus').row()
+    .text('✏️ Rename Paytm', 'pay:paytm:edit:paytm_display_name').text('✏️ Rename BharatPe', 'pay:bharatpay:edit:bharatpay_display_name').row()
+    .text('‹ Back', 'admin:back');
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 //  PAYTM SETTINGS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery('pay:paytm', adminRequired, async (ctx) => {
   await ctx.answerCallbackQuery();
   await showPaytmSettings(ctx);
@@ -65,37 +65,37 @@ async function showPaytmSettings(ctx) {
   ]);
 
   const text =
-    `ðŸ’³ <b>Paytm Settings</b>\n\n` +
-    `ðŸ“Š <b>Status:</b> ${enabled ? 'âœ… Enabled' : 'âŒ Disabled'}\n` +
-    `ðŸ’³ <b>UPI ID:</b> ${upiId ? `<code>${escapeHtml(upiId)}</code>` : 'âŒ Not set'}\n` +
-    `ðŸ”‘ <b>MID:</b> ${merchantKey ? `<code>${escapeHtml(String(merchantKey))}</code>` : 'âŒ Not set'}\n` +
-    `ðŸ‘¤ <b>Payee Name:</b> ${payeeName || 'Paytm Merchant'}\n` +
-    `â± <b>Time Limit:</b> ${(!timeLimit || timeLimit === '0' || timeLimit === 0) ? 'â™¾ï¸ No Limit' : timeLimit + 's'}\n` +
-    `ðŸ’° <b>Min Amount:</b> ${minAmount ? 'â‚¹' + minAmount : 'Not set'}\n` +
-    `ðŸ“ˆ <b>Max Amount:</b> ${maxAmount ? 'â‚¹' + maxAmount : 'No Limit'}`;
+    `💳 <b>Paytm Settings</b>\n\n` +
+    `📊 <b>Status:</b> ${enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
+    `💳 <b>UPI ID:</b> ${upiId ? `<code>${escapeHtml(upiId)}</code>` : '❌ Not set'}\n` +
+    `🔑 <b>MID:</b> ${merchantKey ? `<code>${escapeHtml(String(merchantKey))}</code>` : '❌ Not set'}\n` +
+    `👤 <b>Payee Name:</b> ${payeeName || 'Paytm Merchant'}\n` +
+    `⏱ <b>Time Limit:</b> ${(!timeLimit || timeLimit === '0' || timeLimit === 0) ? '♾️ No Limit' : timeLimit + 's'}\n` +
+    `💰 <b>Min Amount:</b> ${minAmount ? '₹' + minAmount : 'Not set'}\n` +
+    `📈 <b>Max Amount:</b> ${maxAmount ? '₹' + maxAmount : 'No Limit'}`;
 
   const kb = new InlineKeyboard()
-    .text(enabled ? 'ðŸ”´ Disable' : 'ðŸŸ¢ Enable', 'pay:paytm:toggle').row()
-    .text('ðŸ“ Set UPI ID', 'pay:paytm:edit:paytm_upi_id');
-  if (upiId) kb.text('ðŸ—‘ Clear UPI', 'pay:paytm:clear:paytm_upi_id');
+    .text(enabled ? '🔴 Disable' : '🟢 Enable', 'pay:paytm:toggle').row()
+    .text('📝 Set UPI ID', 'pay:paytm:edit:paytm_upi_id');
+  if (upiId) kb.text('🗑 Clear UPI', 'pay:paytm:clear:paytm_upi_id');
   kb.row()
-    .text('ðŸ”‘ Set MID', 'pay:paytm:edit:paytm_merchant_key');
-  if (merchantKey) kb.text('ðŸ—‘ Clear MID', 'pay:paytm:clear:paytm_merchant_key');
+    .text('🔑 Set MID', 'pay:paytm:edit:paytm_merchant_key');
+  if (merchantKey) kb.text('🗑 Clear MID', 'pay:paytm:clear:paytm_merchant_key');
   kb.row()
-    .text('ðŸ‘¤ Payee Name', 'pay:paytm:edit:paytm_payee_name');
-  if (payeeName) kb.text('ðŸ—‘ Clear', 'pay:paytm:clear:paytm_payee_name');
+    .text('👤 Payee Name', 'pay:paytm:edit:paytm_payee_name');
+  if (payeeName) kb.text('🗑 Clear', 'pay:paytm:clear:paytm_payee_name');
   kb.row()
-    .text('â± Time Limit', 'pay:paytm:edit:paytm_time_limit');
+    .text('⏱ Time Limit', 'pay:paytm:edit:paytm_time_limit');
   const timeLimitVal = parseInt(timeLimit) || 0;
-  if (timeLimitVal > 0) kb.text('â™¾ï¸ No Limit', 'pay:paytm:nolimit_time');
+  if (timeLimitVal > 0) kb.text('♾️ No Limit', 'pay:paytm:nolimit_time');
   kb.row()
-    .text('ðŸ’° Min Amount', 'pay:paytm:edit:paytm_min_amount');
-  if (minAmount) kb.text('ðŸ—‘ Clear', 'pay:paytm:clear:paytm_min_amount');
+    .text('💰 Min Amount', 'pay:paytm:edit:paytm_min_amount');
+  if (minAmount) kb.text('🗑 Clear', 'pay:paytm:clear:paytm_min_amount');
   kb.row()
-    .text('ðŸ“ˆ Max Amount', 'pay:paytm:edit:paytm_max_amount');
-  if (maxAmount) kb.text('ðŸš« No Limit', 'pay:paytm:nolimit:paytm_max_amount');
+    .text('📈 Max Amount', 'pay:paytm:edit:paytm_max_amount');
+  if (maxAmount) kb.text('🚫 No Limit', 'pay:paytm:nolimit:paytm_max_amount');
   kb.row()
-    .text('â€¹ Back', 'admin:back');
+    .text('‹ Back', 'admin:back');
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
 }
@@ -104,7 +104,7 @@ composer.callbackQuery('pay:paytm:nolimit_time', adminRequired, async (ctx) => {
   const pool = ctx.dbPool;
   await settingsRepo.setSetting(pool, 'paytm_time_limit', 0, ctx.from.id);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key: 'paytm_time_limit', value: 'No Limit' });
-  await ctx.answerCallbackQuery('âœ… Time Limit set to No Limit!');
+  await ctx.answerCallbackQuery('✅ Time Limit set to No Limit!');
   await showPaytmSettings(ctx);
 });
 
@@ -117,9 +117,9 @@ composer.callbackQuery('pay:paytm:toggle', adminRequired, async (ctx) => {
   await showPaytmSettings(ctx);
 });
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 //  BHARAT PAY SETTINGS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery('pay:bharatpay', adminRequired, async (ctx) => {
   await ctx.answerCallbackQuery();
   await showBharatpaySettings(ctx);
@@ -138,37 +138,37 @@ async function showBharatpaySettings(ctx) {
   ]);
 
   const text =
-    `ðŸ¦ <b>Bharat Pay Settings</b>\n\n` +
-    `ðŸ“Š <b>Status:</b> ${enabled ? 'âœ… Enabled' : 'âŒ Disabled'}\n` +
-    `ðŸª <b>Merchant ID:</b> ${merchantId ? `<code>${escapeHtml(String(merchantId))}</code>` : 'âŒ Not set'}\n` +
-    `ðŸ”‘ <b>Token:</b> ${token ? `<code>${escapeHtml(String(token))}</code>` : 'âŒ Not set'}\n` +
-    `ðŸ’³ <b>UPI ID:</b> ${upiId ? `<code>${escapeHtml(upiId)}</code>` : 'âŒ Not set'}\n` +
-    `ðŸ’° <b>Min Amount:</b> ${minAmount ? 'â‚¹' + minAmount : 'Not set'}\n` +
-    `ðŸ“ˆ <b>Max Amount:</b> ${maxAmount ? 'â‚¹' + maxAmount : 'No Limit'}\n` +
-    `ðŸ–¼ <b>QR Image:</b> ${qrFileId ? 'âœ… Uploaded' : 'âŒ Not uploaded'}`;
+    `🏦 <b>Bharat Pay Settings</b>\n\n` +
+    `📊 <b>Status:</b> ${enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
+    `🏪 <b>Merchant ID:</b> ${merchantId ? `<code>${escapeHtml(String(merchantId))}</code>` : '❌ Not set'}\n` +
+    `🔑 <b>Token:</b> ${token ? `<code>${escapeHtml(String(token))}</code>` : '❌ Not set'}\n` +
+    `💳 <b>UPI ID:</b> ${upiId ? `<code>${escapeHtml(upiId)}</code>` : '❌ Not set'}\n` +
+    `💰 <b>Min Amount:</b> ${minAmount ? '₹' + minAmount : 'Not set'}\n` +
+    `📈 <b>Max Amount:</b> ${maxAmount ? '₹' + maxAmount : 'No Limit'}\n` +
+    `🖼 <b>QR Image:</b> ${qrFileId ? '✅ Uploaded' : '❌ Not uploaded'}`;
 
   const kb = new InlineKeyboard()
-    .text(enabled ? 'ðŸ”´ Disable' : 'ðŸŸ¢ Enable', 'pay:bharatpay:toggle').row()
-    .text('ðŸª Set Merchant ID', 'pay:bharatpay:edit:bharatpay_merchant_id');
-  if (merchantId) kb.text('ðŸ—‘ Clear', 'pay:bharatpay:clear:bharatpay_merchant_id');
+    .text(enabled ? '🔴 Disable' : '🟢 Enable', 'pay:bharatpay:toggle').row()
+    .text('🏪 Set Merchant ID', 'pay:bharatpay:edit:bharatpay_merchant_id');
+  if (merchantId) kb.text('🗑 Clear', 'pay:bharatpay:clear:bharatpay_merchant_id');
   kb.row()
-    .text('ðŸ”‘ Set Token', 'pay:bharatpay:edit:bharatpay_token');
-  if (token) kb.text('ðŸ—‘ Clear', 'pay:bharatpay:clear:bharatpay_token');
+    .text('🔑 Set Token', 'pay:bharatpay:edit:bharatpay_token');
+  if (token) kb.text('🗑 Clear', 'pay:bharatpay:clear:bharatpay_token');
   kb.row()
-    .text('ðŸ’³ Set UPI ID', 'pay:bharatpay:edit:bharatpay_upi_id');
-  if (upiId) kb.text('ðŸ—‘ Clear', 'pay:bharatpay:clear:bharatpay_upi_id');
+    .text('💳 Set UPI ID', 'pay:bharatpay:edit:bharatpay_upi_id');
+  if (upiId) kb.text('🗑 Clear', 'pay:bharatpay:clear:bharatpay_upi_id');
   kb.row()
-    .text('ðŸ’° Min Amount', 'pay:bharatpay:edit:bharatpay_min_amount');
-  if (minAmount) kb.text('ðŸ—‘ Clear', 'pay:bharatpay:clear:bharatpay_min_amount');
+    .text('💰 Min Amount', 'pay:bharatpay:edit:bharatpay_min_amount');
+  if (minAmount) kb.text('🗑 Clear', 'pay:bharatpay:clear:bharatpay_min_amount');
   kb.row()
-    .text('ðŸ“ˆ Max Amount', 'pay:bharatpay:edit:bharatpay_max_amount');
-  if (maxAmount) kb.text('ðŸš« No Limit', 'pay:bharatpay:nolimit:bharatpay_max_amount');
+    .text('📈 Max Amount', 'pay:bharatpay:edit:bharatpay_max_amount');
+  if (maxAmount) kb.text('🚫 No Limit', 'pay:bharatpay:nolimit:bharatpay_max_amount');
   kb.row()
-    .text('ðŸ–¼ Upload QR Image', 'pay:bharatpay:upload_qr').row();
+    .text('🖼 Upload QR Image', 'pay:bharatpay:upload_qr').row();
 
   // Only show remove button if QR exists
-  if (qrFileId) kb.text('ðŸ—‘ Remove QR Image', 'pay:bharatpay:remove_qr').row();
-  kb.text('â€¹ Back', 'admin:back');
+  if (qrFileId) kb.text('🗑 Remove QR Image', 'pay:bharatpay:remove_qr').row();
+  kb.text('‹ Back', 'admin:back');
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
 }
@@ -182,39 +182,39 @@ composer.callbackQuery('pay:bharatpay:toggle', adminRequired, async (ctx) => {
   await showBharatpaySettings(ctx);
 });
 
-// â”€â”€ Upload QR â€” uses inline cancel button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Upload QR — uses inline cancel button ───────────────────────
 composer.callbackQuery('pay:bharatpay:upload_qr', adminRequired, async (ctx) => {
   await ctx.answerCallbackQuery();
   editStates.set(ctx.chat.id, { step: 'upload_qr', gateway: 'bharatpay' });
-  const kb = new InlineKeyboard().text('âŒ Cancel', 'pay:cancel_edit:bharatpay');
+  const kb = new InlineKeyboard().text('❌ Cancel', 'pay:cancel_edit:bharatpay');
   await ctx.editMessageText(
-    'ðŸ–¼ <b>Upload QR Image</b>\n\nSend the BharatPay QR code as a <b>photo</b>.',
+    '🖼 <b>Upload QR Image</b>\n\nSend the BharatPay QR code as a <b>photo</b>.',
     { parse_mode: 'HTML', reply_markup: kb }
   );
 });
 
-// â”€â”€ Remove QR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Remove QR ───────────────────────────────────────────────────
 composer.callbackQuery('pay:bharatpay:remove_qr', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery('âœ… QR Removed');
+  await ctx.answerCallbackQuery('✅ QR Removed');
   await settingsRepo.setSetting(ctx.dbPool, 'bharatpay_qr_file_id', '', ctx.from.id);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'remove_bharatpay_qr' });
   await showBharatpaySettings(ctx);
 });
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 //  CRYPTOMUS SETTINGS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 
-// Crypto coin icon helper â€” authentic looking icons
+// Crypto coin icon helper — authentic looking icons
 function coinIcon(coin) {
   const icons = {
-    'USDT': 'â‚®', 'BTC': 'â‚¿', 'ETH': 'Îž', 'TRX': 'âš¡',
-    'DOGE': 'ðŸ•', 'LTC': 'Å', 'BNB': 'â—†', 'SOL': 'â—Ž',
-    'XRP': 'âœ•', 'MATIC': 'â¬¡', 'TON': 'ðŸ’Ž', 'DASH': 'â—‰',
-    'USDC': 'ðŸ’²', 'DAI': 'â—ˆ', 'BUSD': 'ðŸ…±ï¸', 'ADA': 'â‚³',
-    'DOT': 'â—', 'AVAX': 'ðŸ”º', 'SHIB': 'ðŸ•â€ðŸ¦º', 'FDUSD': 'ðŸ’µ',
+    'USDT': '₮', 'BTC': '₿', 'ETH': 'Ξ', 'TRX': '⚡',
+    'DOGE': '🐕', 'LTC': 'Ł', 'BNB': '◆', 'SOL': '◎',
+    'XRP': '✕', 'MATIC': '⬡', 'TON': '💎', 'DASH': '◉',
+    'USDC': '💲', 'DAI': '◈', 'BUSD': '🅱️', 'ADA': '₳',
+    'DOT': '●', 'AVAX': '🔺', 'SHIB': '🐕‍🦺', 'FDUSD': '💵',
   };
-  return icons[coin] || 'ðŸª™';
+  return icons[coin] || '🪙';
 }
 
 // Network display name helper
@@ -255,7 +255,7 @@ async function showCryptomusSettings(ctx) {
     if (!coinGroups[s.currency]) coinGroups[s.currency] = [];
     coinGroups[s.currency].push(networkName(s.network));
   }
-  let currDisplay = 'âŒ None';
+  let currDisplay = '❌ None';
   if (Object.keys(coinGroups).length > 0) {
     currDisplay = Object.entries(coinGroups)
       .map(([coin, nets]) => `  ${coinIcon(coin)} ${coin}: ${nets.join(', ')}`)
@@ -263,53 +263,53 @@ async function showCryptomusSettings(ctx) {
   }
 
   let text =
-    `â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n` +
-    `   â‚¿ <b>CRYPTO SETTINGS</b>\n` +
-    `â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n` +
-    `ðŸ“Š <b>Status:</b> ${enabled ? 'âœ… Enabled' : 'âŒ Disabled'}\n` +
-    `ðŸ”‘ <b>API Key:</b> ${apiKey ? 'âœ… Configured' : 'âŒ Not set'}\n` +
-    `ðŸª <b>Merchant ID:</b> ${merchantId ? 'âœ… Configured' : 'âŒ Not set'}\n\n` +
-    `âš™ï¸ <b>Mode:</b> ${currentMode === 'inline' ? 'ðŸ¤– Inline (QR in Bot)' : 'ðŸŒ Web (Cryptomus Page)'}\n\n` +
-    `ðŸª™ <b>Active Coins:</b>\n${currDisplay}\n\n` +
-    `ðŸ’° <b>Min Deposit:</b> ${minAmount ? 'â‚¹' + minAmount : 'âŒ Not set'}\n` +
-    `ðŸ“ˆ <b>Max Deposit:</b> ${maxAmount ? 'â‚¹' + maxAmount : 'â™¾ï¸ No Limit'}`;
+    `━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `   ₿ <b>CRYPTO SETTINGS</b>\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `📊 <b>Status:</b> ${enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
+    `🔑 <b>API Key:</b> ${apiKey ? '✅ Configured' : '❌ Not set'}\n` +
+    `🏪 <b>Merchant ID:</b> ${merchantId ? '✅ Configured' : '❌ Not set'}\n\n` +
+    `⚙️ <b>Mode:</b> ${currentMode === 'inline' ? '🤖 Inline (QR in Bot)' : '🌐 Web (Cryptomus Page)'}\n\n` +
+    `🪙 <b>Active Coins:</b>\n${currDisplay}\n\n` +
+    `💰 <b>Min Deposit:</b> ${minAmount ? '₹' + minAmount : '❌ Not set'}\n` +
+    `📈 <b>Max Deposit:</b> ${maxAmount ? '₹' + maxAmount : '♾️ No Limit'}`;
 
   if (!apiKey || !merchantId) {
-    text += `\n\nâš ï¸ <i>Set API Key & Merchant ID to configure coins!</i>`;
+    text += `\n\n⚠️ <i>Set API Key & Merchant ID to configure coins!</i>`;
   }
 
   const kb = new InlineKeyboard()
-    .text(enabled ? 'ðŸ”´ Disable Crypto' : 'ðŸŸ¢ Enable Crypto', 'pay:cryptomus:toggle').row()
-    .text('ðŸ”‘ API Key', 'pay:cryptomus:edit:cryptomus_api_key')
-    .text('ðŸª Merchant ID', 'pay:cryptomus:edit:cryptomus_merchant_id').row();
+    .text(enabled ? '🔴 Disable Crypto' : '🟢 Enable Crypto', 'pay:cryptomus:toggle').row()
+    .text('🔑 API Key', 'pay:cryptomus:edit:cryptomus_api_key')
+    .text('🏪 Merchant ID', 'pay:cryptomus:edit:cryptomus_merchant_id').row();
 
   // Mode toggle
-  kb.text(currentMode === 'inline' ? 'ðŸŒ Switch â†’ Web Mode' : 'ðŸ¤– Switch â†’ Inline Mode', 'pay:cryptomus:toggle_mode').row();
+  kb.text(currentMode === 'inline' ? '🌐 Switch → Web Mode' : '🤖 Switch → Inline Mode', 'pay:cryptomus:toggle_mode').row();
 
   // Coin & Network selection
   if (apiKey && merchantId) {
-    kb.text('ðŸª™ Select Coins & Networks', 'pay:cryptomus:currencies').row();
+    kb.text('🪙 Select Coins & Networks', 'pay:cryptomus:currencies').row();
   }
 
   // Amount settings
-  kb.text('ðŸ’° Set Min Amount', 'pay:cryptomus:edit:cryptomus_min_amount')
-    .text('ðŸ“ˆ Set Max Amount', 'pay:cryptomus:edit:cryptomus_max_amount').row();
+  kb.text('💰 Set Min Amount', 'pay:cryptomus:edit:cryptomus_min_amount')
+    .text('📈 Set Max Amount', 'pay:cryptomus:edit:cryptomus_max_amount').row();
 
   // Clear/No limit row
   if (minAmount || maxAmount) {
-    if (minAmount) kb.text('ðŸ—‘ Clear Min', 'pay:cryptomus:clear:cryptomus_min_amount');
-    if (maxAmount) kb.text('ðŸš« No Max Limit', 'pay:cryptomus:nolimit:cryptomus_max_amount');
+    if (minAmount) kb.text('🗑 Clear Min', 'pay:cryptomus:clear:cryptomus_min_amount');
+    if (maxAmount) kb.text('🚫 No Max Limit', 'pay:cryptomus:nolimit:cryptomus_max_amount');
     kb.row();
   }
 
   // Clear API creds
   if (apiKey || merchantId) {
-    if (apiKey) kb.text('ðŸ—‘ Clear API Key', 'pay:cryptomus:clear:cryptomus_api_key');
-    if (merchantId) kb.text('ðŸ—‘ Clear MID', 'pay:cryptomus:clear:cryptomus_merchant_id');
+    if (apiKey) kb.text('🗑 Clear API Key', 'pay:cryptomus:clear:cryptomus_api_key');
+    if (merchantId) kb.text('🗑 Clear MID', 'pay:cryptomus:clear:cryptomus_merchant_id');
     kb.row();
   }
 
-  kb.text('â—€ï¸ Back to Payments', 'admin:payments');
+  kb.text('◀️ Back to Payments', 'admin:payments');
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
 }
@@ -328,15 +328,15 @@ composer.callbackQuery('pay:cryptomus:toggle_mode', adminRequired, async (ctx) =
   const current = await settingsRepo.getSetting(pool, 'cryptomus_mode') || 'web';
   const newMode = current === 'inline' ? 'web' : 'inline';
   await settingsRepo.setSetting(pool, 'cryptomus_mode', newMode, ctx.from.id);
-  await ctx.answerCallbackQuery(`âœ… Switched to ${newMode === 'inline' ? 'Inline (QR in Bot)' : 'Web (Cryptomus Page)'}`);
+  await ctx.answerCallbackQuery(`✅ Switched to ${newMode === 'inline' ? 'Inline (QR in Bot)' : 'Web (Cryptomus Page)'}`);
   await showCryptomusSettings(ctx);
 });
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 //  STEP 1: SELECT COINS (grouped by currency)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery('pay:cryptomus:currencies', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery('ðŸ”„ Loading coins from Cryptomus...');
+  await ctx.answerCallbackQuery('🔄 Loading coins from Cryptomus...');
   const pool = ctx.dbPool;
   const apiKey = await settingsRepo.getSetting(pool, 'cryptomus_api_key');
   const merchantId = await settingsRepo.getSetting(pool, 'cryptomus_merchant_id');
@@ -344,11 +344,11 @@ composer.callbackQuery('pay:cryptomus:currencies', adminRequired, async (ctx) =>
   const services = await cryptomusService.listServices(apiKey, merchantId);
   if (services.length === 0) {
     await ctx.editMessageText(
-      `âš ï¸ <b>Failed to load coins</b>\n\n` +
+      `⚠️ <b>Failed to load coins</b>\n\n` +
       `Could not fetch currencies from Cryptomus API.\n` +
       `Please verify your API Key & Merchant ID.\n\n` +
       `<i>If issue persists, check if Cryptomus is accessible.</i>`,
-      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('ðŸ”„ Retry', 'pay:cryptomus:currencies').row().text('â—€ï¸ Back', 'pay:cryptomus') }
+      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔄 Retry', 'pay:cryptomus:currencies').row().text('◀️ Back', 'pay:cryptomus') }
     );
     return;
   }
@@ -376,36 +376,36 @@ composer.callbackQuery('pay:cryptomus:currencies', adminRequired, async (ctx) =>
   for (let i = 0; i < coins.length; i += 2) {
     const [coin1, nets1] = coins[i];
     const sel1 = nets1.filter(n => selectedList.some(s => s.currency === coin1 && s.network === n.network)).length;
-    const check1 = sel1 > 0 ? 'âœ…' : 'â¬œ';
+    const check1 = sel1 > 0 ? '✅' : '⬜';
     kb.text(`${coinIcon(coin1)} ${coin1} ${check1} ${sel1}/${nets1.length}`, `pay:cryptomus:coin_networks:${coin1}`);
 
     if (i + 1 < coins.length) {
       const [coin2, nets2] = coins[i + 1];
       const sel2 = nets2.filter(n => selectedList.some(s => s.currency === coin2 && s.network === n.network)).length;
-      const check2 = sel2 > 0 ? 'âœ…' : 'â¬œ';
+      const check2 = sel2 > 0 ? '✅' : '⬜';
       kb.text(`${coinIcon(coin2)} ${coin2} ${check2} ${sel2}/${nets2.length}`, `pay:cryptomus:coin_networks:${coin2}`);
     }
     kb.row();
   }
 
-  kb.text('â—€ï¸ Back to Settings', 'pay:cryptomus');
+  kb.text('◀️ Back to Settings', 'pay:cryptomus');
 
   const totalSelected = selectedList.length;
   await ctx.editMessageText(
-    `â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n` +
-    `   ðŸª™ <b>SELECT COINS</b>\n` +
-    `â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `   🪙 <b>SELECT COINS</b>\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
     `Tap any coin to configure its networks.\n\n` +
-    `âœ… = active networks / total available\n` +
-    `â¬œ = no networks selected\n\n` +
-    `ðŸ“Š <b>Total active:</b> ${totalSelected} coin-network pair${totalSelected !== 1 ? 's' : ''}`,
+    `✅ = active networks / total available\n` +
+    `⬜ = no networks selected\n\n` +
+    `📊 <b>Total active:</b> ${totalSelected} coin-network pair${totalSelected !== 1 ? 's' : ''}`,
     { parse_mode: 'HTML', reply_markup: kb }
   );
 });
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 //  STEP 2: SELECT NETWORKS FOR A COIN
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery(/^pay:cryptomus:coin_networks:/, adminRequired, async (ctx) => {
   const coin = ctx.callbackQuery.data.split(':')[3];
   await ctx.answerCallbackQuery();
@@ -439,41 +439,41 @@ async function showCoinNetworks(ctx, coin) {
 
   const kb = new InlineKeyboard();
 
-  // Network buttons â€” 2 per row
+  // Network buttons — 2 per row
   for (let i = 0; i < coinNetworks.length; i += 2) {
     const svc1 = coinNetworks[i];
     const sel1 = selectedList.some(s => s.currency === coin && s.network === svc1.network);
-    kb.text(`${sel1 ? 'âœ…' : 'â¬œ'} ${networkName(svc1.network)}`, `pay:cryptomus:toggle_cur:${coin}:${svc1.network}`);
+    kb.text(`${sel1 ? '✅' : '⬜'} ${networkName(svc1.network)}`, `pay:cryptomus:toggle_cur:${coin}:${svc1.network}`);
 
     if (i + 1 < coinNetworks.length) {
       const svc2 = coinNetworks[i + 1];
       const sel2 = selectedList.some(s => s.currency === coin && s.network === svc2.network);
-      kb.text(`${sel2 ? 'âœ…' : 'â¬œ'} ${networkName(svc2.network)}`, `pay:cryptomus:toggle_cur:${coin}:${svc2.network}`);
+      kb.text(`${sel2 ? '✅' : '⬜'} ${networkName(svc2.network)}`, `pay:cryptomus:toggle_cur:${coin}:${svc2.network}`);
     }
     kb.row();
   }
 
   // Select All / Deselect All
   if (allSelected) {
-    kb.text('âŒ Deselect All Networks', `pay:cryptomus:deselect_all:${coin}`).row();
+    kb.text('❌ Deselect All Networks', `pay:cryptomus:deselect_all:${coin}`).row();
   } else {
-    kb.text('âœ… Select All Networks', `pay:cryptomus:select_all:${coin}`).row();
+    kb.text('✅ Select All Networks', `pay:cryptomus:select_all:${coin}`).row();
   }
 
-  kb.text('â—€ï¸ Back to Coins', 'pay:cryptomus:currencies').text('â—€ï¸ Settings', 'pay:cryptomus');
+  kb.text('◀️ Back to Coins', 'pay:cryptomus:currencies').text('◀️ Settings', 'pay:cryptomus');
 
   await ctx.editMessageText(
-    `â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n` +
-    `   ${icon} <b>${coin} â€” NETWORKS</b>\n` +
-    `â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `   ${icon} <b>${coin} — NETWORKS</b>\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
     `Select which ${coin} networks to enable.\n` +
     `Users will see only the active networks.\n\n` +
-    `ðŸ“Š <b>Active:</b> ${selectedCount} / ${coinNetworks.length} networks`,
+    `📊 <b>Active:</b> ${selectedCount} / ${coinNetworks.length} networks`,
     { parse_mode: 'HTML', reply_markup: kb }
   );
 }
 
-// â”€â”€ Toggle a single network on/off â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Toggle a single network on/off ──────────────────────────
 composer.callbackQuery(/^pay:cryptomus:toggle_cur:/, adminRequired, async (ctx) => {
   const parts = ctx.callbackQuery.data.split(':');
   const currency = parts[3];
@@ -494,11 +494,11 @@ composer.callbackQuery(/^pay:cryptomus:toggle_cur:/, adminRequired, async (ctx) 
   }
 
   await settingsRepo.setSetting(pool, 'cryptomus_currencies', JSON.stringify(selectedList), ctx.from.id);
-  await ctx.answerCallbackQuery(`${idx >= 0 ? 'âŒ Removed' : 'âœ… Added'} ${currency} (${networkName(network)})`);
+  await ctx.answerCallbackQuery(`${idx >= 0 ? '❌ Removed' : '✅ Added'} ${currency} (${networkName(network)})`);
   await showCoinNetworks(ctx, currency);
 });
 
-// â”€â”€ Select All networks for a coin â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Select All networks for a coin ──────────────────────────
 composer.callbackQuery(/^pay:cryptomus:select_all:/, adminRequired, async (ctx) => {
   const coin = ctx.callbackQuery.data.split(':')[3];
   const pool = ctx.dbPool;
@@ -523,11 +523,11 @@ composer.callbackQuery(/^pay:cryptomus:select_all:/, adminRequired, async (ctx) 
   }
 
   await settingsRepo.setSetting(pool, 'cryptomus_currencies', JSON.stringify(selectedList), ctx.from.id);
-  await ctx.answerCallbackQuery(`âœ… All ${coin} networks enabled!`);
+  await ctx.answerCallbackQuery(`✅ All ${coin} networks enabled!`);
   await showCoinNetworks(ctx, coin);
 });
 
-// â”€â”€ Deselect All networks for a coin â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Deselect All networks for a coin ────────────────────────
 composer.callbackQuery(/^pay:cryptomus:deselect_all:/, adminRequired, async (ctx) => {
   const coin = ctx.callbackQuery.data.split(':')[3];
   const pool = ctx.dbPool;
@@ -540,14 +540,14 @@ composer.callbackQuery(/^pay:cryptomus:deselect_all:/, adminRequired, async (ctx
 
   selectedList = selectedList.filter(s => s.currency !== coin);
   await settingsRepo.setSetting(pool, 'cryptomus_currencies', JSON.stringify(selectedList), ctx.from.id);
-  await ctx.answerCallbackQuery(`âŒ All ${coin} networks disabled!`);
+  await ctx.answerCallbackQuery(`❌ All ${coin} networks disabled!`);
   await showCoinNetworks(ctx, coin);
 });
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-//  GENERIC EDIT HANDLER â€” inline cancel button, no /cancel needed
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
+//  GENERIC EDIT HANDLER — inline cancel button, no /cancel needed
+// ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):edit:.+$/, adminRequired, async (ctx) => {
   await ctx.answerCallbackQuery();
   const parts = ctx.callbackQuery.data.split(':');
@@ -561,31 +561,31 @@ composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):edit:.+$/, adminRequire
     paytm_payee_name: 'Payee Name (shown in UPI app)',
     paytm_qr_code: 'Paytm QR Code ID (paytmqr param)',
     paytm_time_limit: 'Time Limit (seconds)',
-    paytm_min_amount: 'Minimum Amount (â‚¹)',
-    paytm_max_amount: 'Maximum Amount (â‚¹)',
+    paytm_min_amount: 'Minimum Amount (₹)',
+    paytm_max_amount: 'Maximum Amount (₹)',
     paytm_display_name: 'Paytm Button Name (shown to user in deposit menu)',
     bharatpay_merchant_id: 'BharatPe Merchant ID',
     bharatpay_token: 'BharatPe API Token',
     bharatpay_upi_id: 'BharatPe UPI ID',
-    bharatpay_min_amount: 'Minimum Amount (â‚¹)',
-    bharatpay_max_amount: 'Maximum Amount (â‚¹)',
+    bharatpay_min_amount: 'Minimum Amount (₹)',
+    bharatpay_max_amount: 'Maximum Amount (₹)',
     bharatpay_display_name: 'BharatPe Button Name (shown to user in deposit menu)',
     cryptomus_api_key: 'Cryptomus API Key',
     cryptomus_merchant_id: 'Cryptomus Merchant ID',
-    cryptomus_min_amount: 'Minimum Amount (â‚¹)',
-    cryptomus_max_amount: 'Maximum Amount (â‚¹)',
+    cryptomus_min_amount: 'Minimum Amount (₹)',
+    cryptomus_max_amount: 'Maximum Amount (₹)',
   };
 
-  const kb = new InlineKeyboard().text('âŒ Cancel', `pay:cancel_edit:${gateway}`);
+  const kb = new InlineKeyboard().text('❌ Cancel', `pay:cancel_edit:${gateway}`);
   await ctx.editMessageText(
-    `ðŸ“ <b>Edit ${labels[key] || key}</b>\n\nSend the new value:`,
+    `📝 <b>Edit ${labels[key] || key}</b>\n\nSend the new value:`,
     { parse_mode: 'HTML', reply_markup: kb }
   );
 });
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-//  CANCEL EDIT â€” goes back to gateway settings (no /cancel needed!)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
+//  CANCEL EDIT — goes back to gateway settings (no /cancel needed!)
+// ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery(/^pay:cancel_edit:(paytm|bharatpay|cryptomus)$/, adminRequired, async (ctx) => {
   await ctx.answerCallbackQuery('Cancelled');
   const gateway = ctx.callbackQuery.data.split(':')[2];
@@ -599,9 +599,9 @@ composer.callbackQuery(/^pay:cancel_edit:(paytm|bharatpay|cryptomus)$/, adminReq
   }
 });
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-//  CLEAR SETTING â€” reset a key to empty
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
+//  CLEAR SETTING — reset a key to empty
+// ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):clear:.+$/, adminRequired, async (ctx) => {
   const parts = ctx.callbackQuery.data.split(':');
   const gateway = parts[1];
@@ -610,7 +610,7 @@ composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):clear:.+$/, adminRequir
 
   await settingsRepo.deleteSetting(pool, key);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key, value: '(cleared)' });
-  await ctx.answerCallbackQuery(`âœ… ${key} cleared!`);
+  await ctx.answerCallbackQuery(`✅ ${key} cleared!`);
 
   switch (gateway) {
     case 'paytm': return showPaytmSettings(ctx);
@@ -619,9 +619,9 @@ composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):clear:.+$/, adminRequir
   }
 });
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-//  NO LIMIT â€” remove max amount cap
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
+//  NO LIMIT — remove max amount cap
+// ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):nolimit:.+$/, adminRequired, async (ctx) => {
   const parts = ctx.callbackQuery.data.split(':');
   const gateway = parts[1];
@@ -630,7 +630,7 @@ composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):nolimit:.+$/, adminRequ
 
   await settingsRepo.deleteSetting(pool, key);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key, value: 'No Limit' });
-  await ctx.answerCallbackQuery('âœ… Max Amount set to No Limit!');
+  await ctx.answerCallbackQuery('✅ Max Amount set to No Limit!');
 
   switch (gateway) {
     case 'paytm': return showPaytmSettings(ctx);
@@ -639,9 +639,9 @@ composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):nolimit:.+$/, adminRequ
   }
 });
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-//  TEXT INPUT HANDLER â€” processes edit values
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
+//  TEXT INPUT HANDLER — processes edit values
+// ═══════════════════════════════════════════════════════════════════
 composer.on('message:text', async (ctx, next) => {
   const state = editStates.get(ctx.chat.id);
   if (!state) return next();
@@ -655,31 +655,31 @@ composer.on('message:text', async (ctx, next) => {
     if (numericKeys.includes(state.key)) {
       const num = parseFloat(value);
       if (isNaN(num) || num <= 0) {
-        await ctx.reply('âš ï¸ Invalid number.', {
-          reply_markup: new InlineKeyboard().text('ðŸ”„ Try Again', `pay:${state.gateway}:edit:${state.key}`).text('â€¹ Back', `pay:${state.gateway}`)
+        await ctx.reply('⚠️ Invalid number.', {
+          reply_markup: new InlineKeyboard().text('🔄 Try Again', `pay:${state.gateway}:edit:${state.key}`).text('‹ Back', `pay:${state.gateway}`)
         });
         return;
       }
       value = num;
     }
 
-    // Validate MID â€” must be alphanumeric only (e.g. MgjdFH15397320634096)
+    // Validate MID — must be alphanumeric only (e.g. MgjdFH15397320634096)
     if (state.key === 'paytm_merchant_key') {
       if (!/^[A-Za-z0-9]+$/.test(value)) {
         await ctx.reply(
-          `âš ï¸ <b>Invalid Merchant ID!</b>\n\nMID must be alphanumeric (letters + numbers only).\nYou entered: <code>${escapeHtml(value)}</code>\n\nExample: <code>MgjdFH15397320634096</code>`,
-          { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('ðŸ”„ Try Again', `pay:${state.gateway}:edit:${state.key}`).text('â€¹ Back', `pay:${state.gateway}`) }
+          `⚠️ <b>Invalid Merchant ID!</b>\n\nMID must be alphanumeric (letters + numbers only).\nYou entered: <code>${escapeHtml(value)}</code>\n\nExample: <code>MgjdFH15397320634096</code>`,
+          { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔄 Try Again', `pay:${state.gateway}:edit:${state.key}`).text('‹ Back', `pay:${state.gateway}`) }
         );
         return;
       }
     }
 
-    // Validate UPI ID â€” must contain @
+    // Validate UPI ID — must contain @
     if (state.key === 'paytm_upi_id' || state.key === 'bharatpay_upi_id') {
       if (!value.includes('@')) {
         await ctx.reply(
-          `âš ï¸ <b>Invalid UPI ID!</b>\n\nUPI ID must contain @.\nYou entered: <code>${escapeHtml(value)}</code>\n\nExample: <code>merchant@paytm</code>`,
-          { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('ðŸ”„ Try Again', `pay:${state.gateway}:edit:${state.key}`).text('â€¹ Back', `pay:${state.gateway}`) }
+          `⚠️ <b>Invalid UPI ID!</b>\n\nUPI ID must contain @.\nYou entered: <code>${escapeHtml(value)}</code>\n\nExample: <code>merchant@paytm</code>`,
+          { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔄 Try Again', `pay:${state.gateway}:edit:${state.key}`).text('‹ Back', `pay:${state.gateway}`) }
         );
         return;
       }
@@ -687,9 +687,9 @@ composer.on('message:text', async (ctx, next) => {
 
     await settingsRepo.setSetting(ctx.dbPool, state.key, value, ctx.from.id);
     ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key: state.key });
-    await ctx.reply(`âœ… <b>${escapeHtml(state.key)}</b> updated successfully!`, {
+    await ctx.reply(`✅ <b>${escapeHtml(state.key)}</b> updated successfully!`, {
       parse_mode: 'HTML',
-      reply_markup: new InlineKeyboard().text('â€¹ Back to Settings', `pay:${state.gateway}`)
+      reply_markup: new InlineKeyboard().text('‹ Back to Settings', `pay:${state.gateway}`)
     });
     return;
   }
@@ -697,7 +697,7 @@ composer.on('message:text', async (ctx, next) => {
   return next();
 });
 
-// â”€â”€ Photo handler (for QR upload) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Photo handler (for QR upload) ───────────────────────────────
 composer.on('message:photo', async (ctx, next) => {
   const state = editStates.get(ctx.chat.id);
   if (!state || state.step !== 'upload_qr') return next();
@@ -708,8 +708,8 @@ composer.on('message:photo', async (ctx, next) => {
 
   await settingsRepo.setSetting(ctx.dbPool, 'bharatpay_qr_file_id', fileId, ctx.from.id);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'upload_bharatpay_qr' });
-  await ctx.reply('âœ… BharatPay QR image uploaded!', {
-    reply_markup: new InlineKeyboard().text('â€¹ Back to Bharat Pay', 'pay:bharatpay')
+  await ctx.reply('✅ BharatPay QR image uploaded!', {
+    reply_markup: new InlineKeyboard().text('‹ Back to Bharat Pay', 'pay:bharatpay')
   });
 });
 

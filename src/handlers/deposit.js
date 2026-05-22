@@ -12,6 +12,28 @@ import { formatNumber, escapeHtml } from '../utils/formatters.js';
 import { generateBrandedQR } from '../services/qrImageService.js';
 import logger from '../utils/logger.js';
 
+// ── Crypto display helpers ──────────────────────────────────────
+function _coinEmoji(coin) {
+  const map = {
+    'USDT': '🟢', 'BTC': '🟠', 'ETH': '🔵', 'TRX': '🔴',
+    'DOGE': '🐶', 'LTC': '⚪', 'BNB': '🟡', 'SOL': '🟣',
+    'XRP': '⚫', 'MATIC': '🟣', 'TON': '💎', 'USDC': '🔵',
+    'ADA': '🔵', 'AVAX': '🔺', 'SHIB': '🐕', 'DAI': '🟡',
+    'DOT': '🩷', 'DASH': '🔵', 'FDUSD': '🟢', 'BUSD': '🟡',
+  };
+  return map[coin] || '🪙';
+}
+
+function _networkLabel(nw) {
+  const map = {
+    'tron': 'TRC20', 'bsc': 'BEP20', 'eth': 'ERC20', 'polygon': 'Polygon',
+    'arbitrum': 'Arbitrum', 'optimism': 'Optimism', 'avalanche': 'AVAX-C',
+    'btc': 'Bitcoin', 'ltc': 'Litecoin', 'doge': 'Dogecoin', 'dash': 'Dash',
+    'sol': 'Solana', 'ton': 'TON', 'xrp': 'XRP', 'ada': 'Cardano',
+  };
+  return map[nw?.toLowerCase()] || nw?.toUpperCase() || nw;
+}
+
 const composer = new Composer();
 const userStates = new Map(); // chatId → { step, gateway, msgId }
 
@@ -44,12 +66,15 @@ composer.callbackQuery('deposit:menu', async (ctx) => {
 
 async function showDepositMenu(ctx) {
   const pool = ctx.dbPool;
-  const [paytmOn, bharatpayOn, cryptomusOn, minAmount, botName] = await Promise.all([
+  const [paytmOn, bharatpayOn, cryptomusOn, minAmount, botName, paytmDisplayName, bharatDisplayName, cryptoDisplayName] = await Promise.all([
     settingsRepo.getSetting(pool, 'paytm_enabled'),
     settingsRepo.getSetting(pool, 'bharatpay_enabled'),
     settingsRepo.getSetting(pool, 'cryptomus_enabled'),
     settingsRepo.getSetting(pool, 'paytm_min_amount'),
     settingsRepo.getSetting(pool, 'bot_name'),
+    settingsRepo.getSetting(pool, 'paytm_display_name'),
+    settingsRepo.getSetting(pool, 'bharatpay_display_name'),
+    settingsRepo.getSetting(pool, 'cryptomus_display_name'),
   ]);
   const balance = await walletRepo.getBalance(pool, ctx.from.id);
   const name = ctx.from.first_name || 'User';
@@ -64,10 +89,10 @@ async function showDepositMenu(ctx) {
     `👇 <b>Select Payment Method</b>`;
 
   const kb = new InlineKeyboard();
-  if (paytmOn) kb.text('💎 UPI', 'deposit:paytm');
-  if (cryptomusOn) kb.text('💎 CRYPTO', 'deposit:cryptomus');
+  if (paytmOn) kb.text(`💎 ${paytmDisplayName || 'UPI'}`, 'deposit:paytm');
+  if (cryptomusOn) kb.text(`💎 ${cryptoDisplayName || 'CRYPTO'}`, 'deposit:cryptomus');
   kb.row();
-  if (bharatpayOn) kb.text('🏦 UPI (Manual)', 'deposit:bharatpay').row();
+  if (bharatpayOn) kb.text(`🏦 ${bharatDisplayName || 'UPI (Manual)'}`, 'deposit:bharatpay').row();
   if (!paytmOn && !bharatpayOn && !cryptomusOn) text += '\n\n⚠️ No payment methods available.';
   kb.text('❌ Cancel', 'deposit:close');
 
@@ -255,7 +280,7 @@ async function _doPaytmCheck(ctx, pool, orderId) {
   const txn = await transactionRepo.getByOrderId(pool, orderId);
   if (!txn) {
     await ctx.reply('⚠️ Order not found.', {
-      reply_markup: new InlineKeyboard().text('💰 Deposit Again', 'deposit:menu'),
+      reply_markup: new InlineKeyboard().text('💰 Deposit', 'deposit:menu'),
     });
     return;
   }
@@ -664,21 +689,21 @@ composer.callbackQuery('deposit:cryptomus', async (ctx) => {
     `Choose any one option below 👇`;
 
   const kb = new InlineKeyboard();
-  // Place 2 buttons per row where possible
+  // Place 2 buttons per row with proper crypto brand icons
   for (let i = 0; i < selectedCurrencies.length; i += 2) {
     const cur1 = selectedCurrencies[i];
-    const icon1 = cur1.currency === 'USDT' ? '💵' : cur1.currency === 'TRX' ? '⚡' : cur1.currency === 'BTC' ? '🟠' : cur1.currency === 'ETH' ? '🔷' : cur1.currency === 'DOGE' ? '🐕' : '🪙';
-    const nw1 = cur1.network.charAt(0).toUpperCase() + cur1.network.slice(1);
+    const icon1 = _coinEmoji(cur1.currency);
+    const nw1 = _networkLabel(cur1.network);
     kb.text(`${icon1} ${cur1.currency} (${nw1})`, `deposit:crypto_cur:${cur1.currency}:${cur1.network}`);
     if (i + 1 < selectedCurrencies.length) {
       const cur2 = selectedCurrencies[i + 1];
-      const icon2 = cur2.currency === 'USDT' ? '💵' : cur2.currency === 'TRX' ? '⚡' : cur2.currency === 'BTC' ? '🟠' : cur2.currency === 'ETH' ? '🔷' : cur2.currency === 'DOGE' ? '🐕' : '🪙';
-      const nw2 = cur2.network.charAt(0).toUpperCase() + cur2.network.slice(1);
+      const icon2 = _coinEmoji(cur2.currency);
+      const nw2 = _networkLabel(cur2.network);
       kb.text(`${icon2} ${cur2.currency} (${nw2})`, `deposit:crypto_cur:${cur2.currency}:${cur2.network}`);
     }
     kb.row();
   }
-  kb.text('‹ Back', 'deposit:menu').text('❌ Cancel', 'deposit:close');
+  kb.text('◀️ Back', 'deposit:menu').text('❌ Cancel', 'deposit:close');
 
   await safeReply(ctx, text, { parse_mode: 'HTML', reply_markup: kb });
 });
@@ -750,20 +775,31 @@ async function handleCryptoWebDeposit(ctx, amount) {
     gatewayData: { uuid: result.uuid, paymentUrl: result.paymentUrl },
   });
 
+  // Fetch live rate for display
+  const rateResult = await binanceRate.getLiveRate('USDT', 'INR');
+  let rateInfo = '';
+  if (rateResult.price) {
+    const approxUsdt = (amount / rateResult.price).toFixed(2);
+    rateInfo = `📊 <b>Live Rate:</b> 1 USDT ≈ ₹${rateResult.price.toFixed(2)}\n` +
+               `💱 <b>Approx:</b> ${approxUsdt} USDT\n`;
+  }
+
   const kb = new InlineKeyboard()
-    .url('🌐 Pay Now', result.paymentUrl).row()
-    .text('✅ Check Payment', `deposit:check_crypto:${orderId}`).row()
+    .webApp('🌐 Pay Now', result.paymentUrl).row()
+    .text('✅ Verify Payment', `deposit:check_crypto:${orderId}`).row()
     .text('❌ Cancel', `deposit:cancel_txn:${orderId}`);
 
   await ctx.reply(
-    `🪙 <b>Crypto Payment</b>\n\n` +
+    `✨ <b>Invoice Generated</b>\n\n` +
+    `🎯 <b>Payment Time Limit:</b> 15 Minutes\n` +
     `━━━━━━━━━━━━━━━━━━━━━\n` +
     `💰 <b>Amount:</b> ₹${amount.toFixed(2)}\n` +
     `📋 <b>Order:</b> <code>${orderId}</code>\n` +
+    `${rateInfo}` +
     `━━━━━━━━━━━━━━━━━━━━━\n\n` +
-    `Tap <b>Pay Now</b> to open the payment page.\n` +
+    `Tap <b>Pay Now</b> to pay inside Telegram.\n` +
     `All crypto currencies are accepted.\n\n` +
-    `<i>After payment, tap Check Payment to verify.</i>`,
+    `<i>After payment, tap Verify Payment to confirm.</i>`,
     { parse_mode: 'HTML', reply_markup: kb }
   );
 }
@@ -909,7 +945,7 @@ async function handleCryptomusDeposit(ctx, currency, network, amount) {
     `⚠️ <b>Please complete your payment on time</b>`;
 
   const kb = new InlineKeyboard();
-  if (result.paymentUrl) kb.url('🌐 Pay via Web', result.paymentUrl).row();
+  if (result.paymentUrl) kb.webApp('🌐 Pay via Web', result.paymentUrl).row();
   kb.text('✅ PAID', `deposit:check_crypto:${orderId}`).row()
     .text('❌ Cancel', `deposit:cancel_txn:${orderId}`);
 
@@ -1044,7 +1080,7 @@ composer.callbackQuery(/^deposit:cancel_txn:/, async (ctx) => {
     `📋 <b>Order:</b> <code>${orderId}</code>\n` +
     `💰 <b>Amount:</b> ₹${txn ? parseFloat(txn.amount).toFixed(2) : '0.00'}\n\n` +
     `<i>Your payment order has been cancelled.\nYou can create a new order anytime.</i>`,
-    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Deposit Again', 'deposit:menu') }
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Deposit', 'deposit:menu') }
   );
 });
 
@@ -1054,7 +1090,7 @@ composer.callbackQuery('deposit:cancel_state', async (ctx) => {
   try { await ctx.deleteMessage(); } catch { /* ignore */ }
   await ctx.reply(
     `🚫 <b>Cancelled</b>\n\n<i>Deposit process cancelled. You can start again anytime.</i>`,
-    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Deposit Again', 'deposit:menu') }
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Deposit', 'deposit:menu') }
   );
 });
 
