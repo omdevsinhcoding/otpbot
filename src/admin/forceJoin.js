@@ -120,55 +120,82 @@ composer.on('message:text', async (ctx, next) => {
     return;
   }
 
-  addStates.delete(ctx.chat.id);
   const raw = ctx.message.text.trim();
-  let chatIdentifier = raw.startsWith('@') ? raw : (raw.match(/^-?\d+$/) ? Number(raw) : null);
 
-  if (chatIdentifier === null) {
-    await ctx.reply('⚠️ Invalid format. Send a channel ID or @username.');
+  // Support multiple channels: split by comma, space, or newline
+  const inputs = raw.split(/[\s,]+/).filter(Boolean);
+
+  if (inputs.length === 0) {
+    // Keep state — let user retry
+    await ctx.reply('⚠️ Send a channel ID or @username.\nExample: <code>-1001234567890</code> or <code>@mychannel</code>', { parse_mode: 'HTML' });
     return;
   }
 
-  try {
-    const chat = await ctx.api.getChat(chatIdentifier);
-    const botMember = await ctx.api.getChatMember(chat.id, ctx.me.id);
-    if (!['administrator', 'creator'].includes(botMember.status)) {
-      await ctx.reply('⚠️ The bot is <b>not an admin</b> in that channel. Please add it first.', { parse_mode: 'HTML' });
-      return;
+  // Process each channel
+  let added = 0;
+  let failed = 0;
+  const results = [];
+
+  for (const input of inputs) {
+    const chatIdentifier = input.startsWith('@') ? input : (input.match(/^-?\d+$/) ? Number(input) : null);
+
+    if (chatIdentifier === null) {
+      results.push(`❌ <code>${escapeHtml(input)}</code> — invalid format`);
+      failed++;
+      continue;
     }
 
-    // Check if channel already exists
-    const existing = await forceJoinRepo.getChannel(ctx.dbPool, chat.id);
-    if (existing && existing.is_active) {
-      await ctx.reply('⚠️ This channel is already in the force join list.', {
-        reply_markup: new InlineKeyboard().text('◀ Back', 'admin:forcejoin')
+    try {
+      const chat = await ctx.api.getChat(chatIdentifier);
+      const botMember = await ctx.api.getChatMember(chat.id, ctx.me.id);
+      if (!['administrator', 'creator'].includes(botMember.status)) {
+        results.push(`❌ ${escapeHtml(chat.title || input)} — bot is not admin`);
+        failed++;
+        continue;
+      }
+
+      // Check if channel already exists
+      const existing = await forceJoinRepo.getChannel(ctx.dbPool, chat.id);
+      if (existing && existing.is_active) {
+        results.push(`⚠️ ${escapeHtml(chat.title || input)} — already added`);
+        continue;
+      }
+
+      let inviteLink = null;
+      try { inviteLink = (await ctx.api.createChatInviteLink(chat.id)).invite_link; } catch { /* ignore */ }
+
+      await forceJoinRepo.addChannel(ctx.dbPool, {
+        channelId: chat.id,
+        channelUsername: chat.username || '',
+        channelTitle: chat.title || '',
+        inviteLink,
+        addedBy: ctx.from.id,
       });
-      return;
+
+      ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'add_channel', channel_id: chat.id });
+      const display = chat.username ? `@${chat.username}` : String(chat.id);
+      results.push(`✅ ${display} — <b>${escapeHtml(chat.title)}</b>`);
+      added++;
+    } catch (err) {
+      logger.warn(`Cannot access channel ${input}: ${err.message}`);
+      results.push(`❌ <code>${escapeHtml(input)}</code> — not accessible`);
+      failed++;
     }
-
-    let inviteLink = null;
-    try { inviteLink = (await ctx.api.createChatInviteLink(chat.id)).invite_link; } catch { /* ignore */ }
-
-    await forceJoinRepo.addChannel(ctx.dbPool, {
-      channelId: chat.id,
-      channelUsername: chat.username || '',
-      channelTitle: chat.title || '',
-      inviteLink,
-      addedBy: ctx.from.id,
-    });
-
-    ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'add_channel', channel_id: chat.id });
-    const display = chat.username ? `@${chat.username}` : String(chat.id);
-    const count = await forceJoinRepo.countChannels(ctx.dbPool);
-    await ctx.reply(
-      `✅ Channel ${display} (<b>${escapeHtml(chat.title)}</b>) added!\n\n` +
-      `📢 Total force join channels: <b>${count}</b>`,
-      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Back', 'admin:forcejoin') }
-    );
-  } catch (err) {
-    logger.warn(`Cannot access channel ${chatIdentifier}: ${err.message}`);
-    await ctx.reply('⚠️ Could not access that channel. Ensure the channel exists and the bot is a member.');
   }
+
+  // Clear state after processing
+  addStates.delete(ctx.chat.id);
+
+  const count = await forceJoinRepo.countChannels(ctx.dbPool);
+  let reply = '';
+  if (added > 0) reply += `✅ <b>${added}</b> channel${added > 1 ? 's' : ''} added\n`;
+  if (failed > 0) reply += `❌ <b>${failed}</b> failed\n`;
+  reply += `\n${results.join('\n')}\n\n📢 Total channels: <b>${count}</b>`;
+
+  await ctx.reply(reply, {
+    parse_mode: 'HTML',
+    reply_markup: new InlineKeyboard().text('➕ Add More', 'forcejoin:add').text('◀ Back', 'admin:forcejoin')
+  });
 });
 
 // ── Cancel add channel ──────────────────────────────────────────
