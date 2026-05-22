@@ -911,8 +911,7 @@ async function handleCryptoWebDeposit(ctx, amount) {
 
   const kb = new InlineKeyboard()
     .webApp('🌐 Pay Now', result.paymentUrl).row()
-    .text('✅ Verify Payment', `deposit:check_crypto:${orderId}`).row()
-    .text('❌ Cancel', `deposit:cancel_txn:${orderId}`);
+    .text('✅ Verify Payment', `deposit:check_crypto:${orderId}`);
 
   const sentMsg = await ctx.reply(
     `✨ <b>Invoice Generated</b>\n\n` +
@@ -1110,8 +1109,7 @@ async function handleCryptomusDeposit(ctx, currency, network, amount) {
 
   const kb = new InlineKeyboard();
   if (result.paymentUrl) kb.webApp('🌐 Pay via Web', result.paymentUrl).row();
-  kb.text('✅ PAID', `deposit:check_crypto:${orderId}`).row()
-    .text('❌ Cancel', `deposit:cancel_txn:${orderId}`);
+  kb.text('✅ PAID', `deposit:check_crypto:${orderId}`);
 
   if (result.address) {
     // Generate QR with crypto address
@@ -1265,44 +1263,15 @@ composer.callbackQuery(/^deposit:cancel_txn:/, async (ctx) => {
 
   const txn = await transactionRepo.getByOrderId(pool, orderId);
 
-  // Cancel on Cryptomus side if it's a crypto order with UUID
-  let cryptoCancelled = false;
-  if (txn?.gateway_data?.uuid && orderId.startsWith('CX-')) {
-    const apiKey = await settingsRepo.getSetting(pool, 'cryptomus_api_key');
-    const merchantId = await settingsRepo.getSetting(pool, 'cryptomus_merchant_id');
-    if (apiKey && merchantId) {
-      // Try cancel — retry once if first attempt fails
-      let cancelResult = await cryptomusService.cancelPayment(apiKey, merchantId, txn.gateway_data.uuid);
-      if (!cancelResult.success) {
-        // Retry once after 1 second
-        await new Promise(r => setTimeout(r, 1000));
-        cancelResult = await cryptomusService.cancelPayment(apiKey, merchantId, txn.gateway_data.uuid);
-      }
-      cryptoCancelled = cancelResult.success;
-      if (cryptoCancelled) {
-        logger.info(`[Cancel] ✅ Cryptomus cancelled: ${orderId} (uuid: ${txn.gateway_data.uuid})`);
-      } else {
-        logger.warn(`[Cancel] ⚠️ Cryptomus cancel failed: ${orderId} — ${cancelResult.error}`);
-      }
-    }
-  }
-
   await transactionRepo.updateStatus(pool, orderId, 'cancelled');
   try { await ctx.deleteMessage(); } catch { /* ignore */ }
 
-  const cancelStatus = orderId.startsWith('CX-')
-    ? (cryptoCancelled
-        ? `✅ <i>Cancelled on Cryptomus gateway</i>`
-        : `⚠️ <i>Bot-side cancelled. Gateway may take a few minutes to update.</i>`)
-    : '';
-
   await ctx.reply(
-    `╔══════════════════════╗\n` +
+    `╬══════════════════════╗\n` +
     `   🚫 <b>Payment Cancelled</b>\n` +
     `╚══════════════════════╝\n\n` +
     `📋 <b>Order:</b> <code>${orderId}</code>\n` +
     `💰 <b>Amount:</b> ₹${txn ? parseFloat(txn.amount).toFixed(2) : '0.00'}\n\n` +
-    `${cancelStatus}\n` +
     `<i>You can create a new order anytime.</i>`,
     { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Deposit', 'deposit:menu') }
   );
