@@ -19,9 +19,7 @@ import logger from '../utils/logger.js';
 /**
  * Check if a rule matches the deposit criteria.
  */
-function ruleMatches(rule, depositAmount, rolling30d, isVip) {
-  // VIP gate
-  if (rule.vip_only && !isVip) return false;
+function ruleMatches(rule, depositAmount, rolling30d) {
 
   // Expiry gate
   if (rule.expires_at && new Date(rule.expires_at) < new Date()) return false;
@@ -86,16 +84,12 @@ export async function calculateBenefits(pool, userId, depositAmount, orderId = n
     // Get user's rolling 30-day deposit total
     result.rolling30d = await depositRulesRepo.getUserRolling30d(pool, userId);
 
-    // Check VIP status
-    const { rows: userRows } = await pool.query(
-      'SELECT is_premium FROM users WHERE user_id = $1', [userId]
-    );
-    const isVip = userRows[0]?.is_premium || false;
+
 
     // ── Tax pass: find highest-priority matching tax rule ──────
     const taxRules = rules.filter(r => r.rule_type === 'tax');
     for (const rule of taxRules) {
-      if (ruleMatches(rule, depositAmount, result.rolling30d, isVip)) {
+      if (ruleMatches(rule, depositAmount, result.rolling30d)) {
         const pct = parseFloat(rule.percentage);
         result.taxAmount = Math.round(depositAmount * pct / 100 * 100) / 100;
         result.taxRule = rule;
@@ -106,7 +100,7 @@ export async function calculateBenefits(pool, userId, depositAmount, orderId = n
     // ── Bonus pass: find highest-priority matching bonus/loyalty rule
     const bonusRules = rules.filter(r => r.rule_type === 'bonus' || r.rule_type === 'loyalty_bonus');
     for (const rule of bonusRules) {
-      if (ruleMatches(rule, depositAmount, result.rolling30d, isVip)) {
+      if (ruleMatches(rule, depositAmount, result.rolling30d)) {
         const pct = parseFloat(rule.percentage);
         result.bonusAmount = Math.round(depositAmount * pct / 100 * 100) / 100;
         result.bonusRule = rule;
@@ -150,7 +144,7 @@ export async function calculateBenefits(pool, userId, depositAmount, orderId = n
     }
 
     // ── Build user message ────────────────────────────────────
-    result.userMessage = buildUserMessage(result, rules, depositAmount, isVip);
+    result.userMessage = buildUserMessage(result, rules, depositAmount);
 
   } catch (err) {
     logger.error(`[Benefits] Calculation error: ${err.message}`);
@@ -163,7 +157,7 @@ export async function calculateBenefits(pool, userId, depositAmount, orderId = n
 /**
  * Build the premium user-facing benefit message.
  */
-function buildUserMessage(result, allRules, depositAmount, isVip) {
+function buildUserMessage(result, allRules, depositAmount) {
   const lines = [];
 
   lines.push(`━━━━━ 💎 Exᴛʀᴀ Bᴇɴᴇғɪᴛs ━━━━━`);
@@ -191,7 +185,6 @@ function buildUserMessage(result, allRules, depositAmount, isVip) {
   // Show next tier hint
   const loyaltyRules = allRules
     .filter(r => (r.rule_type === 'loyalty_bonus' || r.rule_type === 'bonus') && r.is_enabled)
-    .filter(r => !r.vip_only || isVip)
     .sort((a, b) => parseFloat(a.rolling_30d_min || a.min_deposit) - parseFloat(b.rolling_30d_min || b.min_deposit));
 
   const currentPct = result.bonusRule ? parseFloat(result.bonusRule.percentage) : 0;
@@ -221,10 +214,7 @@ export async function getDepositInfoMessage(pool, userId) {
 
     const rolling30d = userId ? await depositRulesRepo.getUserRolling30d(pool, userId) : 0;
 
-    const { rows: userRows } = userId
-      ? await pool.query('SELECT is_premium FROM users WHERE user_id = $1', [userId])
-      : { rows: [] };
-    const isVip = userRows[0]?.is_premium || false;
+
 
     const lines = [];
     lines.push(`━━━━━━━━━━━━━━━━`);
@@ -235,7 +225,7 @@ export async function getDepositInfoMessage(pool, userId) {
     // Tax rules
     const taxRules = rules.filter(r => r.rule_type === 'tax');
     for (const r of taxRules) {
-      if (r.vip_only && !isVip) continue;
+
       const emoji = r.emoji || '😮‍💨';
       const max = parseFloat(r.max_deposit);
       const rangeStr = max > 0
@@ -254,7 +244,7 @@ export async function getDepositInfoMessage(pool, userId) {
       lines.push('');
 
       for (const r of bonusRules) {
-        if (r.vip_only && !isVip) continue;
+
         const emoji = r.emoji || '🤑';
         const threshold = parseFloat(r.rolling_30d_min) || parseFloat(r.min_deposit) || 0;
         const isActive = rolling30d >= threshold;
@@ -273,7 +263,7 @@ export async function getDepositInfoMessage(pool, userId) {
     // Current eligible reward
     let currentReward = null;
     for (const rule of bonusRules) {
-      if (rule.vip_only && !isVip) continue;
+
       const threshold = parseFloat(rule.rolling_30d_min) || parseFloat(rule.min_deposit) || 0;
       if (rolling30d >= threshold) {
         currentReward = rule;
