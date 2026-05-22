@@ -58,13 +58,11 @@ async function showForceJoinPanel(ctx) {
     .text('➕ Add Channel', 'forcejoin:add').row()
     .text(`✅ Verify Btn Color`, 'forcejoin:color').text('💬 Set Message', 'forcejoin:set_msg').row();
 
-  // Per-channel color + remove buttons
+  // Channel remove buttons
   if (count > 0) {
     for (const ch of channels) {
       const display = ch.channel_username ? `@${ch.channel_username}` : String(ch.channel_id);
-      const shortDisplay = display.length > 15 ? display.slice(0, 15) + '…' : display;
-      kb.text(`🎨 ${shortDisplay}`, `forcejoin:ch_color:${ch.channel_id}`)
-        .text(`🗑 ${shortDisplay}`, `forcejoin:remove:${ch.channel_id}`).row();
+      kb.text(`🗑 ${display}`, `forcejoin:remove:${ch.channel_id}`).row();
     }
   }
 
@@ -223,6 +221,32 @@ composer.on('message:text', async (ctx, next) => {
   addStates.delete(ctx.chat.id);
 
   const count = await forceJoinRepo.countChannels(ctx.dbPool);
+
+  // If exactly 1 channel added → show color picker immediately
+  if (added === 1 && failed === 0 && results.length === 1) {
+    // Find the just-added channel
+    const channels = await forceJoinRepo.getActiveChannels(ctx.dbPool);
+    const lastCh = channels[channels.length - 1];
+    if (lastCh) {
+      const display = lastCh.channel_username ? `@${lastCh.channel_username}` : String(lastCh.channel_id);
+      const colorKb = new InlineKeyboard();
+      for (const c of COLOR_OPTIONS) {
+        colorKb.text(c.label, `forcejoin:set_ch_color:${lastCh.channel_id}:${c.style || 'none'}`);
+        if (c.style) colorKb.style(c.style);
+        colorKb.row();
+      }
+      colorKb.text('⏭ Skip', 'admin:forcejoin');
+
+      await ctx.reply(
+        `✅ Channel <b>${escapeHtml(lastCh.channel_title || display)}</b> added!\n\n` +
+        `🎨 <b>Pick a button color for this channel:</b>`,
+        { parse_mode: 'HTML', reply_markup: colorKb }
+      );
+      return;
+    }
+  }
+
+  // Multiple channels or some failed — show summary
   let reply = '';
   if (added > 0) reply += `✅ <b>${added}</b> channel${added > 1 ? 's' : ''} added\n`;
   if (failed > 0) reply += `❌ <b>${failed}</b> failed\n`;
