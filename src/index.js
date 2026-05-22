@@ -13,6 +13,7 @@ import { setupErrorHandler } from './handlers/error.js';
 import settings from './config/settings.js';
 import logger from './utils/logger.js';
 import { startExpiryService, stopExpiryService } from './services/expiryService.js';
+import { smallCapsTransformer } from './middleware/smallCapsTransformer.js';
 
 // ── Handlers & Admin ────────────────────────────────────────────
 import startHandler from './handlers/start.js';
@@ -60,6 +61,9 @@ async function main() {
 
   // 4. Global error handler
   setupErrorHandler(bot);
+
+  // 4b. Small caps font transformer — converts all outgoing text
+  bot.api.config.use(smallCapsTransformer);
 
   // 5. Middleware (admin tracking is built into admin handlers)
 
