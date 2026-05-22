@@ -288,8 +288,8 @@ export async function getDepositInfoMessage(pool, userId) {
     // ── Build the message ──
     let msg = `💎 <b>Extra deposit benefits</b> <i>(FREE)</i>\n\n`;
 
-    // Rules inside expandable blockquote
-    msg += `<blockquote expandable>`;
+    // Rules — show ALL, no hiding
+    msg += `<blockquote>`;
     msg += ruleLines.join('\n');
     msg += `</blockquote>\n\n`;
 
@@ -299,16 +299,31 @@ export async function getDepositInfoMessage(pool, userId) {
     msg += `⛽ Amount : ₹${formatNumber(rolling30d)} INR`;
     msg += `</blockquote>\n\n`;
 
-    if (bestPct > 0) {
-      msg += `🎁 You will get <b>${bestPct}% extra</b> on your current deposit amount`;
-      if (bestMinDeposit > 0) msg += `\n<i>(if deposited more then ${formatNumber(bestMinDeposit)} rs)</i>`;
-      msg += `\n`;
+    // Show base bonus
+    if (simpleBonusRules.length > 0) {
+      const base = simpleBonusRules.reduce((a, b) =>
+        parseFloat(a.min_deposit) <= parseFloat(b.min_deposit) ? a : b);
+      const basePct = parseFloat(base.percentage);
+      const baseMin = parseFloat(base.min_deposit);
+      msg += `🎁 You will get <b>${basePct}% extra</b> on your current deposit amount\n`;
+      msg += `<i>(if deposited more then ${formatNumber(baseMin)} rs)</i>\n\n`;
     }
 
-    if (nextTier) {
-      const needed = parseFloat(nextTier.rolling_30d_min) - rolling30d;
-      const nextPct = parseFloat(nextTier.percentage);
-      msg += `💡 <i>deposit ₹${formatNumber(needed)} more to unlock ${nextPct}%!</i>`;
+    // Show full progression ladder for loyalty
+    if (loyaltyRules.length > 0) {
+      msg += `📊 <b>Your Progress</b>\n`;
+      for (const rule of loyaltyRules) {
+        const rolling = parseFloat(rule.rolling_30d_min) || 0;
+        const pct = parseFloat(rule.percentage);
+        if (rolling30d >= rolling) {
+          // Achieved
+          msg += `  ✅ ${pct}% bonus — ₹${formatNumber(rolling)}+ done!\n`;
+        } else {
+          // Not yet
+          const needed = rolling - rolling30d;
+          msg += `  🔒 ${pct}% bonus — deposit ₹${formatNumber(needed)} more\n`;
+        }
+      }
     }
 
     return msg;
