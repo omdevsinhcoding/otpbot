@@ -1,6 +1,6 @@
 export async function getWelcomeMessage(pool) {
   const { rows } = await pool.query(
-    'SELECT * FROM welcome_messages WHERE is_enabled = TRUE ORDER BY updated_at DESC LIMIT 1'
+    'SELECT * FROM welcome_messages ORDER BY updated_at DESC LIMIT 1'
   );
   return rows[0] || null;
 }
@@ -9,8 +9,8 @@ export async function setWelcomeMessage(pool, { messageText, buttons, mediaType,
   // Upsert: disable old ones, insert new
   await pool.query('UPDATE welcome_messages SET is_enabled = FALSE');
   const { rows } = await pool.query(
-    `INSERT INTO welcome_messages (message_text, buttons, media_type, media_file_id, parse_mode, updated_by)
-     VALUES ($1, $2::jsonb, $3, $4, $5, $6) RETURNING *`,
+    `INSERT INTO welcome_messages (message_text, buttons, media_type, media_file_id, parse_mode, updated_by, is_enabled)
+     VALUES ($1, $2::jsonb, $3, $4, $5, $6, TRUE) RETURNING *`,
     [messageText, JSON.stringify(buttons || []), mediaType || null, mediaFileId || null, parseMode, updatedBy || null]
   );
   return rows[0];

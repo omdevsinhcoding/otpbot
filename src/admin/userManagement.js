@@ -61,7 +61,12 @@ composer.callbackQuery(/^usrmgmt:view:\d+$/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const userId = Number(ctx.callbackQuery.data.split(':')[2]);
   const user = await userRepo.getUser(ctx.dbPool, userId);
-  if (!user) { await ctx.editMessageText('⚠️ User not found.'); return; }
+  if (!user) {
+    await ctx.editMessageText('⚠️ User not found.', {
+      reply_markup: new InlineKeyboard().text('🔍 Search Again', 'usrmgmt:search').text('‹ Back', 'admin:users')
+    });
+    return;
+  }
 
   const text = formatUserCard(user);
   const kb = new InlineKeyboard();
@@ -145,7 +150,9 @@ composer.on('message:text', async (ctx, next) => {
   }
 
   if (!users.length) {
-    await ctx.reply('🔍 No users found.');
+    await ctx.reply('🔍 No users found.', {
+      reply_markup: new InlineKeyboard().text('🔍 Search Again', 'usrmgmt:search').text('‹ Back', 'admin:users')
+    });
     return;
   }
 
@@ -156,6 +163,7 @@ composer.on('message:text', async (ctx, next) => {
     kb.text(`👁 ${u.user_id}`, `usrmgmt:view:${u.user_id}`).row();
   }
 
+  kb.row().text('🔍 Search Again', 'usrmgmt:search').text('‹ Back', 'admin:users');
   await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
 });
 

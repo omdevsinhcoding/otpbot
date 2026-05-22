@@ -71,7 +71,10 @@ composer.on('message:text', async (ctx, next) => {
   const value = ctx.message.text.trim();
   await settingsRepo.setSetting(ctx.dbPool, state.key, value, ctx.from.id);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key: state.key, value });
-  await ctx.reply(`✅ Setting <b>${escapeHtml(state.key)}</b> updated to: <b>${escapeHtml(value)}</b>`, { parse_mode: 'HTML' });
+  await ctx.reply(`✅ Setting <b>${escapeHtml(state.key)}</b> updated to: <b>${escapeHtml(value)}</b>`, {
+    parse_mode: 'HTML',
+    reply_markup: new InlineKeyboard().text('◀ Back', 'admin:settings')
+  });
 });
 
 // ── Cancel edit ────────────────────────────────────────────────

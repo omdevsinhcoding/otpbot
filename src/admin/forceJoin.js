@@ -127,7 +127,10 @@ composer.on('message:text', async (ctx, next) => {
 
   if (inputs.length === 0) {
     // Keep state — let user retry
-    await ctx.reply('⚠️ Send a channel ID or @username.\nExample: <code>-1001234567890</code> or <code>@mychannel</code>', { parse_mode: 'HTML' });
+    await ctx.reply('⚠️ Send a channel ID or @username.\nExample: <code>-1001234567890</code> or <code>@mychannel</code>', {
+      parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard().text('◀ Back', 'admin:forcejoin')
+    });
     return;
   }
 

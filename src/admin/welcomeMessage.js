@@ -87,7 +87,9 @@ composer.callbackQuery('welcome:preview', adminRequired, async (ctx) => {
       await ctx.reply(previewText, { parse_mode: welcome.parse_mode || 'HTML', reply_markup: kb });
     }
   } catch (err) {
-    await ctx.reply(`⚠️ Preview failed: ${err.message}`);
+    await ctx.reply(`⚠️ Preview failed: ${err.message}`, {
+      reply_markup: new InlineKeyboard().text('‹ Back', 'admin:welcome')
+    });
   }
 });
 
@@ -189,11 +191,11 @@ composer.on('message:text', async (ctx, next) => {
     if (existing) {
       // Update text only — preserve existing buttons, media, etc.
       await pool.query(
-        `UPDATE welcome_messages SET message_text = $1, updated_by = $2, updated_at = NOW() WHERE id = $3`,
+        `UPDATE welcome_messages SET message_text = $1, updated_by = $2, is_enabled = TRUE, updated_at = NOW() WHERE id = $3`,
         [ctx.message.text, ctx.from.id, existing.id]
       );
     } else {
-      // First time — create new record
+      // First time — create new record (is_enabled = TRUE by default in repo)
       await welcomeRepo.setWelcomeMessage(pool, {
         messageText: ctx.message.text,
         buttons: [],
@@ -201,8 +203,11 @@ composer.on('message:text', async (ctx, next) => {
       });
     }
 
+    // Auto-enable welcome_enabled setting so admin doesn't need to toggle manually
+    await settingsRepo.setSetting(pool, 'welcome_enabled', true, ctx.from.id);
+
     ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'set_welcome_message' });
-    await ctx.reply('✅ Welcome message updated!', {
+    await ctx.reply('✅ Welcome message updated & enabled!', {
       reply_markup: new InlineKeyboard()
         .text('🔘 Manage Buttons', 'welcome:buttons').row()
         .text('👁 Preview', 'welcome:preview').text('◀ Back', 'admin:welcome')
@@ -213,13 +218,22 @@ composer.on('message:text', async (ctx, next) => {
   if (state.step === 'add_btn_text') {
     const parts = ctx.message.text.split('|').map(s => s.trim());
     if (parts.length !== 2 || !parts[0] || !parts[1]) {
-      await ctx.reply('⚠️ Invalid format. Use: <code>Button Text | https://url</code>', { parse_mode: 'HTML' });
+      await ctx.reply('⚠️ Invalid format. Use: <code>Button Text | https://url</code>', {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('➕ Try Again', 'welcome:add_btn').text('‹ Back', 'welcome:buttons')
+      });
       return;
     }
 
     const pool = ctx.dbPool;
     const welcome = await welcomeRepo.getWelcomeMessage(pool);
-    if (!welcome) { states.delete(ctx.chat.id); await ctx.reply('⚠️ Set a welcome message first.'); return; }
+    if (!welcome) {
+      states.delete(ctx.chat.id);
+      await ctx.reply('⚠️ Set a welcome message first.', {
+        reply_markup: new InlineKeyboard().text('📝 Set Message', 'welcome:set').text('‹ Back', 'admin:welcome')
+      });
+      return;
+    }
 
     // Save button data temporarily, move to color selection
     states.set(ctx.chat.id, { step: 'pick_color', data: { btnText: parts[0], btnUrl: parts[1], welcomeId: welcome.id } });
