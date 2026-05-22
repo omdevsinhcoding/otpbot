@@ -233,103 +233,57 @@ export async function getDepositInfoMessage(pool, userId) {
 
     const rolling30d = userId ? await depositRulesRepo.getUserRolling30d(pool, userId) : 0;
 
-    // ── Build rules list ──
-    const ruleLines = [];
-
-    const taxRules = rules.filter(r => r.rule_type === 'tax');
-    for (const r of taxRules) {
-      const max = parseFloat(r.max_deposit);
-      const pct = parseFloat(r.percentage);
-      if (max > 0) ruleLines.push(`😮‍💨 if you deposit less then ${formatNumber(max)} rs at once, you pay <b>${pct}% tax</b>.`);
-    }
-
     const simpleBonusRules = rules.filter(r => r.rule_type === 'bonus');
-    for (const r of simpleBonusRules) {
-      const min = parseFloat(r.min_deposit);
-      const pct = parseFloat(r.percentage);
-      ruleLines.push(`🙂 if you deposit ${formatNumber(min)} rs, you get <b>${pct}% extra money</b> of deposit.`);
-    }
-
     const loyaltyRules = rules.filter(r => r.rule_type === 'loyalty_bonus')
       .sort((a, b) => parseFloat(a.rolling_30d_min) - parseFloat(b.rolling_30d_min));
-    const loyaltyEmojis = ['☺️', '🥰', '🤑', '🥳', '😉', '🤩', '💰'];
 
-    for (let i = 0; i < loyaltyRules.length; i++) {
-      const r = loyaltyRules[i];
-      const min = parseFloat(r.min_deposit) || 0;
-      const rolling = parseFloat(r.rolling_30d_min) || 0;
-      const days = parseInt(r.rolling_period_days) || 30;
-      const pct = parseFloat(r.percentage);
-      const emoji = loyaltyEmojis[i % loyaltyEmojis.length];
-
-      let line = `${emoji} if you deposit ${formatNumber(min || 100)} rs`;
-      if (rolling > 0) line += ` and your last ${days} days deposit is ${formatNumber(rolling)} rs`;
-      line += `, you get <b>${pct}% extra money of deposit</b>.`;
-      ruleLines.push(line);
-    }
-
-    // ── Current best eligible bonus ──
-    const allBonusRules = [...simpleBonusRules, ...loyaltyRules];
-    let bestPct = 0;
-    let bestMinDeposit = 0;
-    for (const rule of allBonusRules) {
+    // Find user's current best bonus
+    let currentPct = 0;
+    let currentMinDeposit = 0;
+    for (const rule of simpleBonusRules) {
       const pct = parseFloat(rule.percentage);
+      if (pct > currentPct) {
+        currentPct = pct;
+        currentMinDeposit = parseFloat(rule.min_deposit) || 0;
+      }
+    }
+    for (const rule of loyaltyRules) {
       const rolling = parseFloat(rule.rolling_30d_min) || 0;
-      if (rolling > 0 && rolling30d < rolling) continue;
-      if (pct > bestPct) {
-        bestPct = pct;
-        bestMinDeposit = parseFloat(rule.min_deposit) || 0;
+      const pct = parseFloat(rule.percentage);
+      if (rolling30d >= rolling && pct > currentPct) {
+        currentPct = pct;
+        currentMinDeposit = parseFloat(rule.min_deposit) || 0;
       }
     }
 
-    // ── Next tier ──
-    const nextTier = loyaltyRules.find(r => parseFloat(r.rolling_30d_min) > rolling30d);
+    // Get telegraph URL
+    const telegraphUrl = await settingsRepo.getSetting(pool, 'telegraph_rules_url');
 
-    // ── Build the message ──
+    // Build short, clean message
     let msg = `💎 <b>Extra deposit benefits</b> <i>(FREE)</i>\n\n`;
 
-    // Rules — show ALL, no hiding
-    msg += `<blockquote>`;
-    msg += ruleLines.join('\n');
-    msg += `</blockquote>\n\n`;
-
-    // User's personal stats
     msg += `<blockquote>`;
     msg += `🏦 <b>YOUR LAST 30 DAYS DEPOSIT</b>\n`;
-    msg += `⛽ Amount : ₹${formatNumber(rolling30d)} INR`;
-    msg += `</blockquote>\n\n`;
+    msg += `➜ ₹${formatNumber(rolling30d)}\n\n`;
 
-    // Show base bonus
-    if (simpleBonusRules.length > 0) {
-      const base = simpleBonusRules.reduce((a, b) =>
-        parseFloat(a.min_deposit) <= parseFloat(b.min_deposit) ? a : b);
-      const basePct = parseFloat(base.percentage);
-      const baseMin = parseFloat(base.min_deposit);
-      msg += `🎁 You will get <b>${basePct}% extra</b> on your current deposit amount\n`;
-      msg += `<i>(if deposited more then ${formatNumber(baseMin)} rs)</i>\n\n`;
+    if (currentPct > 0) {
+      msg += `🎁 You will get <b>${currentPct}% extra</b> on your current deposit amount\n`;
+      if (currentMinDeposit > 0) msg += `<i>(if deposited more then ${formatNumber(currentMinDeposit)} rs)</i>\n`;
     }
 
-    // Show full progression ladder for loyalty
-    if (loyaltyRules.length > 0) {
-      msg += `📊 <b>Your Progress</b>\n`;
-      for (const rule of loyaltyRules) {
-        const rolling = parseFloat(rule.rolling_30d_min) || 0;
-        const pct = parseFloat(rule.percentage);
-        if (rolling30d >= rolling) {
-          // Achieved
-          msg += `  ✅ ${pct}% bonus — ₹${formatNumber(rolling)}+ done!\n`;
-        } else {
-          // Not yet
-          const needed = rolling - rolling30d;
-          msg += `  🔒 ${pct}% bonus — deposit ₹${formatNumber(needed)} more\n`;
-        }
-      }
+    const nextTier = loyaltyRules.find(r => parseFloat(r.rolling_30d_min) > rolling30d);
+    if (nextTier) {
+      const needed = parseFloat(nextTier.rolling_30d_min) - rolling30d;
+      const nextPct = parseFloat(nextTier.percentage);
+      msg += `\n💡 <i>deposit ₹${formatNumber(needed)} more to unlock ${nextPct}%!</i>`;
     }
+    msg += `</blockquote>`;
 
-    return msg;
+    return { text: msg, telegraphUrl };
   } catch (err) {
     logger.error(`[Benefits] Info message error: ${err.message}`);
     return null;
   }
 }
+
 

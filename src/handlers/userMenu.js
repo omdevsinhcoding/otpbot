@@ -77,8 +77,17 @@ composer.hears(new RegExp(`^${escRe(BTN_DEPOSIT)}$`), async (ctx) => {
   // Send benefits as separate premium card FIRST
   try {
     const depositBenefitsService = await import('../services/depositBenefitsService.js');
-    const benefitsInfo = await depositBenefitsService.getDepositInfoMessage(pool, ctx.from.id);
-    if (benefitsInfo) await ctx.reply(benefitsInfo, { parse_mode: 'HTML' });
+    const result = await depositBenefitsService.getDepositInfoMessage(pool, ctx.from.id);
+    if (result && result.text) {
+      const benefitsKb = new InlineKeyboard();
+      if (result.telegraphUrl) {
+        benefitsKb.url('📖 Read All Rules', result.telegraphUrl);
+      }
+      await ctx.reply(result.text, {
+        parse_mode: 'HTML',
+        reply_markup: result.telegraphUrl ? benefitsKb : undefined,
+      });
+    }
   } catch {}
 
   // Then send deposit menu with buttons

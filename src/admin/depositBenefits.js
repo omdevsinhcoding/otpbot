@@ -400,6 +400,12 @@ async function saveRule(ctx, pool, data) {
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED,
     { action: 'add_deposit_rule', rule_id: saved.id, title: saved.title });
 
+  // Auto-update Telegraph rules page
+  try {
+    const { updateRulesPage } = await import('../services/telegraphService.js');
+    await updateRulesPage(pool);
+  } catch {}
+
   const msg = `✅ <b>Rule Created!</b>\n\n${ICONS[saved.rule_type]} ${describeRule(saved)}\n<i>${exampleCalc(saved)}</i>`;
   const kb = new InlineKeyboard().text('➕ Add Another', 'benefits:add').row().text('◀ Dashboard', 'admin:benefits');
   try { await ctx.editMessageText(msg, { parse_mode: 'HTML', reply_markup: kb }); }
@@ -812,6 +818,7 @@ composer.callbackQuery(/^bedit:toggle:\d+$/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const id = parseInt(ctx.callbackQuery.data.split(':')[2]);
   await depositRulesRepo.toggleRule(ctx.dbPool, id);
+  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch {}
   await showEdit(ctx, id);
 });
 
@@ -831,6 +838,7 @@ composer.callbackQuery(/^bedit:confirm_del:\d+$/, adminRequired, async (ctx) => 
   try { await ctx.answerCallbackQuery(); } catch {}
   const id = parseInt(ctx.callbackQuery.data.split(':')[2]);
   await depositRulesRepo.deleteRule(ctx.dbPool, id);
+  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch {}
   await showManage(ctx);
 });
 
