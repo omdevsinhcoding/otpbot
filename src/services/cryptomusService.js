@@ -47,7 +47,7 @@ export async function listServices(apiKey, merchantId) {
  * @param {{ amount: number, currency?: string, toCurrency: string, network: string, orderId: string, lifetime?: number }} params
  * @returns {Promise<{ success: boolean, paymentUrl?: string, uuid?: string, address?: string, payAmount?: string, payCurrency?: string, error?: string }>}
  */
-export async function createInvoice(apiKey, merchantId, { amount, currency = 'INR', toCurrency, network, orderId, lifetime = 3600 }) {
+export async function createInvoice(apiKey, merchantId, { amount, currency = 'INR', toCurrency, network, orderId, lifetime = 3600, urlCallback }) {
   try {
     const data = {
       amount: String(amount),
@@ -58,6 +58,7 @@ export async function createInvoice(apiKey, merchantId, { amount, currency = 'IN
     };
     if (toCurrency) data.to_currency = toCurrency;
     if (network) data.network = network;
+    if (urlCallback) data.url_callback = urlCallback;
 
     const sign = makeSign(apiKey, data);
     const response = await fetch(`${CRYPTOMUS_API}/payment`, {

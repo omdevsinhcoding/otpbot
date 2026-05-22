@@ -14,6 +14,10 @@ const settings = Object.freeze({
 
   LOG_LEVEL: process.env.LOG_LEVEL || 'info',
   LOG_PATH: process.env.LOG_PATH || './logs',
+
+  // Web server for webhooks + future mini app
+  WEBHOOK_PORT: Number(process.env.WEBHOOK_PORT) || 3000,
+  WEBHOOK_URL: process.env.WEBHOOK_URL || '',  // e.g. https://yourdomain.com
 });
 
 export default settings;

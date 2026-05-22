@@ -18,6 +18,7 @@ export async function generateBrandedQR({
   refId,
   upiLink,
   developer = '@Erroroo',
+  subtitle = 'Scan with any UPI app',
 }) {
   // ── QR code — matches Python DreamX: ERROR_CORRECT_H, border=4 ──
   // Python uses fill_color="#1a1a2e" (dark blue) — we use black for better scan
@@ -75,7 +76,7 @@ export async function generateBrandedQR({
   <text x="${cx}" y="${yFooter + 55}"
         text-anchor="middle" font-family="Arial, sans-serif"
         font-size="16" font-weight="600" fill="#16c784">
-    Scan with any UPI app
+    ${esc(subtitle)}
   </text>
 
   <text x="${cx}" y="${yFooter + 80}"
