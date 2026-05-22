@@ -9,19 +9,54 @@ import logger from '../utils/logger.js';
 const composer = new Composer();
 const addStates = new Map(); // chatId → 'waiting_channel'
 
-// ── Force join panel ────────────────────────────────────────────
-composer.callbackQuery('admin:forcejoin', adminRequired, async (ctx) => {
-  try { await ctx.answerCallbackQuery(); } catch {}
-  const enabled = await settingsRepo.getSetting(ctx.dbPool, 'force_join_enabled');
-  const statusEmoji = enabled ? '✅ Enabled' : '❌ Disabled';
+// ── Force join panel (shows channel count + list inline) ────────
+async function showForceJoinPanel(ctx) {
+  const pool = ctx.dbPool;
+  const enabled = await settingsRepo.getSetting(pool, 'force_join_enabled');
+  const channels = await forceJoinRepo.getActiveChannels(pool);
+  const count = channels.length;
+
+  const statusEmoji = enabled ? '🟢' : '🔴';
   const toggleLabel = enabled ? '🔴 Disable' : '🟢 Enable';
+
+  let text = `🔗 <b>FORCE JOIN</b>\n\n`;
+  text += `<blockquote>`;
+  text += `${statusEmoji} <b>Status:</b> ${enabled ? 'Active' : 'Inactive'}\n`;
+  text += `📢 <b>Channels:</b> ${count} configured`;
+  text += `</blockquote>\n\n`;
+
+  if (count > 0) {
+    text += `<blockquote>`;
+    text += `📋 <b>CHANNELS</b>\n\n`;
+    for (let i = 0; i < channels.length; i++) {
+      const ch = channels[i];
+      const display = ch.channel_username ? `@${escapeHtml(ch.channel_username)}` : String(ch.channel_id);
+      text += `${i + 1}. ${display} — ${escapeHtml(ch.channel_title || 'N/A')}\n`;
+    }
+    text += `</blockquote>`;
+  } else {
+    text += `<blockquote>⚠️ No channels added yet\n\nAdd channels that users must join before using the bot.</blockquote>`;
+  }
 
   const kb = new InlineKeyboard()
     .text(toggleLabel, 'forcejoin:toggle').row()
-    .text('➕ Add Channel', 'forcejoin:add').text('📋 List Channels', 'forcejoin:list').row()
-    .text('‹ Back', 'admin:back');
+    .text('➕ Add Channel', 'forcejoin:add').row();
 
-  await ctx.editMessageText(`🔗 <b>Force Join Management</b>\n\nStatus: <b>${statusEmoji}</b>`, { parse_mode: 'HTML', reply_markup: kb });
+  // Remove buttons for each channel
+  if (count > 0) {
+    for (const ch of channels) {
+      const display = ch.channel_username ? `@${ch.channel_username}` : String(ch.channel_id);
+      kb.text(`🗑 ${display}`, `forcejoin:remove:${ch.channel_id}`).row();
+    }
+  }
+
+  kb.text('◀ Back', 'admin:back');
+  await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+}
+
+composer.callbackQuery('admin:forcejoin', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  await showForceJoinPanel(ctx);
 });
 
 // ── Toggle ──────────────────────────────────────────────────────
@@ -32,39 +67,13 @@ composer.callbackQuery('forcejoin:toggle', adminRequired, async (ctx) => {
   const newState = !current;
   await settingsRepo.setSetting(pool, 'force_join_enabled', newState, ctx.from.id);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'toggle_force_join', new_state: newState });
-
-  const statusEmoji = newState ? '✅ Enabled' : '❌ Disabled';
-  const toggleLabel = newState ? '🔴 Disable' : '🟢 Enable';
-  const kb = new InlineKeyboard()
-    .text(toggleLabel, 'forcejoin:toggle').row()
-    .text('➕ Add Channel', 'forcejoin:add').text('📋 List Channels', 'forcejoin:list').row()
-    .text('‹ Back', 'admin:back');
-
-  await ctx.editMessageText(`🔗 <b>Force Join Management</b>\n\nStatus: <b>${statusEmoji}</b>\n\n✅ Force join has been <b>${newState ? 'enabled' : 'disabled'}</b>.`, { parse_mode: 'HTML', reply_markup: kb });
+  await showForceJoinPanel(ctx);
 });
 
-// ── List channels ───────────────────────────────────────────────
+// ── List channels (redirects to main panel which now shows them) ─
 composer.callbackQuery('forcejoin:list', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
-  const channels = await forceJoinRepo.getActiveChannels(ctx.dbPool);
-
-  if (!channels.length) {
-    await ctx.editMessageText('📋 <b>Force Join Channels</b>\n\nNo channels configured.', {
-      parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('‹ Back', 'admin:forcejoin')
-    });
-    return;
-  }
-
-  let text = '📋 <b>Force Join Channels</b>\n\n';
-  const kb = new InlineKeyboard();
-  for (const ch of channels) {
-    const display = ch.channel_username ? `@${escapeHtml(ch.channel_username)}` : String(ch.channel_id);
-    text += `┃ ${display} — ${escapeHtml(ch.channel_title || 'N/A')}\n`;
-    kb.text(`🗑 Remove ${display}`, `forcejoin:remove:${ch.channel_id}`).row();
-  }
-  kb.text('‹ Back', 'admin:forcejoin');
-
-  await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+  await showForceJoinPanel(ctx);
 });
 
 // ── Remove channel ──────────────────────────────────────────────
@@ -72,8 +81,8 @@ composer.callbackQuery(/^forcejoin:remove:-?\d+$/, adminRequired, async (ctx) =>
   try { await ctx.answerCallbackQuery(); } catch {}
   const channelId = ctx.callbackQuery.data.split(':')[2];
   const kb = new InlineKeyboard()
-    .text('✅ Confirm', `forcejoin:confirm_remove:${channelId}`)
-    .text('❌ Cancel', 'forcejoin:list');
+    .text('✅ Confirm Remove', `forcejoin:confirm_remove:${channelId}`)
+    .text('❌ Cancel', 'admin:forcejoin');
   await ctx.editMessageText(`⚠️ Remove channel <code>${channelId}</code> from force join?`, { parse_mode: 'HTML', reply_markup: kb });
 });
 
@@ -82,7 +91,7 @@ composer.callbackQuery(/^forcejoin:confirm_remove:-?\d+$/, adminRequired, async 
   const channelId = Number(ctx.callbackQuery.data.split(':')[2]);
   await forceJoinRepo.removeChannel(ctx.dbPool, channelId);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'remove_channel', channel_id: channelId });
-  await ctx.editMessageText(`✅ Channel removed.`, { reply_markup: new InlineKeyboard().text('‹ Back', 'forcejoin:list') });
+  await showForceJoinPanel(ctx);
 });
 
 // ── Add channel entry ───────────────────────────────────────────
@@ -90,7 +99,13 @@ composer.callbackQuery('forcejoin:add', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   addStates.set(ctx.chat.id, 'waiting_channel');
   await ctx.editMessageText(
-    '➕ <b>Add Force Join Channel</b>\n\nSend channel ID (e.g. <code>-1001234567890</code>) or username (e.g. <code>@mychannel</code>).\n\n⚠️ Bot must be <b>admin</b> in the channel.',
+    '➕ <b>Add Force Join Channel</b>\n\n' +
+    '<blockquote>' +
+    'Send channel ID or username:\n\n' +
+    '• ID: <code>-1001234567890</code>\n' +
+    '• Username: <code>@mychannel</code>\n\n' +
+    '⚠️ Bot must be <b>admin</b> in the channel.' +
+    '</blockquote>',
     { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('❌ Cancel', 'forcejoin:cancel_add') }
   );
 });
@@ -101,7 +116,7 @@ composer.on('message:text', async (ctx, next) => {
 
   if (ctx.message.text === '/cancel') {
     addStates.delete(ctx.chat.id);
-    await ctx.reply('❌ Cancelled.', { reply_markup: new InlineKeyboard().text('‹ Back', 'admin:forcejoin') });
+    await ctx.reply('❌ Cancelled.', { reply_markup: new InlineKeyboard().text('◀ Back', 'admin:forcejoin') });
     return;
   }
 
@@ -122,6 +137,15 @@ composer.on('message:text', async (ctx, next) => {
       return;
     }
 
+    // Check if channel already exists
+    const existing = await forceJoinRepo.getChannel(ctx.dbPool, chat.id);
+    if (existing && existing.is_active) {
+      await ctx.reply('⚠️ This channel is already in the force join list.', {
+        reply_markup: new InlineKeyboard().text('◀ Back', 'admin:forcejoin')
+      });
+      return;
+    }
+
     let inviteLink = null;
     try { inviteLink = (await ctx.api.createChatInviteLink(chat.id)).invite_link; } catch { /* ignore */ }
 
@@ -135,7 +159,12 @@ composer.on('message:text', async (ctx, next) => {
 
     ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'add_channel', channel_id: chat.id });
     const display = chat.username ? `@${chat.username}` : String(chat.id);
-    await ctx.reply(`✅ Channel ${display} (<b>${escapeHtml(chat.title)}</b>) added to force join.`, { parse_mode: 'HTML' });
+    const count = await forceJoinRepo.countChannels(ctx.dbPool);
+    await ctx.reply(
+      `✅ Channel ${display} (<b>${escapeHtml(chat.title)}</b>) added!\n\n` +
+      `📢 Total force join channels: <b>${count}</b>`,
+      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Back', 'admin:forcejoin') }
+    );
   } catch (err) {
     logger.warn(`Cannot access channel ${chatIdentifier}: ${err.message}`);
     await ctx.reply('⚠️ Could not access that channel. Ensure the channel exists and the bot is a member.');
@@ -146,15 +175,7 @@ composer.on('message:text', async (ctx, next) => {
 composer.callbackQuery('forcejoin:cancel_add', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   addStates.delete(ctx.chat.id);
-  // Return to force join panel
-  const enabled = await settingsRepo.getSetting(ctx.dbPool, 'force_join_enabled');
-  const statusEmoji = enabled ? '✅ Enabled' : '❌ Disabled';
-  const toggleLabel = enabled ? '🔴 Disable' : '🟢 Enable';
-  const kb = new InlineKeyboard()
-    .text(toggleLabel, 'forcejoin:toggle').row()
-    .text('➕ Add Channel', 'forcejoin:add').text('📋 List Channels', 'forcejoin:list').row()
-    .text('‹ Back', 'admin:back');
-  await ctx.editMessageText(`🔗 <b>Force Join Management</b>\n\nStatus: <b>${statusEmoji}</b>`, { parse_mode: 'HTML', reply_markup: kb });
+  await showForceJoinPanel(ctx);
 });
 
 export default composer;
