@@ -110,11 +110,14 @@ export function boldSansTransformer(prev, method, payload, signal) {
 
   // Keyboard buttons
   if (payload.reply_markup) {
-    payload.reply_markup = transformKeyboard(
-      typeof payload.reply_markup === 'string'
-        ? JSON.parse(payload.reply_markup)
-        : { ...payload.reply_markup }
-    );
+    let markup;
+    if (typeof payload.reply_markup === 'string') {
+      markup = JSON.parse(payload.reply_markup);
+    } else {
+      // grammy Keyboard/InlineKeyboard classes need JSON round-trip to serialize
+      markup = JSON.parse(JSON.stringify(payload.reply_markup));
+    }
+    payload.reply_markup = transformKeyboard(markup);
   }
 
   // Callback query popup text
