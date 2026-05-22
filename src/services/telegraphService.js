@@ -3,6 +3,7 @@
  */
 import logger from '../utils/logger.js';
 import * as settingsRepo from '../database/repositories/settingsRepo.js';
+import * as depositRulesRepo from '../database/repositories/depositRulesRepo.js';
 
 const API = 'https://api.telegra.ph';
 
@@ -166,7 +167,6 @@ function buildContent(rules, botName) {
  */
 export async function updateRulesPage(pool) {
   try {
-    const depositRulesRepo = await import('../database/repositories/depositRulesRepo.js');
     const rules = await depositRulesRepo.getActiveRules(pool);
     if (rules.length === 0) return null;
 
