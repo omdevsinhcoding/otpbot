@@ -28,10 +28,13 @@ export async function checkForceJoin(ctx) {
     // Always show ALL channel buttons — no membership check here
     // Verification happens only when user clicks "✅ I Joined All"
     const kb = new InlineKeyboard();
-    for (const ch of channels) {
+    const labels = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+    for (let i = 0; i < channels.length; i++) {
+      const ch = channels[i];
       const link = ch.invite_link || (ch.channel_username ? `https://t.me/${ch.channel_username}` : null);
       if (link) {
-        kb.url(`📢 ${ch.channel_title || 'Join Channel'}`, link);
+        const label = channels.length > 1 ? `📢 Join Channel ${labels[i] || i + 1}` : '📢 Join Channel';
+        kb.url(label, link);
         if (ch.btn_style) kb.style(ch.btn_style);
         kb.row();
       }
@@ -104,10 +107,13 @@ export async function verifyForceJoin(ctx) {
 
     // User hasn't joined all — show which ones are missing
     const kb = new InlineKeyboard();
-    for (const ch of notJoined) {
+    const labels = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+    for (let i = 0; i < notJoined.length; i++) {
+      const ch = notJoined[i];
       const link = ch.invite_link || (ch.channel_username ? `https://t.me/${ch.channel_username}` : null);
       if (link) {
-        kb.url(`📢 ${ch.channel_title || 'Join Channel'}`, link);
+        const label = notJoined.length > 1 ? `📢 Join Channel ${labels[i] || i + 1}` : '📢 Join Channel';
+        kb.url(label, link);
         if (ch.btn_style) kb.style(ch.btn_style);
         kb.row();
       }
