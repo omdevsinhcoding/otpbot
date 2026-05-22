@@ -38,6 +38,7 @@ async function showPaymentsMenu(ctx) {
     .text('🏦 Bharat Pay Settings', 'pay:bharatpay').row()
     .text('₿ Cryptomus Settings', 'pay:cryptomus').row()
     .text('✏️ Rename Paytm', 'pay:paytm:edit:paytm_display_name').text('✏️ Rename BharatPe', 'pay:bharatpay:edit:bharatpay_display_name').row()
+    .text('✏️ Rename Crypto', 'pay:cryptomus:edit:cryptomus_display_name').row()
     .text('‹ Back', 'admin:back');
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
@@ -629,6 +630,7 @@ composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):edit:.+$/, adminRequire
     cryptomus_merchant_id: 'Cryptomus Merchant ID',
     cryptomus_min_amount: 'Minimum Amount (₹)',
     cryptomus_max_amount: 'Maximum Amount (₹)',
+    cryptomus_display_name: 'Crypto Button Name (shown to user in deposit menu)',
   };
 
   const kb = new InlineKeyboard().text('❌ Cancel', `pay:cancel_edit:${gateway}`);

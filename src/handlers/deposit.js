@@ -869,7 +869,7 @@ async function handleCryptoWebDeposit(ctx, amount) {
   const merchantId = await settingsRepo.getSetting(pool, 'cryptomus_merchant_id');
 
   if (!apiKey || !merchantId) {
-    await ctx.reply('⚠️ Cryptomus not configured. Contact admin.');
+    await ctx.reply('⚠️ Gateway not configured. Contact admin.');
     return;
   }
 
@@ -886,7 +886,7 @@ async function handleCryptoWebDeposit(ctx, amount) {
     if (minMatch) {
       await ctx.reply(
         `⚠️ <b>Amount Too Low</b>\n\n` +
-        `Cryptomus requires minimum <b>₹${Math.ceil(parseFloat(minMatch[1]))}</b> for this payment.\n\n` +
+        `Gateway requires minimum <b>₹${Math.ceil(parseFloat(minMatch[1]))}</b> for this payment.\n\n` +
         `<i>Please try again with a higher amount.</i>`,
         { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Try Again', 'deposit:crypto').text('‹ Back', 'deposit:menu') }
       );
@@ -948,7 +948,7 @@ composer.callbackQuery(/^deposit:crypto_cur:/, async (ctx) => {
   const rateResult = await binanceRate.getLiveRate(currency, 'INR');
   const rateText = rateResult.price
     ? `📊 <b>Live Rate:</b> 1 ${currency} = ₹${rateResult.price.toFixed(2)}`
-    : `📊 <b>Rate:</b> Fetching from Cryptomus...`;
+    : `📊 <b>Rate:</b> Fetching...`;
 
   const nwDisplay = network.charAt(0).toUpperCase() + network.slice(1);
   let text =
@@ -1025,7 +1025,7 @@ async function handleCryptomusDeposit(ctx, currency, network, amount) {
   const merchantId = await settingsRepo.getSetting(pool, 'cryptomus_merchant_id');
 
   if (!apiKey || !merchantId) {
-    await ctx.reply('⚠️ Cryptomus not configured. Contact admin.');
+    await ctx.reply('⚠️ Gateway not configured. Contact admin.');
     return;
   }
 
@@ -1055,7 +1055,7 @@ async function handleCryptomusDeposit(ctx, currency, network, amount) {
     if (minMatch) {
       await ctx.reply(
         `⚠️ <b>Amount Too Low</b>\n\n` +
-        `Cryptomus requires minimum <b>₹${Math.ceil(parseFloat(minMatch[1]))}</b> for ${_coinEmoji(currency)} <b>${currency}</b> on <b>${_networkLabel(network)}</b>.\n\n` +
+        `Gateway requires minimum <b>₹${Math.ceil(parseFloat(minMatch[1]))}</b> for ${_coinEmoji(currency)} <b>${currency}</b> on <b>${_networkLabel(network)}</b>.\n\n` +
         `<i>Please try again with a higher amount.</i>`,
         { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Try Again', 'deposit:crypto').text('‹ Back', 'deposit:menu') }
       );

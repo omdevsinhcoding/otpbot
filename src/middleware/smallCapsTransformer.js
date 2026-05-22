@@ -1,22 +1,16 @@
 /**
- * Unicode Small Caps Transformer for grammy
- * Automatically converts all outgoing bot messages to small caps font style.
+ * Unicode Bold Sans-Serif Transformer for grammy
+ * Converts all outgoing text to bold sans-serif Unicode characters.
+ * Matches the thick/bold style seen in premium Telegram bots.
  * Preserves: HTML tags, <code> content, emoji, numbers, symbols
  */
 
-// Small caps mapping (lowercase → Unicode small caps)
-const SMALL_CAPS = {
-  'a': 'ᴀ', 'b': 'ʙ', 'c': 'ᴄ', 'd': 'ᴅ', 'e': 'ᴇ', 'f': 'ꜰ',
-  'g': 'ɢ', 'h': 'ʜ', 'i': 'ɪ', 'j': 'ᴊ', 'k': 'ᴋ', 'l': 'ʟ',
-  'm': 'ᴍ', 'n': 'ɴ', 'o': 'ᴏ', 'p': 'ᴘ', 'q': 'ǫ', 'r': 'ʀ',
-  's': 'ꜱ', 't': 'ᴛ', 'u': 'ᴜ', 'v': 'ᴠ', 'w': 'ᴡ', 'x': 'x',
-  'y': 'ʏ', 'z': 'ᴢ',
-};
-
 /**
- * Convert text to small caps, preserving HTML tags and <code> blocks
+ * Convert text to Bold Sans-Serif Unicode
+ * A-Z → 𝗔-𝗭 (U+1D5D4 to U+1D5ED)
+ * a-z → 𝗮-𝘇 (U+1D5EE to U+1D607)
  */
-export function toSmallCaps(text) {
+export function toBoldSans(text) {
   if (!text || typeof text !== 'string') return text;
 
   let result = '';
@@ -24,7 +18,7 @@ export function toSmallCaps(text) {
   const len = text.length;
 
   while (i < len) {
-    // Skip <code>...</code> blocks (preserve order IDs, addresses, etc.)
+    // Skip <code>...</code> blocks (preserve order IDs, addresses, amounts)
     if (text.slice(i, i + 6).toLowerCase() === '<code>') {
       const closeIdx = text.indexOf('</code>', i + 6);
       if (closeIdx !== -1) {
@@ -44,7 +38,7 @@ export function toSmallCaps(text) {
       }
     }
 
-    // Skip HTML tags entirely (don't convert tag names/attributes)
+    // Skip HTML tags (don't convert tag names/attributes)
     if (text[i] === '<') {
       const closeIdx = text.indexOf('>', i);
       if (closeIdx !== -1) {
@@ -54,9 +48,20 @@ export function toSmallCaps(text) {
       }
     }
 
-    // Convert lowercase to small caps
-    const ch = text[i];
-    result += SMALL_CAPS[ch] || ch;
+    const code = text.charCodeAt(i);
+
+    // A-Z → Bold Sans A-Z (U+1D5D4 + offset)
+    if (code >= 65 && code <= 90) {
+      result += String.fromCodePoint(0x1D5D4 + (code - 65));
+    }
+    // a-z → Bold Sans a-z (U+1D5EE + offset)
+    else if (code >= 97 && code <= 122) {
+      result += String.fromCodePoint(0x1D5EE + (code - 97));
+    }
+    // Everything else unchanged (emoji, numbers, ₹, symbols)
+    else {
+      result += text[i];
+    }
     i++;
   }
 
@@ -64,27 +69,22 @@ export function toSmallCaps(text) {
 }
 
 /**
- * Transform inline keyboard button text to small caps
+ * Transform inline keyboard and reply keyboard button text
  */
 function transformKeyboard(markup) {
   if (!markup) return markup;
 
-  // InlineKeyboard
   if (markup.inline_keyboard) {
     markup.inline_keyboard = markup.inline_keyboard.map(row =>
-      row.map(btn => ({
-        ...btn,
-        text: toSmallCaps(btn.text),
-      }))
+      row.map(btn => ({ ...btn, text: toBoldSans(btn.text) }))
     );
   }
 
-  // ReplyKeyboard
   if (markup.keyboard) {
     markup.keyboard = markup.keyboard.map(row =>
       row.map(btn => {
-        if (typeof btn === 'string') return toSmallCaps(btn);
-        return { ...btn, text: toSmallCaps(btn.text) };
+        if (typeof btn === 'string') return toBoldSans(btn);
+        return { ...btn, text: toBoldSans(btn.text) };
       })
     );
   }
@@ -94,25 +94,21 @@ function transformKeyboard(markup) {
 
 /**
  * grammy API transformer — intercepts all outgoing messages
- * and applies small caps conversion automatically.
- *
- * Usage in index.js:
- *   import { smallCapsTransformer } from './middleware/smallCapsTransformer.js';
- *   bot.api.config.use(smallCapsTransformer);
+ * and applies Bold Sans-Serif conversion automatically.
  */
-export function smallCapsTransformer(prev, method, payload, signal) {
-  // Methods that have 'text' field
+export function boldSansTransformer(prev, method, payload, signal) {
+  // Text messages
   if (['sendMessage', 'editMessageText'].includes(method) && payload.text) {
-    payload.text = toSmallCaps(payload.text);
+    payload.text = toBoldSans(payload.text);
   }
 
-  // Methods that have 'caption' field
+  // Captions
   if (['sendPhoto', 'sendVideo', 'sendDocument', 'sendAnimation',
        'editMessageCaption'].includes(method) && payload.caption) {
-    payload.caption = toSmallCaps(payload.caption);
+    payload.caption = toBoldSans(payload.caption);
   }
 
-  // Transform keyboard button text
+  // Keyboard buttons
   if (payload.reply_markup) {
     payload.reply_markup = transformKeyboard(
       typeof payload.reply_markup === 'string'
@@ -121,9 +117,9 @@ export function smallCapsTransformer(prev, method, payload, signal) {
     );
   }
 
-  // answerCallbackQuery text
+  // Callback query popup text
   if (method === 'answerCallbackQuery' && payload.text) {
-    payload.text = toSmallCaps(payload.text);
+    payload.text = toBoldSans(payload.text);
   }
 
   return prev(method, payload, signal);
