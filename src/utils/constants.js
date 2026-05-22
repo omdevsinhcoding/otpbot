@@ -117,7 +117,7 @@ Welcome aboard, {user}! 🎉
 ┃  <b>📋 YOUR PROFILE</b>
 ┃  🆔  <code>{id}</code>
 ┃  👤  {full_name}
-┃  📎  @{username}
+┃  📎  {username}
 ┗━━━━━━━━━━━━━━━━━━┛
 
 <i>👇 Choose an option below to begin!</i>`;
