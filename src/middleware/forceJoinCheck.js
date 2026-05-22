@@ -1,63 +1,93 @@
 import { InlineKeyboard } from 'grammy';
 import logger from '../utils/logger.js';
 
+const NUM_LABELS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+
 /**
- * Show force-join channel buttons on /start.
- * Always shows ALL channel buttons regardless of join status.
- * Returns true if no channels configured or force join disabled, false if blocked.
+ * Build channel buttons keyboard.
+ * Uses custom btn_text if set, otherwise generic numbered labels.
+ */
+function buildChannelKb(channelList) {
+  const kb = new InlineKeyboard();
+  for (let i = 0; i < channelList.length; i++) {
+    const ch = channelList[i];
+    const link = ch.invite_link || (ch.channel_username ? `https://t.me/${ch.channel_username}` : null);
+    if (link) {
+      const label = ch.btn_text || (channelList.length > 1 ? `📢 Join Channel ${NUM_LABELS[i] || i + 1}` : '📢 Join Channel');
+      kb.url(label, link);
+      if (ch.btn_style) kb.style(ch.btn_style);
+      kb.row();
+    }
+  }
+  kb.text('✅ Joined', 'fjcheck:verify').style('success').row();
+  return kb;
+}
+
+/**
+ * Check which channels the user has NOT joined.
+ * Returns array of not-joined channels.
+ * If getChatMember fails → treats as NOT joined (fail-closed).
+ */
+async function getNotJoinedChannels(ctx, channels) {
+  const notJoined = [];
+  for (const ch of channels) {
+    try {
+      const member = await ctx.api.getChatMember(ch.channel_id, ctx.from.id);
+      if (['left', 'kicked'].includes(member.status)) {
+        notJoined.push(ch);
+      }
+    } catch (err) {
+      // Cannot verify → treat as NOT joined (fail-closed)
+      logger.debug(`Cannot check channel ${ch.channel_id}: ${err.message} — treating as not joined`);
+      notJoined.push(ch);
+    }
+  }
+  return notJoined;
+}
+
+/**
+ * Force join check on /start.
+ * Actually verifies membership before letting user through.
+ * Returns true if user can proceed, false if blocked.
  */
 export async function checkForceJoin(ctx) {
   if (!ctx.from) return true;
   const pool = ctx.dbPool;
 
   try {
-    // Check if force join is enabled
     const { getSetting } = await import('../database/repositories/settingsRepo.js');
     const enabled = await getSetting(pool, 'force_join_enabled');
     if (!enabled) return true;
 
-    // Admins bypass
     const { isAdmin } = await import('../database/repositories/adminRepo.js');
     if (await isAdmin(pool, ctx.from.id)) return true;
 
-    // Get ALL active channels
     const { getActiveChannels } = await import('../database/repositories/forceJoinRepo.js');
     const channels = await getActiveChannels(pool);
     if (!channels || channels.length === 0) return true;
 
-    // Always show ALL channel buttons — no membership check here
-    // Verification happens only when user clicks "✅ I Joined All"
-    const kb = new InlineKeyboard();
-    const labels = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
-    for (let i = 0; i < channels.length; i++) {
-      const ch = channels[i];
-      const link = ch.invite_link || (ch.channel_username ? `https://t.me/${ch.channel_username}` : null);
-      if (link) {
-        const label = ch.btn_text || (channels.length > 1 ? `📢 Join Channel ${labels[i] || i + 1}` : '📢 Join Channel');
-        kb.url(label, link);
-        if (ch.btn_style) kb.style(ch.btn_style);
-        kb.row();
-      }
-    }
+    // Actually verify membership
+    const notJoined = await getNotJoinedChannels(ctx, channels);
+    if (notJoined.length === 0) return true; // All joined → proceed
 
-    kb.text('✅ Joined', 'fjcheck:verify').style('success').row();
+    // User hasn't joined → show channel buttons
+    const kb = buildChannelKb(notJoined);
 
-    // Build clickable user mention
     const firstName = ctx.from.first_name || 'User';
     const userMention = `<a href="tg://user?id=${ctx.from.id}">${firstName.replace(/[<>&]/g, '')}</a>`;
 
-    // Read admin-configured message or use default
-    const customMsg = await getSetting(pool, 'fj_message');
+    const getSetting2 = getSetting;
+    const customMsg = await getSetting2(pool, 'fj_message');
     let text;
     if (customMsg) {
       text = customMsg
         .replace(/\{user\}/gi, userMention)
         .replace(/\{first_name\}/gi, firstName.replace(/[<>&]/g, ''))
-        .replace(/\{channel_count\}/gi, String(channels.length));
+        .replace(/\{channel_count\}/gi, String(notJoined.length));
     } else {
-      text = `👋 Hey! ${userMention}, Please Join Our Channel${channels.length > 1 ? 's' : ''} To Access The Bot\n\n`;
+      text = `👋 Hey! ${userMention}, Please Join Our Channel${notJoined.length > 1 ? 's' : ''} To Access The Bot\n\n`;
       text += `<blockquote>`;
-      text += `You must join <b>${channels.length}</b> channel${channels.length > 1 ? 's' : ''} to continue.`;
+      text += `You must join <b>${notJoined.length}</b> channel${notJoined.length > 1 ? 's' : ''} to continue.`;
       text += `</blockquote>`;
     }
 
@@ -65,13 +95,12 @@ export async function checkForceJoin(ctx) {
     return false;
   } catch (err) {
     logger.error(`Force join check error: ${err.message}`);
-    return true; // Fail open
+    return true; // Fail open on unexpected errors
   }
 }
 
 /**
- * Verify force-join: checks if user actually joined ALL channels.
- * Called only when user clicks the "✅ Joined" button.
+ * Verify force join when user clicks "✅ Joined".
  * Returns true if all joined, false if some not joined.
  */
 export async function verifyForceJoin(ctx) {
@@ -90,35 +119,12 @@ export async function verifyForceJoin(ctx) {
     const channels = await getActiveChannels(pool);
     if (!channels || channels.length === 0) return true;
 
-    // Now actually check membership for EACH channel
-    const notJoined = [];
-    for (const ch of channels) {
-      try {
-        const member = await ctx.api.getChatMember(ch.channel_id, ctx.from.id);
-        if (['left', 'kicked'].includes(member.status)) {
-          notJoined.push(ch);
-        }
-      } catch (err) {
-        logger.debug(`Cannot check channel ${ch.channel_id}: ${err.message}`);
-      }
-    }
-
+    // Check membership — fail-closed
+    const notJoined = await getNotJoinedChannels(ctx, channels);
     if (notJoined.length === 0) return true;
 
-    // User hasn't joined all — show which ones are missing
-    const kb = new InlineKeyboard();
-    const labels = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
-    for (let i = 0; i < notJoined.length; i++) {
-      const ch = notJoined[i];
-      const link = ch.invite_link || (ch.channel_username ? `https://t.me/${ch.channel_username}` : null);
-      if (link) {
-        const label = ch.btn_text || (notJoined.length > 1 ? `📢 Join Channel ${labels[i] || i + 1}` : '📢 Join Channel');
-        kb.url(label, link);
-        if (ch.btn_style) kb.style(ch.btn_style);
-        kb.row();
-      }
-    }
-    kb.text('✅ Joined', 'fjcheck:verify').style('success').row();
+    // Still not joined — show which ones are missing
+    const kb = buildChannelKb(notJoined);
 
     const totalRequired = channels.length;
     const joinedCount = totalRequired - notJoined.length;
@@ -136,6 +142,6 @@ export async function verifyForceJoin(ctx) {
     return false;
   } catch (err) {
     logger.error(`Force join verify error: ${err.message}`);
-    return true;
+    return false; // Fail-closed — don't let unverified users through
   }
 }
