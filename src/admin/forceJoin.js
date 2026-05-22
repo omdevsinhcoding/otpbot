@@ -5,9 +5,11 @@ import * as settingsRepo from '../database/repositories/settingsRepo.js';
 import { ActionType } from '../utils/constants.js';
 import { escapeHtml } from '../utils/formatters.js';
 import logger from '../utils/logger.js';
+import { registerAdminState } from '../utils/adminStates.js';
 
 const composer = new Composer();
 const addStates = new Map(); // chatId → 'waiting_channel'
+registerAdminState(addStates);
 
 // ── Force join panel (shows channel count + list inline) ────────
 async function showForceJoinPanel(ctx) {

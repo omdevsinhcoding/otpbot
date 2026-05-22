@@ -14,6 +14,7 @@ import settings from './config/settings.js';
 import logger from './utils/logger.js';
 import { startExpiryService, stopExpiryService } from './services/expiryService.js';
 import { boldSansTransformer, boldSansDecoder } from './middleware/smallCapsTransformer.js';
+import { adminStateGuard } from './utils/adminStates.js';
 
 // ── Handlers & Admin ────────────────────────────────────────────
 import startHandler from './handlers/start.js';
@@ -66,14 +67,16 @@ async function main() {
   // 4b. Bold Sans-Serif font transformer — all text looks bold & premium
   bot.api.config.use(boldSansTransformer);
 
-
-  // 5. Middleware (admin tracking is built into admin handlers)
-
   // 5. Bold text decoder — decode incoming bold Unicode back to ASCII
   //    MUST be before all hears() handlers so button text matches
   bot.use(boldSansDecoder);
 
-  // 6. Register handlers (admin FIRST so they take priority over text handlers)
+  // 6. Global admin state guard — prevents reply keyboard buttons from being
+  //    captured as text input when admin is in a waiting-for-text state.
+  //    MUST be before all admin handlers.
+  bot.use(adminStateGuard);
+
+  // 7. Register handlers (admin FIRST so they take priority over text handlers)
   bot.use(adminPanel);
   bot.use(broadcastAdmin);
   bot.use(userManagement);

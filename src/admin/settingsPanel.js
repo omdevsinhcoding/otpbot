@@ -3,9 +3,11 @@ import { adminRequired } from '../middleware/auth.js';
 import * as settingsRepo from '../database/repositories/settingsRepo.js';
 import { ActionType } from '../utils/constants.js';
 import { escapeHtml } from '../utils/formatters.js';
+import { registerAdminState } from '../utils/adminStates.js';
 
 const composer = new Composer();
 const editStates = new Map(); // chatId → { step, key }
+registerAdminState(editStates);
 
 // ── Settings panel ──────────────────────────────────────────────
 composer.callbackQuery('admin:settings', adminRequired, async (ctx) => {

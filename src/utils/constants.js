@@ -112,3 +112,24 @@ export const DEFAULT_WELCOME_TEXT =
 💎 Best-in-class Service</blockquote>
 
 <i>👇 Tap below to get started!</i>`;
+
+// ── All reply keyboard button labels (for filtering out button presses from text input) ──
+export const REPLY_KEYBOARD_BUTTONS = new Set([
+  BTN_GET_OTP, BTN_DEPOSIT, BTN_PROFILE, BTN_MORE, BTN_SMS_CHECKER,
+  BTN_SUPPORT, BTN_REFER_EARN, BTN_READYMADE,
+  BTN_GET_EMAIL, BTN_FAVORITE, BTN_PROMO_CODE, BTN_RETURN,
+  BTN_TOP_SERVICES, BTN_API, BTN_RESELLER,
+  BTN_ADMIN_PANEL,
+  BTN_ADM_BROADCAST, BTN_ADM_USERS, BTN_ADM_FORCEJOIN, BTN_ADM_ADMINS,
+  BTN_ADM_WELCOME, BTN_ADM_SETTINGS, BTN_ADM_PAYMENTS, BTN_ADM_BOTSTATS,
+  BTN_ADM_LOGS, BTN_ADM_BACK,
+  BTN_PAY_PAYTM, BTN_PAY_BHARATPAY, BTN_PAY_CRYPTO, BTN_PAY_BACK,
+]);
+
+/**
+ * Check if text is a reply keyboard button press.
+ * If true, the text handler should clear its state and call next().
+ */
+export function isReplyKeyboardButton(text) {
+  return REPLY_KEYBOARD_BUTTONS.has(text);
+}

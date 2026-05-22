@@ -4,9 +4,11 @@ import * as adminRepo from '../database/repositories/adminRepo.js';
 import { ActionType } from '../utils/constants.js';
 import { escapeHtml, formatTimestamp } from '../utils/formatters.js';
 import logger from '../utils/logger.js';
+import { registerAdminState } from '../utils/adminStates.js';
 
 const composer = new Composer();
 const addStates = new Map(); // chatId → 'waiting_id'
+registerAdminState(addStates);
 
 // ── Admin list ──────────────────────────────────────────────────
 composer.callbackQuery('admin:admins', adminRequired, async (ctx) => {

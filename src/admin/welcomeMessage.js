@@ -2,10 +2,10 @@ import { Composer, InlineKeyboard } from 'grammy';
 import { adminRequired } from '../middleware/auth.js';
 import * as welcomeRepo from '../database/repositories/welcomeRepo.js';
 import * as settingsRepo from '../database/repositories/settingsRepo.js';
-import { ActionType } from '../utils/constants.js';
+import { ActionType, DEFAULT_WELCOME_TEXT } from '../utils/constants.js';
 import { buildInlineButtons } from '../utils/keyboard.js';
 import { truncateText, escapeHtml, replaceWelcomePlaceholders } from '../utils/formatters.js';
-import { DEFAULT_WELCOME_TEXT } from '../utils/constants.js';
+import { registerAdminState } from '../utils/adminStates.js';
 import logger from '../utils/logger.js';
 
 // Available color options for buttons (Telegram Bot API 9.4 styles)
@@ -19,6 +19,7 @@ const BUTTON_COLORS = [
 
 const composer = new Composer();
 const states = new Map(); // chatId → { step, data }
+registerAdminState(states);
 
 // ── Welcome panel ───────────────────────────────────────────────
 composer.callbackQuery('admin:welcome', adminRequired, async (ctx) => {

@@ -4,9 +4,11 @@ import * as settingsRepo from '../database/repositories/settingsRepo.js';
 import { ActionType } from '../utils/constants.js';
 import { escapeHtml, truncateText } from '../utils/formatters.js';
 import logger from '../utils/logger.js';
+import { registerAdminState } from '../utils/adminStates.js';
 
 const composer = new Composer();
 const states = new Map(); // chatId → { step, data }
+registerAdminState(states);
 
 // ── T&C panel ───────────────────────────────────────────────────
 async function showTcPanel(ctx) {

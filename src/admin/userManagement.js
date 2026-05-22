@@ -4,9 +4,11 @@ import * as userRepo from '../database/repositories/userRepo.js';
 import { ActionType } from '../utils/constants.js';
 import { escapeHtml, formatNumber, formatTimestamp, formatUserCard } from '../utils/formatters.js';
 import logger from '../utils/logger.js';
+import { registerAdminState } from '../utils/adminStates.js';
 
 const composer = new Composer();
 const searchStates = new Map(); // chatId → 'searching'
+registerAdminState(searchStates);
 
 // ── User management menu ────────────────────────────────────────
 composer.callbackQuery('admin:users', adminRequired, async (ctx) => {

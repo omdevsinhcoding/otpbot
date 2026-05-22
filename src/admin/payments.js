@@ -5,9 +5,11 @@ import { ActionType } from '../utils/constants.js';
 import { escapeHtml } from '../utils/formatters.js';
 import logger from '../utils/logger.js';
 import * as cryptomusService from '../services/cryptomusService.js';
+import { registerAdminState } from '../utils/adminStates.js';
 
 const composer = new Composer();
 const editStates = new Map(); // chatId → { step, key, gateway }
+registerAdminState(editStates);
 
 // ═══════════════════════════════════════════════════════════════════
 //  PAYMENTS MAIN MENU
@@ -401,6 +403,7 @@ composer.callbackQuery('pay:cryptomus:toggle_mode', adminRequired, async (ctx) =
 // ═══════════════════════════════════════════════════════════════════
 const COINS_PER_PAGE = 20;
 const coinSearchState = new Map(); // chatId → { query, page }
+registerAdminState(coinSearchState);
 
 composer.callbackQuery('pay:cryptomus:currencies', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}

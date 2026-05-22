@@ -6,9 +6,11 @@ import { ActionType } from '../utils/constants.js';
 import { formatNumber, truncateText, formatTimestamp } from '../utils/formatters.js';
 import { buildBackButton } from '../utils/keyboard.js';
 import logger from '../utils/logger.js';
+import { registerAdminState } from '../utils/adminStates.js';
 
 const composer = new Composer();
 const drafts = new Map(); // chatId → { step, text, mediaType, mediaFileId, buttons }
+registerAdminState(drafts);
 
 // ── Broadcast menu ──────────────────────────────────────────────
 composer.callbackQuery('admin:broadcast', adminRequired, async (ctx) => {
