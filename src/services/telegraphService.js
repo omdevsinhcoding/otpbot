@@ -178,24 +178,40 @@ export async function updateRulesPage(pool) {
     // Check if page already exists
     const existingPath = await settingsRepo.getSetting(pool, 'telegraph_rules_path');
 
+    // Telegraph API needs content as JSON string in form data
+    const contentStr = JSON.stringify(content);
+
     let page;
     if (existingPath) {
       // Edit existing page
-      page = await apiCall(`editPage/${existingPath}`, {
-        access_token: token,
-        title,
-        content,
-        author_name: botName,
+      const params = new URLSearchParams();
+      params.append('access_token', token);
+      params.append('title', title);
+      params.append('content', contentStr);
+      params.append('author_name', botName);
+
+      const res = await fetch(`${API}/editPage/${existingPath}`, {
+        method: 'POST',
+        body: params,
       });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'editPage failed');
+      page = data.result;
     } else {
       // Create new page
-      page = await apiCall('createPage', {
-        access_token: token,
-        title,
-        content,
-        author_name: botName,
-        return_content: false,
+      const params = new URLSearchParams();
+      params.append('access_token', token);
+      params.append('title', title);
+      params.append('content', contentStr);
+      params.append('author_name', botName);
+
+      const res = await fetch(`${API}/createPage`, {
+        method: 'POST',
+        body: params,
       });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'createPage failed');
+      page = data.result;
       await settingsRepo.setSetting(pool, 'telegraph_rules_path', page.path);
     }
 
