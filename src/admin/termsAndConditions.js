@@ -10,12 +10,23 @@ const composer = new Composer();
 const states = new Map(); // chatId → { step, data }
 registerAdminState(states);
 
+const COLOR_OPTIONS = [
+  { style: 'success', label: '🟢 Green' },
+  { style: 'primary', label: '🔵 Blue' },
+  { style: 'danger',  label: '🔴 Red' },
+  { style: '',        label: '⬜ Default' },
+];
+
 // ── T&C panel ───────────────────────────────────────────────────
 async function showTcPanel(ctx) {
   const pool = ctx.dbPool;
   const enabled = await settingsRepo.getSetting(pool, 'tc_enabled');
   const buttons = await settingsRepo.getSetting(pool, 'tc_buttons') || [];
   const message = await settingsRepo.getSetting(pool, 'tc_message');
+  const acceptColor = await settingsRepo.getSetting(pool, 'tc_accept_color') || 'success';
+  const declineColor = await settingsRepo.getSetting(pool, 'tc_decline_color') || 'danger';
+  const acceptInfo = COLOR_OPTIONS.find(c => c.style === acceptColor) || COLOR_OPTIONS[0];
+  const declineInfo = COLOR_OPTIONS.find(c => c.style === declineColor) || COLOR_OPTIONS[2];
 
   const statusEmoji = enabled ? '🟢' : '🔴';
   const toggleLabel = enabled ? '🔴 Disable' : '🟢 Enable';
@@ -24,7 +35,9 @@ async function showTcPanel(ctx) {
   text += `<blockquote>`;
   text += `${statusEmoji} <b>Status:</b> ${enabled ? 'Active' : 'Inactive'}\n`;
   text += `🔗 <b>Buttons:</b> ${buttons.length} configured\n`;
-  text += `💬 <b>Message:</b> ${message ? '✅ Set' : '✅ Default'}`;
+  text += `💬 <b>Message:</b> ${message ? '✅ Set' : '✅ Default'}\n`;
+  text += `✅ <b>Accept Btn:</b> ${acceptInfo.label}\n`;
+  text += `❌ <b>Decline Btn:</b> ${declineInfo.label}`;
   text += `</blockquote>`;
 
   if (buttons.length > 0) {
@@ -37,7 +50,8 @@ async function showTcPanel(ctx) {
 
   const kb = new InlineKeyboard()
     .text(toggleLabel, 'tc:toggle').row()
-    .text('➕ Add Button', 'tc:add_btn').text('💬 Set Message', 'tc:set_msg').row();
+    .text('➕ Add Button', 'tc:add_btn').text('💬 Set Message', 'tc:set_msg').row()
+    .text(`✅ Accept Color`, 'tc:accept_color').text(`❌ Decline Color`, 'tc:decline_color').row();
   if (buttons.length > 0) {
     kb.text('✏️ Edit Button', 'tc:edit_list').text('🗑 Remove Button', 'tc:remove_list').row();
     kb.text('👁 Preview', 'tc:preview').row();
@@ -190,13 +204,19 @@ composer.callbackQuery('tc:preview', adminRequired, async (ctx) => {
   const buttons = await settingsRepo.getSetting(pool, 'tc_buttons') || [];
   const message = await settingsRepo.getSetting(pool, 'tc_message') ||
     "Dear Users,\nThere Are Some Terms & Conditions Given Please Read Carefully, Else If You Face Any Problem Related To Terms And Conditions So We Can't Help You...";
+  const acceptColor = await settingsRepo.getSetting(pool, 'tc_accept_color') || 'success';
+  const declineColor = await settingsRepo.getSetting(pool, 'tc_decline_color') || 'danger';
 
   const kb = new InlineKeyboard();
   for (const btn of buttons) {
-    kb.url(btn.text, btn.url).row();
+    kb.url(btn.text, btn.url);
+    if (btn.color) kb.style(btn.color);
+    kb.row();
   }
-  kb.text('✅ Accept', 'tc:preview_noop').style('success');
-  kb.text('❌ Decline', 'tc:preview_noop').style('danger');
+  kb.text('✅ Accept', 'tc:preview_noop');
+  if (acceptColor) kb.style(acceptColor);
+  kb.text('❌ Decline', 'tc:preview_noop');
+  if (declineColor) kb.style(declineColor);
 
   await ctx.reply(message, { parse_mode: 'HTML', reply_markup: kb });
 });
@@ -320,6 +340,58 @@ composer.on('message:text', async (ctx, next) => {
 composer.callbackQuery('tc:cancel', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   states.delete(ctx.chat.id);
+  await showTcPanel(ctx);
+});
+
+// ── Accept button color picker ──────────────────────────────────
+composer.callbackQuery('tc:accept_color', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const current = await settingsRepo.getSetting(ctx.dbPool, 'tc_accept_color') || 'success';
+  const kb = new InlineKeyboard();
+  for (const c of COLOR_OPTIONS) {
+    const active = (c.style || '') === (current || '') ? ' ✓' : '';
+    kb.text(`${c.label}${active}`, `tc:set_accept_color:${c.style || 'none'}`);
+    if (c.style) kb.style(c.style);
+    kb.row();
+  }
+  kb.text('◀ Back', 'admin:tc');
+  await ctx.editMessageText(
+    `✅ <b>Accept Button Color</b>\n\nCurrent: <b>${(COLOR_OPTIONS.find(c => c.style === current) || COLOR_OPTIONS[0]).label}</b>\n\nSelect a new color:`,
+    { parse_mode: 'HTML', reply_markup: kb }
+  );
+});
+
+composer.callbackQuery(/^tc:set_accept_color:.+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const raw = ctx.callbackQuery.data.split(':')[2];
+  const style = raw === 'none' ? '' : raw;
+  await settingsRepo.setSetting(ctx.dbPool, 'tc_accept_color', style, ctx.from.id);
+  await showTcPanel(ctx);
+});
+
+// ── Decline button color picker ─────────────────────────────────
+composer.callbackQuery('tc:decline_color', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const current = await settingsRepo.getSetting(ctx.dbPool, 'tc_decline_color') || 'danger';
+  const kb = new InlineKeyboard();
+  for (const c of COLOR_OPTIONS) {
+    const active = (c.style || '') === (current || '') ? ' ✓' : '';
+    kb.text(`${c.label}${active}`, `tc:set_decline_color:${c.style || 'none'}`);
+    if (c.style) kb.style(c.style);
+    kb.row();
+  }
+  kb.text('◀ Back', 'admin:tc');
+  await ctx.editMessageText(
+    `❌ <b>Decline Button Color</b>\n\nCurrent: <b>${(COLOR_OPTIONS.find(c => c.style === current) || COLOR_OPTIONS[2]).label}</b>\n\nSelect a new color:`,
+    { parse_mode: 'HTML', reply_markup: kb }
+  );
+});
+
+composer.callbackQuery(/^tc:set_decline_color:.+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const raw = ctx.callbackQuery.data.split(':')[2];
+  const style = raw === 'none' ? '' : raw;
+  await settingsRepo.setSetting(ctx.dbPool, 'tc_decline_color', style, ctx.from.id);
   await showTcPanel(ctx);
 });
 

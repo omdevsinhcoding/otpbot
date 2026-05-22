@@ -7,7 +7,7 @@ const NUM_LABELS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨
  * Build channel buttons keyboard.
  * Uses custom btn_text if set, otherwise generic numbered labels.
  */
-function buildChannelKb(channelList) {
+function buildChannelKb(channelList, verifyStyle = 'success') {
   const kb = new InlineKeyboard();
   for (let i = 0; i < channelList.length; i++) {
     const ch = channelList[i];
@@ -19,7 +19,9 @@ function buildChannelKb(channelList) {
       kb.row();
     }
   }
-  kb.text('✅ Joined', 'fjcheck:verify').style('success').row();
+  kb.text('✅ Joined', 'fjcheck:verify');
+  if (verifyStyle) kb.style(verifyStyle);
+  kb.row();
   return kb;
 }
 
@@ -71,7 +73,8 @@ export async function checkForceJoin(ctx) {
     if (notJoined.length === 0) return true; // All joined → proceed
 
     // User hasn't joined → show channel buttons
-    const kb = buildChannelKb(notJoined);
+    const verifyColor = await getSetting(pool, 'fj_verify_color') || 'success';
+    const kb = buildChannelKb(notJoined, verifyColor);
 
     const firstName = ctx.from.first_name || 'User';
     const userMention = `<a href="tg://user?id=${ctx.from.id}">${firstName.replace(/[<>&]/g, '')}</a>`;
@@ -124,7 +127,8 @@ export async function verifyForceJoin(ctx) {
     if (notJoined.length === 0) return true;
 
     // Still not joined — show which ones are missing
-    const kb = buildChannelKb(notJoined);
+    const verifyColor = await getSetting(pool, 'fj_verify_color') || 'success';
+    const kb = buildChannelKb(notJoined, verifyColor);
 
     const totalRequired = channels.length;
     const joinedCount = totalRequired - notJoined.length;

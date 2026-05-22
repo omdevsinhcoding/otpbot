@@ -25,6 +25,8 @@ async function showForceJoinPanel(ctx) {
   const channels = await forceJoinRepo.getActiveChannels(pool);
   const count = channels.length;
   const customMsg = await settingsRepo.getSetting(pool, 'fj_message');
+  const verifyColor = await settingsRepo.getSetting(pool, 'fj_verify_color') || 'success';
+  const verifyInfo = COLOR_OPTIONS.find(c => c.style === verifyColor) || COLOR_OPTIONS[0];
 
   const statusEmoji = enabled ? '🟢' : '🔴';
   const toggleLabel = enabled ? '🔴 Disable' : '🟢 Enable';
@@ -33,7 +35,8 @@ async function showForceJoinPanel(ctx) {
   text += `<blockquote>`;
   text += `${statusEmoji} <b>Status:</b> ${enabled ? 'Active' : 'Inactive'}\n`;
   text += `📢 <b>Channels:</b> ${count} configured\n`;
-  text += `💬 <b>Message:</b> ${customMsg ? '✅ Custom' : '✅ Default'}`;
+  text += `💬 <b>Message:</b> ${customMsg ? '✅ Custom' : '✅ Default'}\n`;
+  text += `✅ <b>Verify Btn:</b> ${verifyInfo.label}`;
   text += `</blockquote>\n\n`;
 
   if (count > 0) {
@@ -41,10 +44,10 @@ async function showForceJoinPanel(ctx) {
     text += `📋 <b>CHANNELS</b>\n\n`;
     for (let i = 0; i < channels.length; i++) {
       const ch = channels[i];
-      const display = ch.channel_username ? `@${escapeHtml(ch.channel_username)}` : String(ch.channel_id);
+      const title = escapeHtml(ch.channel_title || 'Untitled');
       const chColor = COLOR_OPTIONS.find(c => c.style === (ch.btn_style || '')) || COLOR_OPTIONS[3];
-      const btnLabel = ch.btn_text ? ` • "${escapeHtml(ch.btn_text)}"` : '';
-      text += `${i + 1}. ${chColor.emoji} ${display}${btnLabel}\n`;
+      const btnLabel = ch.btn_text ? ` · <i>"${escapeHtml(ch.btn_text)}"</i>` : '';
+      text += `${i + 1}. ${chColor.emoji} <b>${title}</b>${btnLabel}\n`;
     }
     text += `</blockquote>`;
   } else {
@@ -53,13 +56,14 @@ async function showForceJoinPanel(ctx) {
 
   const kb = new InlineKeyboard()
     .text(toggleLabel, 'forcejoin:toggle').row()
-    .text('➕ Add Channel', 'forcejoin:add').text('💬 Set Message', 'forcejoin:set_msg').row();
+    .text('➕ Add Channel', 'forcejoin:add').text('💬 Set Message', 'forcejoin:set_msg').row()
+    .text('✅ Verify Btn Color', 'forcejoin:verify_color').row();
 
-  // Edit + Remove per channel
+  // Edit + Remove per channel — use title names
   if (count > 0) {
     for (const ch of channels) {
-      const display = ch.channel_username ? `@${ch.channel_username}` : String(ch.channel_id);
-      const short = display.length > 12 ? display.slice(0, 12) + '…' : display;
+      const name = ch.channel_title || 'Untitled';
+      const short = name.length > 14 ? name.slice(0, 14) + '…' : name;
       kb.text(`✏️ ${short}`, `forcejoin:edit:${ch.channel_id}`)
         .text(`🗑 ${short}`, `forcejoin:remove:${ch.channel_id}`).row();
     }
@@ -458,6 +462,32 @@ composer.callbackQuery('forcejoin:reset_msg', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   await settingsRepo.deleteSetting(ctx.dbPool, 'fj_message');
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'reset_fj_message' });
+  await showForceJoinPanel(ctx);
+});
+
+// ── Verify button color picker ──────────────────────────────────
+composer.callbackQuery('forcejoin:verify_color', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const current = await settingsRepo.getSetting(ctx.dbPool, 'fj_verify_color') || 'success';
+  const kb = new InlineKeyboard();
+  for (const c of COLOR_OPTIONS) {
+    const active = (c.style || '') === (current || '') ? ' ✓' : '';
+    kb.text(`${c.label}${active}`, `forcejoin:set_verify_color:${c.style || 'none'}`);
+    if (c.style) kb.style(c.style);
+    kb.row();
+  }
+  kb.text('◀ Back', 'admin:forcejoin');
+  await ctx.editMessageText(
+    `✅ <b>Verify Button Color</b>\n\nCurrent: <b>${(COLOR_OPTIONS.find(c => c.style === current) || COLOR_OPTIONS[0]).label}</b>\n\nThis is the "✅ Joined" button users see.\nSelect a color:`,
+    { parse_mode: 'HTML', reply_markup: kb }
+  );
+});
+
+composer.callbackQuery(/^forcejoin:set_verify_color:.+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const raw = ctx.callbackQuery.data.split(':')[2];
+  const style = raw === 'none' ? '' : raw;
+  await settingsRepo.setSetting(ctx.dbPool, 'fj_verify_color', style, ctx.from.id);
   await showForceJoinPanel(ctx);
 });
 

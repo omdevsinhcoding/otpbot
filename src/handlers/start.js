@@ -118,11 +118,17 @@ composer.command('start', async (ctx) => {
       const tcKb = new InlineKeyboard();
       for (const btn of tcButtons) {
         if (btn.url && isValidUrl(btn.url)) {
-          tcKb.url(btn.text, btn.url).row();
+          tcKb.url(btn.text, btn.url);
+          if (btn.color) tcKb.style(btn.color);
+          tcKb.row();
         }
       }
-      tcKb.text('✅ Accept', 'tc:accept').style('success');
-      tcKb.text('❌ Decline', 'tc:decline').style('danger');
+      const acceptColor = await settingsRepo.getSetting(pool, 'tc_accept_color') || 'success';
+      const declineColor = await settingsRepo.getSetting(pool, 'tc_decline_color') || 'danger';
+      tcKb.text('✅ Accept', 'tc:accept');
+      if (acceptColor) tcKb.style(acceptColor);
+      tcKb.text('❌ Decline', 'tc:decline');
+      if (declineColor) tcKb.style(declineColor);
 
       await ctx.reply(tcMessage, { parse_mode: 'HTML', reply_markup: tcKb });
       return; // Wait for accept/decline
@@ -179,11 +185,17 @@ composer.callbackQuery('fjcheck:verify', async (ctx) => {
         const tcKb = new InlineKeyboard();
         for (const btn of tcButtons) {
           if (btn.url && isValidUrl(btn.url)) {
-            tcKb.url(btn.text, btn.url).row();
+            tcKb.url(btn.text, btn.url);
+            if (btn.color) tcKb.style(btn.color);
+            tcKb.row();
           }
         }
-        tcKb.text('✅ Accept', 'tc:accept').style('success');
-        tcKb.text('❌ Decline', 'tc:decline').style('danger');
+        const acceptColor2 = await settingsRepo.getSetting(pool, 'tc_accept_color') || 'success';
+        const declineColor2 = await settingsRepo.getSetting(pool, 'tc_decline_color') || 'danger';
+        tcKb.text('✅ Accept', 'tc:accept');
+        if (acceptColor2) tcKb.style(acceptColor2);
+        tcKb.text('❌ Decline', 'tc:decline');
+        if (declineColor2) tcKb.style(declineColor2);
 
         await ctx.reply(tcMessage, { parse_mode: 'HTML', reply_markup: tcKb });
         return; // Wait for accept/decline
