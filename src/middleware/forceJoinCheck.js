@@ -34,16 +34,31 @@ export async function checkForceJoin(ctx) {
         kb.url(`📢 ${ch.channel_title || 'Join Channel'}`, link).row();
       }
     }
-    kb.text('✅ Joined', 'fjcheck:verify').style('success').row();
+
+    // Read admin-configured button style
+    const btnStyle = await getSetting(pool, 'fj_btn_style') || 'success';
+    kb.text('✅ Joined', 'fjcheck:verify');
+    if (btnStyle) kb.style(btnStyle);
+    kb.row();
 
     // Build clickable user mention
     const firstName = ctx.from.first_name || 'User';
     const userMention = `<a href="tg://user?id=${ctx.from.id}">${firstName.replace(/[<>&]/g, '')}</a>`;
 
-    let text = `👋 Hey! ${userMention}, Please Join Our Channel${channels.length > 1 ? 's' : ''} To Access The Bot\n\n`;
-    text += `<blockquote>`;
-    text += `You must join <b>${channels.length}</b> channel${channels.length > 1 ? 's' : ''} to continue.`;
-    text += `</blockquote>`;
+    // Read admin-configured message or use default
+    const customMsg = await getSetting(pool, 'fj_message');
+    let text;
+    if (customMsg) {
+      text = customMsg
+        .replace(/\{user\}/gi, userMention)
+        .replace(/\{first_name\}/gi, firstName.replace(/[<>&]/g, ''))
+        .replace(/\{channel_count\}/gi, String(channels.length));
+    } else {
+      text = `👋 Hey! ${userMention}, Please Join Our Channel${channels.length > 1 ? 's' : ''} To Access The Bot\n\n`;
+      text += `<blockquote>`;
+      text += `You must join <b>${channels.length}</b> channel${channels.length > 1 ? 's' : ''} to continue.`;
+      text += `</blockquote>`;
+    }
 
     await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
     return false;
@@ -97,7 +112,10 @@ export async function verifyForceJoin(ctx) {
         kb.url(`📢 ${ch.channel_title || 'Join Channel'}`, link).row();
       }
     }
-    kb.text('✅ Joined', 'fjcheck:verify').style('success').row();
+    kb.text('✅ Joined', 'fjcheck:verify');
+    const btnStyle2 = await getSetting(pool, 'fj_btn_style') || 'success';
+    if (btnStyle2) kb.style(btnStyle2);
+    kb.row();
 
     const totalRequired = channels.length;
     const joinedCount = totalRequired - notJoined.length;

@@ -11,20 +11,32 @@ const composer = new Composer();
 const addStates = new Map(); // chatId → 'waiting_channel'
 registerAdminState(addStates);
 
+const COLOR_OPTIONS = [
+  { style: 'success', label: '🟢 Green', emoji: '🟢' },
+  { style: 'primary', label: '🔵 Blue',  emoji: '🔵' },
+  { style: 'danger',  label: '🔴 Red',   emoji: '🔴' },
+  { style: '',        label: '⬜ Default', emoji: '⬜' },
+];
+
 // ── Force join panel (shows channel count + list inline) ────────
 async function showForceJoinPanel(ctx) {
   const pool = ctx.dbPool;
   const enabled = await settingsRepo.getSetting(pool, 'force_join_enabled');
   const channels = await forceJoinRepo.getActiveChannels(pool);
   const count = channels.length;
+  const btnStyle = await settingsRepo.getSetting(pool, 'fj_btn_style') || 'success';
+  const customMsg = await settingsRepo.getSetting(pool, 'fj_message');
 
   const statusEmoji = enabled ? '🟢' : '🔴';
   const toggleLabel = enabled ? '🔴 Disable' : '🟢 Enable';
+  const colorInfo = COLOR_OPTIONS.find(c => c.style === btnStyle) || COLOR_OPTIONS[0];
 
   let text = `🔗 <b>FORCE JOIN</b>\n\n`;
   text += `<blockquote>`;
   text += `${statusEmoji} <b>Status:</b> ${enabled ? 'Active' : 'Inactive'}\n`;
-  text += `📢 <b>Channels:</b> ${count} configured`;
+  text += `📢 <b>Channels:</b> ${count} configured\n`;
+  text += `🎨 <b>Button Color:</b> ${colorInfo.label}\n`;
+  text += `💬 <b>Message:</b> ${customMsg ? '✅ Custom' : '✅ Default'}`;
   text += `</blockquote>\n\n`;
 
   if (count > 0) {
@@ -42,7 +54,8 @@ async function showForceJoinPanel(ctx) {
 
   const kb = new InlineKeyboard()
     .text(toggleLabel, 'forcejoin:toggle').row()
-    .text('➕ Add Channel', 'forcejoin:add').row();
+    .text('➕ Add Channel', 'forcejoin:add').row()
+    .text(`🎨 Button Color`, 'forcejoin:color').text('💬 Set Message', 'forcejoin:set_msg').row();
 
   // Remove buttons for each channel
   if (count > 0) {
@@ -112,15 +125,30 @@ composer.callbackQuery('forcejoin:add', adminRequired, async (ctx) => {
   );
 });
 
-// ── Receive channel input ───────────────────────────────────────
+// ── Receive text input (channel or message) ─────────────────────
 composer.on('message:text', async (ctx, next) => {
-  if (addStates.get(ctx.chat.id) !== 'waiting_channel') return next();
+  const state = addStates.get(ctx.chat.id);
+  if (!state) return next();
 
   if (ctx.message.text === '/cancel') {
     addStates.delete(ctx.chat.id);
     await ctx.reply('❌ Cancelled.', { reply_markup: new InlineKeyboard().text('◀ Back', 'admin:forcejoin') });
     return;
   }
+
+  // ── Handle message input ────────────────────────────────────
+  if (state === 'waiting_msg') {
+    addStates.delete(ctx.chat.id);
+    await settingsRepo.setSetting(ctx.dbPool, 'fj_message', ctx.message.text, ctx.from.id);
+    ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'set_fj_message' });
+    await ctx.reply('✅ Force join message updated!', {
+      reply_markup: new InlineKeyboard().text('◀ Back', 'admin:forcejoin')
+    });
+    return;
+  }
+
+  // ── Handle channel input ────────────────────────────────────
+  if (state !== 'waiting_channel') return next();
 
   const raw = ctx.message.text.trim();
 
@@ -209,5 +237,71 @@ composer.callbackQuery('forcejoin:cancel_add', adminRequired, async (ctx) => {
   addStates.delete(ctx.chat.id);
   await showForceJoinPanel(ctx);
 });
+
+// ── Button Color Picker ─────────────────────────────────────────
+composer.callbackQuery('forcejoin:color', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const pool = ctx.dbPool;
+  const current = await settingsRepo.getSetting(pool, 'fj_btn_style') || 'success';
+
+  const kb = new InlineKeyboard();
+  for (const c of COLOR_OPTIONS) {
+    const active = (c.style || '') === (current || '') ? ' ✓' : '';
+    kb.text(`${c.label}${active}`, `forcejoin:set_color:${c.style || 'none'}`);
+    if (c.style) kb.style(c.style);
+    kb.row();
+  }
+  kb.text('◀ Back', 'admin:forcejoin');
+
+  await ctx.editMessageText(
+    `🎨 <b>Verify Button Color</b>\n\n` +
+    `Current: <b>${(COLOR_OPTIONS.find(c => c.style === current) || COLOR_OPTIONS[0]).label}</b>\n\n` +
+    `Select a new color for the "✅ Joined" button:`,
+    { parse_mode: 'HTML', reply_markup: kb }
+  );
+});
+
+// ── Set color ───────────────────────────────────────────────────
+composer.callbackQuery(/^forcejoin:set_color:(.+)$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const raw = ctx.callbackQuery.data.split(':')[2];
+  const style = raw === 'none' ? '' : raw;
+  await settingsRepo.setSetting(ctx.dbPool, 'fj_btn_style', style, ctx.from.id);
+  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'fj_btn_style', value: style || 'default' });
+  await showForceJoinPanel(ctx);
+});
+
+// ── Set Message ─────────────────────────────────────────────────
+composer.callbackQuery('forcejoin:set_msg', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  addStates.set(ctx.chat.id, 'waiting_msg');
+  const pool = ctx.dbPool;
+  const current = await settingsRepo.getSetting(pool, 'fj_message');
+
+  let text = `💬 <b>Set Force Join Message</b>\n\n`;
+  text += `Send the message text shown to users.\nYou can use HTML formatting.\n\n`;
+  text += `<b>Available Placeholders:</b>\n`;
+  text += `<blockquote>{user} — Clickable mention link\n{first_name} — First name\n{channel_count} — Number of channels</blockquote>\n\n`;
+  if (current) {
+    text += `<i>Current message is set. Send new text or press Reset.</i>`;
+  }
+
+  const kb = new InlineKeyboard().text('❌ Cancel', 'forcejoin:cancel_add');
+  if (current) kb.text('🔄 Reset Default', 'forcejoin:reset_msg');
+  await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+});
+
+// ── Reset message to default ────────────────────────────────────
+composer.callbackQuery('forcejoin:reset_msg', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  await settingsRepo.deleteSetting(ctx.dbPool, 'fj_message');
+  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'reset_fj_message' });
+  await showForceJoinPanel(ctx);
+});
+
+// ── Text handler (handles both channel input and message input) ──
+// This replaces the existing on('message:text') handler below
+// The existing handler at line ~128 already handles 'waiting_channel'
+// We need to also handle 'waiting_msg' — so we add it to the existing handler
 
 export default composer;
