@@ -29,7 +29,7 @@ export async function adminRequired(ctx, next) {
     const isAdm = await checkAdmin(ctx.from.id, ctx.dbPool);
     if (!isAdm) {
       if (ctx.callbackQuery) {
-        await ctx.answerCallbackQuery({ text: '⛔ Unauthorized', show_alert: true });
+        try { await ctx.answerCallbackQuery({ text: '⛔ Unauthorized', show_alert: true }); } catch {}
       } else {
         await ctx.reply('⛔ You are not authorized.');
       }
@@ -48,7 +48,7 @@ export async function superAdminRequired(ctx, next) {
     const isSuper = await checkSuperAdmin(ctx.from.id, ctx.dbPool);
     if (!isSuper) {
       if (ctx.callbackQuery) {
-        await ctx.answerCallbackQuery({ text: '⛔ Super admin access required', show_alert: true });
+        try { await ctx.answerCallbackQuery({ text: '⛔ Super admin access required', show_alert: true }); } catch {}
       } else {
         await ctx.reply('⛔ Super admin access required.');
       }

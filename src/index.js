@@ -82,7 +82,7 @@ async function main() {
   bot.use(userMenuHandler); // Must be LAST — it has broad text matchers
 
   // Handle noop callback (pagination "current page" button)
-  bot.callbackQuery('noop', async (ctx) => { await ctx.answerCallbackQuery(); });
+  bot.callbackQuery('noop', async (ctx) => { try { await ctx.answerCallbackQuery(); } catch {} });
 
   // 7. Start
   logger.info('Bot is starting polling…');

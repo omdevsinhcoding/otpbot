@@ -10,7 +10,7 @@ const addStates = new Map(); // chatId → 'waiting_id'
 
 // ── Admin list ──────────────────────────────────────────────────
 composer.callbackQuery('admin:admins', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const admins = await adminRepo.listAdmins(ctx.dbPool);
 
   let text = '👑 <b>Admin Management</b>\n\n';
@@ -29,7 +29,7 @@ composer.callbackQuery('admin:admins', adminRequired, async (ctx) => {
 
 // ── View admin ──────────────────────────────────────────────────
 composer.callbackQuery(/^admgmt:view:\d+$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const targetId = Number(ctx.callbackQuery.data.split(':')[2]);
   const adm = await adminRepo.getAdmin(ctx.dbPool, targetId);
   if (!adm) { await ctx.editMessageText('⚠️ Admin not found.'); return; }
@@ -47,7 +47,7 @@ composer.callbackQuery(/^admgmt:view:\d+$/, adminRequired, async (ctx) => {
 
 // ── Remove admin ────────────────────────────────────────────────
 composer.callbackQuery(/^admgmt:remove:\d+$/, superAdminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const targetId = Number(ctx.callbackQuery.data.split(':')[2]);
 
   if (await adminRepo.isSuperAdmin(ctx.dbPool, targetId)) {
@@ -64,7 +64,7 @@ composer.callbackQuery(/^admgmt:remove:\d+$/, superAdminRequired, async (ctx) =>
 });
 
 composer.callbackQuery(/^admgmt:confirm_remove:\d+$/, superAdminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const targetId = Number(ctx.callbackQuery.data.split(':')[2]);
 
   if (await adminRepo.isSuperAdmin(ctx.dbPool, targetId)) {
@@ -83,7 +83,7 @@ composer.callbackQuery(/^admgmt:confirm_remove:\d+$/, superAdminRequired, async 
 
 // ── Add admin entry ─────────────────────────────────────────────
 composer.callbackQuery('admgmt:add', superAdminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   addStates.set(ctx.chat.id, 'waiting_id');
   await ctx.editMessageText(
     '👑 <b>Add Admin</b>\n\nSend me the <b>user ID</b> of the person you want to make an admin.',
@@ -125,7 +125,7 @@ composer.on('message:text', async (ctx, next) => {
 
 // ── Cancel add admin ────────────────────────────────────────────
 composer.callbackQuery('admgmt:cancel', superAdminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   addStates.delete(ctx.chat.id);
   // Go back to admin list
   const admins = await adminRepo.listAdmins(ctx.dbPool);

@@ -11,12 +11,12 @@ composer.command('admin', adminRequired, async (ctx) => {
 });
 
 composer.callbackQuery('admin:back', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   await ctx.editMessageText(PANEL_TEXT, { parse_mode: 'HTML', reply_markup: ADMIN_PANEL_KEYBOARD });
 });
 
 composer.callbackQuery('admin:close', async (ctx) => {
-  await ctx.answerCallbackQuery('Panel closed');
+  try { await ctx.answerCallbackQuery('Panel closed'); } catch {}
   try { await ctx.deleteMessage(); } catch { /* may already be deleted */ }
 });
 

@@ -303,7 +303,7 @@ composer.hears(new RegExp(`^${escRe(BTN_ADMIN_PANEL)}$`), async (ctx) => {
 //  PROFILE CALLBACK HANDLERS
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery('profile:deposit_history', async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const pool = ctx.dbPool;
   const { rows } = await pool.query(
     `SELECT order_id, gateway, amount, status, gateway_data, created_at FROM transactions
@@ -394,27 +394,27 @@ composer.callbackQuery('profile:deposit_history', async (ctx) => {
 });
 
 composer.callbackQuery('profile:otp_history', async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   await ctx.reply('📠 <b>OTP History</b>\n\nNo OTP orders yet.', { parse_mode: 'HTML' });
 });
 
 composer.callbackQuery('profile:close_history', async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   try { await ctx.deleteMessage(); } catch { /* ignore */ }
 });
 
 composer.callbackQuery('profile:email_history', async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   await ctx.reply('📧 <b>Email History</b>\n\nNo email orders yet.', { parse_mode: 'HTML' });
 });
 
 composer.callbackQuery('profile:transfer', async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   await ctx.reply('💸 <b>Transfer Balance</b>\n\nThis feature is coming soon.', { parse_mode: 'HTML' });
 });
 
 composer.callbackQuery('profile:terms', async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   await ctx.reply(
     '📜 <b>Terms And Conditions</b>\n\n' +
     '1. All payments are non-refundable.\n' +

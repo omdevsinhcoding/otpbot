@@ -18,13 +18,15 @@ export async function getByOrderId(pool, orderId) {
 
 export async function updateStatus(pool, orderId, status, gatewayTxnId = null, gatewayData = {}) {
   const verifiedAt = ['success', 'completed', 'paid'].includes(status) ? 'NOW()' : null;
+  // Atomic guard: when setting 'success', only update if NOT already 'success' (prevents double-credit)
+  const statusGuard = status === 'success' ? `AND status != 'success'` : '';
   const { rows } = await pool.query(
     `UPDATE transactions
      SET status = $2,
          gateway_txn_id = COALESCE($3, gateway_txn_id),
          gateway_data = gateway_data || $4::jsonb,
          verified_at = ${verifiedAt ? 'NOW()' : 'verified_at'}
-     WHERE order_id = $1
+     WHERE order_id = $1 ${statusGuard}
      RETURNING *`,
     [orderId, status, gatewayTxnId, JSON.stringify(gatewayData)]
   );

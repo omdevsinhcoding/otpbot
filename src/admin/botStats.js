@@ -24,7 +24,7 @@ function formatUptime() {
 }
 
 composer.callbackQuery(/^admin:botstats$|^botstats:refresh$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const pool = ctx.dbPool;
 
   const [totalUsers, activeUsers, bannedUsers, newToday, adminCount, channelCount, activitiesToday] = await Promise.all([

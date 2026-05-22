@@ -12,7 +12,7 @@ const states = new Map(); // chatId → { step, data }
 
 // ── Welcome panel ───────────────────────────────────────────────
 composer.callbackQuery('admin:welcome', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const pool = ctx.dbPool;
   const welcomeEnabled = await settingsRepo.getSetting(pool, 'welcome_enabled');
   const welcome = await welcomeRepo.getWelcomeMessage(pool);
@@ -34,7 +34,7 @@ composer.callbackQuery('admin:welcome', adminRequired, async (ctx) => {
 
 // ── Set message ─────────────────────────────────────────────────
 composer.callbackQuery('welcome:set', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   states.set(ctx.chat.id, { step: 'set_text' });
   await ctx.editMessageText(
     '📝 <b>Set Welcome Message</b>\n\nSend me the new welcome message text.\nYou can use HTML formatting.',
@@ -44,7 +44,7 @@ composer.callbackQuery('welcome:set', adminRequired, async (ctx) => {
 
 // ── Preview ─────────────────────────────────────────────────────
 composer.callbackQuery('welcome:preview', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const welcome = await welcomeRepo.getWelcomeMessage(ctx.dbPool);
   if (!welcome) {
     await ctx.editMessageText('⚠️ No welcome message set.', {
@@ -70,7 +70,7 @@ composer.callbackQuery('welcome:preview', adminRequired, async (ctx) => {
 
 // ── Toggle ──────────────────────────────────────────────────────
 composer.callbackQuery('welcome:toggle', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const pool = ctx.dbPool;
   const current = await settingsRepo.getSetting(pool, 'welcome_enabled');
   const newState = !current;
@@ -96,7 +96,7 @@ composer.callbackQuery('welcome:toggle', adminRequired, async (ctx) => {
 
 // ── Button management ───────────────────────────────────────────
 composer.callbackQuery('welcome:buttons', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const welcome = await welcomeRepo.getWelcomeMessage(ctx.dbPool);
   const buttons = welcome?.buttons || [];
 
@@ -120,7 +120,7 @@ composer.callbackQuery('welcome:buttons', adminRequired, async (ctx) => {
 
 // ── Add button ──────────────────────────────────────────────────
 composer.callbackQuery('welcome:add_btn', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   states.set(ctx.chat.id, { step: 'add_btn_text' });
   await ctx.editMessageText(
     '➕ <b>Add Button</b>\n\nSend the button in format:\n<code>Button Text | https://url</code>',
@@ -130,7 +130,7 @@ composer.callbackQuery('welcome:add_btn', adminRequired, async (ctx) => {
 
 // ── Remove button ───────────────────────────────────────────────
 composer.callbackQuery(/^welcome:remove_btn:\d+$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const idx = Number(ctx.callbackQuery.data.split(':')[2]);
   const pool = ctx.dbPool;
   const welcome = await welcomeRepo.getWelcomeMessage(pool);
@@ -189,7 +189,7 @@ composer.on('message:text', async (ctx, next) => {
 
 // ── Cancel edit ────────────────────────────────────────────────
 composer.callbackQuery('welcome:cancel_edit', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   states.delete(ctx.chat.id);
   // Return to welcome panel
   const pool = ctx.dbPool;

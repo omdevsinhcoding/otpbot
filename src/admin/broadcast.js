@@ -12,7 +12,7 @@ const drafts = new Map(); // chatId → { step, text, mediaType, mediaFileId, bu
 
 // ── Broadcast menu ──────────────────────────────────────────────
 composer.callbackQuery('admin:broadcast', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const kb = new InlineKeyboard()
     .text('📝 New Broadcast', 'bcast:new').row()
     .text('📋 History', 'bcast:history:1').row()
@@ -22,7 +22,7 @@ composer.callbackQuery('admin:broadcast', adminRequired, async (ctx) => {
 
 // ── New broadcast entry ─────────────────────────────────────────
 composer.callbackQuery('bcast:new', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   drafts.set(ctx.chat.id, { step: 'text', text: '', mediaType: null, mediaFileId: null, buttons: [] });
   await ctx.editMessageText(
     '📢 <b>New Broadcast</b>\n\nSend me the <b>message text</b> for the broadcast.',
@@ -32,7 +32,7 @@ composer.callbackQuery('bcast:new', adminRequired, async (ctx) => {
 
 // ── Skip media ──────────────────────────────────────────────────
 composer.callbackQuery('bcast:skip_media', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const draft = drafts.get(ctx.chat.id);
   if (!draft) return;
   draft.step = 'buttons';
@@ -45,7 +45,7 @@ composer.callbackQuery('bcast:skip_media', adminRequired, async (ctx) => {
 
 // ── Skip buttons ────────────────────────────────────────────────
 composer.callbackQuery('bcast:skip_buttons', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const draft = drafts.get(ctx.chat.id);
   if (!draft) return;
   draft.buttons = [];
@@ -55,7 +55,7 @@ composer.callbackQuery('bcast:skip_buttons', adminRequired, async (ctx) => {
 
 // ── Confirm send ────────────────────────────────────────────────
 composer.callbackQuery('bcast:confirm_send', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery('Sending broadcast…');
+  try { await ctx.answerCallbackQuery('Sending broadcast…'); } catch {}
   const draft = drafts.get(ctx.chat.id);
   if (!draft) return;
   drafts.delete(ctx.chat.id);
@@ -129,7 +129,7 @@ composer.callbackQuery('bcast:confirm_send', adminRequired, async (ctx) => {
 
 // ── Cancel ──────────────────────────────────────────────────────
 composer.callbackQuery('bcast:cancel', async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   drafts.delete(ctx.chat.id);
   const kb = new InlineKeyboard()
     .text('📝 New Broadcast', 'bcast:new').row()
@@ -140,7 +140,7 @@ composer.callbackQuery('bcast:cancel', async (ctx) => {
 
 // ── History ─────────────────────────────────────────────────────
 composer.callbackQuery(/^bcast:history:\d+$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const page = Number(ctx.callbackQuery.data.split(':')[2]);
   const pool = ctx.dbPool;
   const { items, total } = await broadcastRepo.listBroadcasts(pool, page, 5);
@@ -172,7 +172,7 @@ composer.callbackQuery(/^bcast:history:\d+$/, adminRequired, async (ctx) => {
 
 // ── View broadcast ──────────────────────────────────────────────
 composer.callbackQuery(/^bcast:view:\d+$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const broadcastId = Number(ctx.callbackQuery.data.split(':')[2]);
   const bcast = await broadcastRepo.getBroadcast(ctx.dbPool, broadcastId);
   if (!bcast) { await ctx.editMessageText('⚠️ Broadcast not found.'); return; }

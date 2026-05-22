@@ -13,7 +13,7 @@ const editStates = new Map(); // chatId → { step, key, gateway }
 //  PAYMENTS MAIN MENU
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery('admin:payments', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   await showPaymentsMenu(ctx);
 });
 
@@ -47,7 +47,7 @@ async function showPaymentsMenu(ctx) {
 //  PAYTM SETTINGS
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery('pay:paytm', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   await showPaytmSettings(ctx);
 });
 
@@ -104,12 +104,12 @@ composer.callbackQuery('pay:paytm:nolimit_time', adminRequired, async (ctx) => {
   const pool = ctx.dbPool;
   await settingsRepo.setSetting(pool, 'paytm_time_limit', 0, ctx.from.id);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key: 'paytm_time_limit', value: 'No Limit' });
-  await ctx.answerCallbackQuery('✅ Time Limit set to No Limit!');
+  try { await ctx.answerCallbackQuery(); } catch {}
   await showPaytmSettings(ctx);
 });
 
 composer.callbackQuery('pay:paytm:toggle', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const pool = ctx.dbPool;
   const current = await settingsRepo.getSetting(pool, 'paytm_enabled');
   await settingsRepo.setSetting(pool, 'paytm_enabled', !current, ctx.from.id);
@@ -121,7 +121,7 @@ composer.callbackQuery('pay:paytm:toggle', adminRequired, async (ctx) => {
 //  BHARAT PAY SETTINGS
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery('pay:bharatpay', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   await showBharatpaySettings(ctx);
 });
 
@@ -174,7 +174,7 @@ async function showBharatpaySettings(ctx) {
 }
 
 composer.callbackQuery('pay:bharatpay:toggle', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const pool = ctx.dbPool;
   const current = await settingsRepo.getSetting(pool, 'bharatpay_enabled');
   await settingsRepo.setSetting(pool, 'bharatpay_enabled', !current, ctx.from.id);
@@ -184,7 +184,7 @@ composer.callbackQuery('pay:bharatpay:toggle', adminRequired, async (ctx) => {
 
 // ── Upload QR — uses inline cancel button ───────────────────────
 composer.callbackQuery('pay:bharatpay:upload_qr', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   editStates.set(ctx.chat.id, { step: 'upload_qr', gateway: 'bharatpay' });
   const kb = new InlineKeyboard().text('❌ Cancel', 'pay:cancel_edit:bharatpay');
   await ctx.editMessageText(
@@ -195,7 +195,7 @@ composer.callbackQuery('pay:bharatpay:upload_qr', adminRequired, async (ctx) => 
 
 // ── Remove QR ───────────────────────────────────────────────────
 composer.callbackQuery('pay:bharatpay:remove_qr', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery('✅ QR Removed');
+  try { await ctx.answerCallbackQuery(); } catch {}
   await settingsRepo.setSetting(ctx.dbPool, 'bharatpay_qr_file_id', '', ctx.from.id);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'remove_bharatpay_qr' });
   await showBharatpaySettings(ctx);
@@ -245,7 +245,7 @@ function nwLabel(nw) {
 //  MAIN SETTINGS PAGE
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery('pay:cryptomus', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { try { await ctx.answerCallbackQuery(); } catch {} } catch {}
   await showCryptomusSettings(ctx);
 });
 
@@ -329,7 +329,7 @@ async function showCryptomusSettings(ctx) {
 
 // ── Toggles ─────────────────────────────────────────────────────
 composer.callbackQuery('pay:cryptomus:toggle', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const pool = ctx.dbPool;
   const cur = await settingsRepo.getSetting(pool, 'cryptomus_enabled');
   await settingsRepo.setSetting(pool, 'cryptomus_enabled', !cur, ctx.from.id);
@@ -342,7 +342,7 @@ composer.callbackQuery('pay:cryptomus:toggle_mode', adminRequired, async (ctx) =
   const cur = await settingsRepo.getSetting(pool, 'cryptomus_mode') || 'web';
   const next = cur === 'inline' ? 'web' : 'inline';
   await settingsRepo.setSetting(pool, 'cryptomus_mode', next, ctx.from.id);
-  await ctx.answerCallbackQuery(`Switched to ${next === 'inline' ? 'Inline' : 'Web'}`);
+  try { await ctx.answerCallbackQuery(); } catch {}
   await showCryptomusSettings(ctx);
 });
 
@@ -353,14 +353,14 @@ const COINS_PER_PAGE = 20;
 const coinSearchState = new Map(); // chatId → { query, page }
 
 composer.callbackQuery('pay:cryptomus:currencies', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   coinSearchState.delete(ctx.chat.id); // Reset search on fresh entry
   await showCoinList(ctx, 0, null);
 });
 
 // ── Pagination ──────────────────────────────────────────────────
 composer.callbackQuery(/^pay:cryptomus:coins_page:\d+$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const page = parseInt(ctx.callbackQuery.data.split(':')[3]);
   const search = coinSearchState.get(ctx.chat.id)?.query || null;
   await showCoinList(ctx, page, search);
@@ -368,7 +368,7 @@ composer.callbackQuery(/^pay:cryptomus:coins_page:\d+$/, adminRequired, async (c
 
 // ── Search button → prompt for input ────────────────────────────
 composer.callbackQuery('pay:cryptomus:coin_search', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   editStates.set(ctx.chat.id, { step: 'coin_search', gateway: 'cryptomus' });
   await ctx.editMessageText(
     `🔍  <b>Search Coins</b>\n\n` +
@@ -381,7 +381,7 @@ composer.callbackQuery('pay:cryptomus:coin_search', adminRequired, async (ctx) =
 
 // ── Clear search ────────────────────────────────────────────────
 composer.callbackQuery('pay:cryptomus:coin_search_clear', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   coinSearchState.delete(ctx.chat.id);
   await showCoinList(ctx, 0, null);
 });
@@ -478,7 +478,7 @@ async function showCoinList(ctx, page, searchQuery) {
 
 // ── No-op for page indicator button ─────────────────────────────
 composer.callbackQuery('pay:cryptomus:noop', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -486,7 +486,7 @@ composer.callbackQuery('pay:cryptomus:noop', adminRequired, async (ctx) => {
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery(/^pay:cryptomus:coin_networks:/, adminRequired, async (ctx) => {
   const coin = ctx.callbackQuery.data.split(':')[3];
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   await showCoinNetworks(ctx, coin);
 });
 
@@ -581,7 +581,7 @@ composer.callbackQuery(/^pay:cryptomus:select_all:/, adminRequired, async (ctx) 
   }
 
   await settingsRepo.setSetting(pool, 'cryptomus_currencies', JSON.stringify(sel), ctx.from.id);
-  await ctx.answerCallbackQuery(`✓  All ${coin} networks enabled`);
+  try { await ctx.answerCallbackQuery(); } catch {}
   await showCoinNetworks(ctx, coin);
 });
 
@@ -595,7 +595,7 @@ composer.callbackQuery(/^pay:cryptomus:deselect_all:/, adminRequired, async (ctx
 
   sel = sel.filter(s => s.currency !== coin);
   await settingsRepo.setSetting(pool, 'cryptomus_currencies', JSON.stringify(sel), ctx.from.id);
-  await ctx.answerCallbackQuery(`✗  All ${coin} networks disabled`);
+  try { await ctx.answerCallbackQuery(); } catch {}
   await showCoinNetworks(ctx, coin);
 });
 
@@ -604,7 +604,7 @@ composer.callbackQuery(/^pay:cryptomus:deselect_all:/, adminRequired, async (ctx
 //  GENERIC EDIT HANDLER — inline cancel button, no /cancel needed
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):edit:.+$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const parts = ctx.callbackQuery.data.split(':');
   const gateway = parts[1];
   const key = parts.slice(3).join(':');
@@ -642,7 +642,7 @@ composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):edit:.+$/, adminRequire
 //  CANCEL EDIT — goes back to gateway settings (no /cancel needed!)
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery(/^pay:cancel_edit:(paytm|bharatpay|cryptomus)$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery('Cancelled');
+  try { await ctx.answerCallbackQuery(); } catch {}
   const gateway = ctx.callbackQuery.data.split(':')[2];
   editStates.delete(ctx.chat.id);
 
@@ -665,7 +665,7 @@ composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):clear:.+$/, adminRequir
 
   await settingsRepo.deleteSetting(pool, key);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key, value: '(cleared)' });
-  await ctx.answerCallbackQuery(`✅ ${key} cleared!`);
+  try { await ctx.answerCallbackQuery(); } catch {}
 
   switch (gateway) {
     case 'paytm': return showPaytmSettings(ctx);
@@ -685,7 +685,7 @@ composer.callbackQuery(/^pay:(paytm|bharatpay|cryptomus):nolimit:.+$/, adminRequ
 
   await settingsRepo.deleteSetting(pool, key);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key, value: 'No Limit' });
-  await ctx.answerCallbackQuery('✅ Max Amount set to No Limit!');
+  try { await ctx.answerCallbackQuery(); } catch {}
 
   switch (gateway) {
     case 'paytm': return showPaytmSettings(ctx);

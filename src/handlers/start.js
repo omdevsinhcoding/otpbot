@@ -102,7 +102,7 @@ composer.command('start', async (ctx) => {
 
 // ── Force-join verification callback ──────────────────────────────
 composer.callbackQuery('fjcheck:verify', async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const passed = await checkForceJoin(ctx);
   if (passed) {
     await ctx.editMessageText('✅ Verification passed! Send /start to continue.');

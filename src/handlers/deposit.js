@@ -101,7 +101,8 @@ function startCryptoAutoCheck(api, pool, orderId, uuid, userId, chatId, msgId, a
         if (!txn || txn.status === 'success') return; // already credited
 
         const creditAmount = parseFloat(txn.amount);
-        await transactionRepo.updateStatus(pool, orderId, 'success', uuid, { cryptomus_status: result.status });
+        const updated = await transactionRepo.updateStatus(pool, orderId, 'success', uuid, { cryptomus_status: result.status });
+        if (!updated) return; // already credited by PAID button
         await walletRepo.addBalance(pool, userId, creditAmount);
         const newBalance = await walletRepo.getBalance(pool, userId);
 
@@ -174,7 +175,7 @@ async function safeReply(ctx, text, opts = {}) {
 //  DEPOSIT ENTRY — show payment method buttons
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery('deposit:menu', async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   await showDepositMenu(ctx);
 });
 
@@ -217,7 +218,7 @@ async function showDepositMenu(ctx) {
 //  PAYTM FLOW
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery('deposit:paytm', async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const pool = ctx.dbPool;
   const minAmount = parseInt(await settingsRepo.getSetting(pool, 'paytm_min_amount')) || 1;
   const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'paytm_max_amount')) || 0;
@@ -243,14 +244,14 @@ composer.callbackQuery('deposit:paytm', async (ctx) => {
 
 // ── Paytm: preset amount clicked ────────────────────────────────
 composer.callbackQuery(/^deposit:paytm_amt:\d+$/, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const amount = parseFloat(ctx.callbackQuery.data.split(':')[2]);
   await handlePaytmAmount(ctx, amount);
 });
 
 // ── Paytm: custom amount requested ─────────────────────────────
 composer.callbackQuery('deposit:paytm_custom', async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const pool = ctx.dbPool;
   const minAmount = parseInt(await settingsRepo.getSetting(pool, 'paytm_min_amount')) || 1;
   const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'paytm_max_amount')) || 0;
@@ -365,17 +366,17 @@ composer.callbackQuery(/^deposit:check:DX-/, async (ctx) => {
   const lastCheck = checkCooldowns.get(chatId);
   if (lastCheck && Date.now() - lastCheck < COOLDOWN_MS) {
     const waitSec = Math.ceil((COOLDOWN_MS - (Date.now() - lastCheck)) / 1000);
-    await ctx.answerCallbackQuery({ text: `⏳ Please wait ${waitSec}s before checking again.`, show_alert: false });
+    try { await ctx.answerCallbackQuery(); } catch {}
     return;
   }
 
   // ── Concurrent guard: prevent double-click spam ──
   if (activeChecks.has(chatId)) {
-    await ctx.answerCallbackQuery({ text: '🔄 Already checking...', show_alert: false });
+    try { await ctx.answerCallbackQuery(); } catch {}
     return;
   }
 
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   activeChecks.add(chatId);
   checkCooldowns.set(chatId, Date.now());
 
@@ -399,7 +400,7 @@ async function _doPaytmCheck(ctx, pool, orderId) {
     return;
   }
   if (txn.status === 'success') {
-    await ctx.answerCallbackQuery('✅ Already verified!');
+    try { await ctx.answerCallbackQuery(); } catch {}
     return;
   }
   if (txn.status === 'expired' || txn.status === 'failed' || txn.status === 'cancelled') {
@@ -652,7 +653,7 @@ async function _doPaytmCheck(ctx, pool, orderId) {
 //  BHARAT PAY FLOW
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery('deposit:bharatpay', async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const pool = ctx.dbPool;
   const qrFileId = await settingsRepo.getSetting(pool, 'bharatpay_qr_file_id');
   const upiId = await settingsRepo.getSetting(pool, 'bharatpay_upi_id');
@@ -749,7 +750,7 @@ async function handleBharatpayUTR(ctx) {
 //  CRYPTOMUS FLOW
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery('deposit:cryptomus', async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const pool = ctx.dbPool;
   const mode = await settingsRepo.getSetting(pool, 'cryptomus_mode') || 'web';
 
@@ -827,13 +828,13 @@ composer.callbackQuery('deposit:cryptomus', async (ctx) => {
 //  CRYPTO: WEB MODE HANDLERS
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery(/^deposit:crypto_web_amt:\d+$/, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const amount = parseFloat(ctx.callbackQuery.data.split(':')[2]);
   await handleCryptoWebDeposit(ctx, amount);
 });
 
 composer.callbackQuery('deposit:crypto_web_custom', async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const pool = ctx.dbPool;
   const minAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_min_amount')) || 1;
   const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_max_amount')) || 0;
@@ -935,7 +936,7 @@ async function handleCryptoWebDeposit(ctx, amount) {
 //  CRYPTO: INLINE MODE HANDLERS
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery(/^deposit:crypto_cur:/, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const parts = ctx.callbackQuery.data.split(':');
   const currency = parts[2];
   const network = parts[3];
@@ -974,7 +975,7 @@ composer.callbackQuery(/^deposit:crypto_cur:/, async (ctx) => {
 
 // ── Crypto: preset amount clicked ───────────────────────────────
 composer.callbackQuery(/^deposit:crypto_amt:/, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const parts = ctx.callbackQuery.data.split(':');
   const currency = parts[2];
   const network = parts[3];
@@ -984,7 +985,7 @@ composer.callbackQuery(/^deposit:crypto_amt:/, async (ctx) => {
 
 // ── Crypto: custom amount requested ─────────────────────────────
 composer.callbackQuery(/^deposit:crypto_custom:/, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const parts = ctx.callbackQuery.data.split(':');
   const currency = parts[2];
   const network = parts[3];
@@ -1039,7 +1040,7 @@ async function handleCryptomusDeposit(ctx, currency, network, amount) {
   } catch { /* fallback to 0% commission */ }
 
   // Calculate: user pays amount + commission, gets credited original amount
-  const commissionAmount = commissionPercent > 0 ? Math.ceil(amount * commissionPercent) / 100 : 0;
+  const commissionAmount = commissionPercent > 0 ? Math.ceil(amount * commissionPercent / 100) : 0;
   const invoiceAmount = amount + commissionAmount;
 
   const orderId = `CX-${Date.now().toString().slice(-8)}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
@@ -1154,15 +1155,15 @@ composer.callbackQuery(/^deposit:check_crypto:CX-/, async (ctx) => {
   const lastCheck = checkCooldowns.get(chatId);
   if (lastCheck && Date.now() - lastCheck < COOLDOWN_MS) {
     const waitSec = Math.ceil((COOLDOWN_MS - (Date.now() - lastCheck)) / 1000);
-    await ctx.answerCallbackQuery({ text: `⏳ Wait ${waitSec}s`, show_alert: false });
+    try { await ctx.answerCallbackQuery(); } catch {}
     return;
   }
   if (activeChecks.has(chatId)) {
-    await ctx.answerCallbackQuery({ text: '🔄 Already checking...', show_alert: false });
+    try { await ctx.answerCallbackQuery(); } catch {}
     return;
   }
 
-  await ctx.answerCallbackQuery('🔍 Checking...');
+  try { await ctx.answerCallbackQuery(); } catch {}
   activeChecks.add(chatId);
   checkCooldowns.set(chatId, Date.now());
 
@@ -1170,7 +1171,7 @@ composer.callbackQuery(/^deposit:check_crypto:CX-/, async (ctx) => {
     const txn = await transactionRepo.getByOrderId(pool, orderId);
     if (!txn) { await ctx.reply('⚠️ Order not found.'); return; }
     if (txn.status === 'success') {
-      await ctx.answerCallbackQuery({ text: '✅ Already verified & credited!', show_alert: true });
+      try { await ctx.answerCallbackQuery(); } catch {}
       return;
     }
 
@@ -1184,7 +1185,14 @@ composer.callbackQuery(/^deposit:check_crypto:CX-/, async (ctx) => {
     if (result.success) {
       stopCryptoAutoCheck(orderId);
       const creditAmount = parseFloat(txn.amount);
-      await transactionRepo.updateStatus(pool, orderId, 'success', uuid, { cryptomus_status: result.status });
+      const updated = await transactionRepo.updateStatus(pool, orderId, 'success', uuid, { cryptomus_status: result.status });
+      if (!updated) {
+        // Already credited by auto-check — just show success
+        const newBalance = await walletRepo.getBalance(pool, ctx.from.id);
+        try { await ctx.deleteMessage(); } catch {}
+        await ctx.reply(`✅ Already credited! Balance: ₹${formatNumber(newBalance)}`, { parse_mode: 'HTML' });
+        return;
+      }
       await walletRepo.addBalance(pool, ctx.from.id, creditAmount);
       try { await ctx.deleteMessage(); } catch { /* ignore */ }
       const newBalance = await walletRepo.getBalance(pool, ctx.from.id);
@@ -1209,10 +1217,7 @@ composer.callbackQuery(/^deposit:check_crypto:CX-/, async (ctx) => {
         'confirm_check': '🔍 Confirming review...',
       };
       const statusMsg = statusMap[result.status] || `📊 Status: ${result.status}`;
-      await ctx.answerCallbackQuery({
-        text: `${statusMsg}\n\nPayment will be auto-verified. No need to click again.`,
-        show_alert: true,
-      });
+      try { await ctx.answerCallbackQuery(); } catch {}
     }
   } finally {
     activeChecks.delete(chatId);
@@ -1226,14 +1231,14 @@ composer.callbackQuery(/^deposit:check_crypto:CRYPTO_/, async (ctx) => {
 
   const txn = await transactionRepo.getByOrderId(pool, orderId);
   if (!txn || txn.status === 'success') {
-    await ctx.answerCallbackQuery(txn?.status === 'success' ? '✅ Already verified!' : '⚠️ Not found.');
+    try { await ctx.answerCallbackQuery(); } catch {}
     return;
   }
 
   const apiKey = await settingsRepo.getSetting(pool, 'cryptomus_api_key');
   const merchantId = await settingsRepo.getSetting(pool, 'cryptomus_merchant_id');
   const uuid = txn.gateway_data?.uuid;
-  if (!apiKey || !merchantId || !uuid) { await ctx.answerCallbackQuery('⚠️ Config error.'); return; }
+  if (!apiKey || !merchantId || !uuid) { try { await ctx.answerCallbackQuery(); } catch {} return; }
 
   const result = await cryptomusService.checkPayment(apiKey, merchantId, uuid);
 
@@ -1248,7 +1253,7 @@ composer.callbackQuery(/^deposit:check_crypto:CRYPTO_/, async (ctx) => {
       { parse_mode: 'HTML' }
     );
   } else {
-    await ctx.answerCallbackQuery('❌ Not confirmed yet. Try again later.');
+    try { await ctx.answerCallbackQuery(); } catch {}
   }
 });
 
@@ -1256,7 +1261,7 @@ composer.callbackQuery(/^deposit:check_crypto:CRYPTO_/, async (ctx) => {
 //  COMMON CALLBACKS
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery(/^deposit:cancel_txn:/, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const orderId = ctx.callbackQuery.data.replace('deposit:cancel_txn:', '');
   const pool = ctx.dbPool;
   stopCryptoAutoCheck(orderId);
@@ -1278,7 +1283,7 @@ composer.callbackQuery(/^deposit:cancel_txn:/, async (ctx) => {
 });
 
 composer.callbackQuery('deposit:cancel_state', async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   userStates.delete(ctx.chat.id);
   try { await ctx.deleteMessage(); } catch { /* ignore */ }
   await ctx.reply(
@@ -1288,7 +1293,7 @@ composer.callbackQuery('deposit:cancel_state', async (ctx) => {
 });
 
 composer.callbackQuery('deposit:close', async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   try { await ctx.deleteMessage(); } catch { /* ignore */ }
 });
 

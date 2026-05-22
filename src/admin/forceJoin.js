@@ -11,7 +11,7 @@ const addStates = new Map(); // chatId → 'waiting_channel'
 
 // ── Force join panel ────────────────────────────────────────────
 composer.callbackQuery('admin:forcejoin', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const enabled = await settingsRepo.getSetting(ctx.dbPool, 'force_join_enabled');
   const statusEmoji = enabled ? '✅ Enabled' : '❌ Disabled';
   const toggleLabel = enabled ? '🔴 Disable' : '🟢 Enable';
@@ -26,7 +26,7 @@ composer.callbackQuery('admin:forcejoin', adminRequired, async (ctx) => {
 
 // ── Toggle ──────────────────────────────────────────────────────
 composer.callbackQuery('forcejoin:toggle', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const pool = ctx.dbPool;
   const current = await settingsRepo.getSetting(pool, 'force_join_enabled');
   const newState = !current;
@@ -45,7 +45,7 @@ composer.callbackQuery('forcejoin:toggle', adminRequired, async (ctx) => {
 
 // ── List channels ───────────────────────────────────────────────
 composer.callbackQuery('forcejoin:list', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const channels = await forceJoinRepo.getActiveChannels(ctx.dbPool);
 
   if (!channels.length) {
@@ -69,7 +69,7 @@ composer.callbackQuery('forcejoin:list', adminRequired, async (ctx) => {
 
 // ── Remove channel ──────────────────────────────────────────────
 composer.callbackQuery(/^forcejoin:remove:-?\d+$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const channelId = ctx.callbackQuery.data.split(':')[2];
   const kb = new InlineKeyboard()
     .text('✅ Confirm', `forcejoin:confirm_remove:${channelId}`)
@@ -78,7 +78,7 @@ composer.callbackQuery(/^forcejoin:remove:-?\d+$/, adminRequired, async (ctx) =>
 });
 
 composer.callbackQuery(/^forcejoin:confirm_remove:-?\d+$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const channelId = Number(ctx.callbackQuery.data.split(':')[2]);
   await forceJoinRepo.removeChannel(ctx.dbPool, channelId);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'remove_channel', channel_id: channelId });
@@ -87,7 +87,7 @@ composer.callbackQuery(/^forcejoin:confirm_remove:-?\d+$/, adminRequired, async 
 
 // ── Add channel entry ───────────────────────────────────────────
 composer.callbackQuery('forcejoin:add', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   addStates.set(ctx.chat.id, 'waiting_channel');
   await ctx.editMessageText(
     '➕ <b>Add Force Join Channel</b>\n\nSend channel ID (e.g. <code>-1001234567890</code>) or username (e.g. <code>@mychannel</code>).\n\n⚠️ Bot must be <b>admin</b> in the channel.',
@@ -144,7 +144,7 @@ composer.on('message:text', async (ctx, next) => {
 
 // ── Cancel add channel ──────────────────────────────────────────
 composer.callbackQuery('forcejoin:cancel_add', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   addStates.delete(ctx.chat.id);
   // Return to force join panel
   const enabled = await settingsRepo.getSetting(ctx.dbPool, 'force_join_enabled');

@@ -6,7 +6,7 @@ import { formatTimestamp, truncateText, escapeHtml } from '../utils/formatters.j
 const composer = new Composer();
 
 composer.callbackQuery('admin:logs', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const kb = new InlineKeyboard()
     .text('📋 Activity Logs', 'logs:activity:1').text('👑 Admin Logs', 'logs:admin:1').row()
     .text('‹ Back', 'admin:back');
@@ -15,7 +15,7 @@ composer.callbackQuery('admin:logs', adminRequired, async (ctx) => {
 
 // ── Activity logs ───────────────────────────────────────────────
 composer.callbackQuery(/^logs:activity:\d+$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const page = Number(ctx.callbackQuery.data.split(':')[2]);
   const limit = 10;
   const logs = await trackingRepo.getRecentActivities(ctx.dbPool, 200);
@@ -46,7 +46,7 @@ composer.callbackQuery(/^logs:activity:\d+$/, adminRequired, async (ctx) => {
 
 // ── Admin logs ──────────────────────────────────────────────────
 composer.callbackQuery(/^logs:admin:\d+$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const page = Number(ctx.callbackQuery.data.split(':')[2]);
   const limit = 10;
   const logs = await trackingRepo.getRecentAdminLogs(ctx.dbPool, 200);

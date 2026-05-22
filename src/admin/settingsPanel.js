@@ -9,7 +9,7 @@ const editStates = new Map(); // chatId → { step, key }
 
 // ── Settings panel ──────────────────────────────────────────────
 composer.callbackQuery('admin:settings', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   await showSettingsPanel(ctx);
 });
 
@@ -36,7 +36,7 @@ async function showSettingsPanel(ctx) {
 
 // ── Toggle maintenance ──────────────────────────────────────────
 composer.callbackQuery('settings:maintenance', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const pool = ctx.dbPool;
   const current = await settingsRepo.getSetting(pool, 'maintenance_mode');
   const newVal = !current;
@@ -47,7 +47,7 @@ composer.callbackQuery('settings:maintenance', adminRequired, async (ctx) => {
 
 // ── Edit setting ────────────────────────────────────────────────
 composer.callbackQuery(/^settings:edit:.+$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const key = ctx.callbackQuery.data.split(':').slice(2).join(':');
   editStates.set(ctx.chat.id, { step: 'waiting_value', key });
   await ctx.editMessageText(
@@ -76,7 +76,7 @@ composer.on('message:text', async (ctx, next) => {
 
 // ── Cancel edit ────────────────────────────────────────────────
 composer.callbackQuery('settings:cancel_edit', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   editStates.delete(ctx.chat.id);
   await showSettingsPanel(ctx);
 });

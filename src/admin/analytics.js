@@ -9,12 +9,12 @@ const composer = new Composer();
 //  ADMIN LOGS — only tracks admin actions (who did what)
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery('admin:logs', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   await showAdminLogs(ctx, 1);
 });
 
 composer.callbackQuery(/^logs:admin:\d+$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const page = Number(ctx.callbackQuery.data.split(':')[2]);
   await showAdminLogs(ctx, page);
 });

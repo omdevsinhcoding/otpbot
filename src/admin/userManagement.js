@@ -10,7 +10,7 @@ const searchStates = new Map(); // chatId → 'searching'
 
 // ── User management menu ────────────────────────────────────────
 composer.callbackQuery('admin:users', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const kb = new InlineKeyboard()
     .text('📋 All Users', 'usrmgmt:all:1').text('🔍 Search User', 'usrmgmt:search').row()
     .text('📊 User Stats', 'usrmgmt:stats').row()
@@ -20,7 +20,7 @@ composer.callbackQuery('admin:users', adminRequired, async (ctx) => {
 
 // ── All users (paginated) ───────────────────────────────────────
 composer.callbackQuery(/^usrmgmt:all:\d+$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const page = Number(ctx.callbackQuery.data.split(':')[2]);
   const { users, total } = await userRepo.getUsersPaginated(ctx.dbPool, page, 10);
 
@@ -48,7 +48,7 @@ composer.callbackQuery(/^usrmgmt:all:\d+$/, adminRequired, async (ctx) => {
 
 // ── Search user entry ───────────────────────────────────────────
 composer.callbackQuery('usrmgmt:search', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   searchStates.set(ctx.chat.id, 'searching');
   await ctx.editMessageText(
     '🔍 <b>Search User</b>\n\nSend a <b>user ID</b> or <b>username</b> to search.',
@@ -58,7 +58,7 @@ composer.callbackQuery('usrmgmt:search', adminRequired, async (ctx) => {
 
 // ── View user ───────────────────────────────────────────────────
 composer.callbackQuery(/^usrmgmt:view:\d+$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const userId = Number(ctx.callbackQuery.data.split(':')[2]);
   const user = await userRepo.getUser(ctx.dbPool, userId);
   if (!user) { await ctx.editMessageText('⚠️ User not found.'); return; }
@@ -74,7 +74,7 @@ composer.callbackQuery(/^usrmgmt:view:\d+$/, adminRequired, async (ctx) => {
 
 // ── Ban user ────────────────────────────────────────────────────
 composer.callbackQuery(/^usrmgmt:ban:\d+$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const userId = Number(ctx.callbackQuery.data.split(':')[2]);
   const kb = new InlineKeyboard()
     .text('✅ Confirm Ban', `usrmgmt:confirm_ban:${userId}`)
@@ -83,7 +83,7 @@ composer.callbackQuery(/^usrmgmt:ban:\d+$/, adminRequired, async (ctx) => {
 });
 
 composer.callbackQuery(/^usrmgmt:confirm_ban:\d+$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const userId = Number(ctx.callbackQuery.data.split(':')[2]);
   await userRepo.banUser(ctx.dbPool, userId);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.USER_BANNED, { target: userId });
@@ -94,7 +94,7 @@ composer.callbackQuery(/^usrmgmt:confirm_ban:\d+$/, adminRequired, async (ctx) =
 
 // ── Unban user ──────────────────────────────────────────────────
 composer.callbackQuery(/^usrmgmt:unban:\d+$/, adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const userId = Number(ctx.callbackQuery.data.split(':')[2]);
   await userRepo.unbanUser(ctx.dbPool, userId);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.USER_UNBANNED, { target: userId });
@@ -105,7 +105,7 @@ composer.callbackQuery(/^usrmgmt:unban:\d+$/, adminRequired, async (ctx) => {
 
 // ── User stats ──────────────────────────────────────────────────
 composer.callbackQuery('usrmgmt:stats', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   const pool = ctx.dbPool;
   const [total, active, banned, today] = await Promise.all([
     userRepo.countUsers(pool), userRepo.countActiveUsers(pool),
@@ -161,7 +161,7 @@ composer.on('message:text', async (ctx, next) => {
 
 // ── Cancel search ──────────────────────────────────────────────
 composer.callbackQuery('usrmgmt:cancel_search', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  try { await ctx.answerCallbackQuery(); } catch {}
   searchStates.delete(ctx.chat.id);
   const kb = new InlineKeyboard()
     .text('📋 All Users', 'usrmgmt:all:1').text('🔍 Search User', 'usrmgmt:search').row()

@@ -32,7 +32,7 @@ export function setupErrorHandler(bot) {
     try {
       if (ctx) {
         if (ctx.callbackQuery) {
-          await ctx.answerCallbackQuery({ text: '⚠️ An error occurred.', show_alert: true });
+          try { await ctx.answerCallbackQuery({ text: '⚠️ An error occurred.', show_alert: true }); } catch {}
         } else {
           await ctx.reply('⚠️ An unexpected error occurred. Please try again later.');
         }
