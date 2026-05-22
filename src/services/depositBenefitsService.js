@@ -237,24 +237,30 @@ export async function getDepositInfoMessage(pool, userId) {
     const loyaltyRules = rules.filter(r => r.rule_type === 'loyalty_bonus')
       .sort((a, b) => parseFloat(a.rolling_30d_min) - parseFloat(b.rolling_30d_min));
 
-    // Find user's current best bonus
-    let currentPct = 0;
-    let currentMinDeposit = 0;
-    for (const rule of simpleBonusRules) {
-      const pct = parseFloat(rule.percentage);
-      if (pct > currentPct) {
-        currentPct = pct;
-        currentMinDeposit = parseFloat(rule.min_deposit) || 0;
-      }
-    }
+    // Sort simple bonus by min_deposit (lowest first = most accessible)
+    const sortedBonus = [...simpleBonusRules].sort((a, b) =>
+      parseFloat(a.min_deposit) - parseFloat(b.min_deposit));
+
+    // Base bonus = lowest min_deposit (easiest to get)
+    const baseBonusRule = sortedBonus[0];
+    let basePct = baseBonusRule ? parseFloat(baseBonusRule.percentage) : 0;
+    let baseMin = baseBonusRule ? parseFloat(baseBonusRule.min_deposit) || 0 : 0;
+
+    // Check if user qualifies for higher loyalty bonus
+    let loyaltyPct = 0;
+    let loyaltyMin = 0;
     for (const rule of loyaltyRules) {
       const rolling = parseFloat(rule.rolling_30d_min) || 0;
       const pct = parseFloat(rule.percentage);
-      if (rolling30d >= rolling && pct > currentPct) {
-        currentPct = pct;
-        currentMinDeposit = parseFloat(rule.min_deposit) || 0;
+      if (rolling30d >= rolling && pct > loyaltyPct) {
+        loyaltyPct = pct;
+        loyaltyMin = parseFloat(rule.min_deposit) || 0;
       }
     }
+
+    // Show the ACTUAL best the user qualifies for
+    const showPct = loyaltyPct > basePct ? loyaltyPct : basePct;
+    const showMin = loyaltyPct > basePct ? loyaltyMin : baseMin;
 
     // Get telegraph URL
     let telegraphUrl = await settingsRepo.getSetting(pool, 'telegraph_rules_url');
@@ -274,17 +280,35 @@ export async function getDepositInfoMessage(pool, userId) {
     msg += `🏦 <b>YOUR LAST 30 DAYS DEPOSIT</b>\n`;
     msg += `➜ ₹${formatNumber(rolling30d)}\n\n`;
 
-    if (currentPct > 0) {
-      msg += `🎁 You will get <b>${currentPct}% extra</b> on your current deposit amount\n`;
-      if (currentMinDeposit > 0) msg += `<i>(if deposited more then ${formatNumber(currentMinDeposit)} rs)</i>\n`;
+    if (showPct > 0) {
+      msg += `🎁 You will get <b>${showPct}% extra</b> on your current deposit amount\n`;
+      if (showMin > 0) msg += `<i>(if deposited more then ${formatNumber(showMin)} rs)</i>\n`;
     }
 
-    const nextTier = loyaltyRules.find(r => parseFloat(r.rolling_30d_min) > rolling30d);
-    if (nextTier) {
-      const needed = parseFloat(nextTier.rolling_30d_min) - rolling30d;
-      const nextPct = parseFloat(nextTier.percentage);
-      msg += `\n💡 <i>deposit ₹${formatNumber(needed)} more to unlock ${nextPct}%!</i>`;
+    // Find NEXT goal: first check next simple bonus tier, then loyalty
+    let nextHint = null;
+
+    // Next simple bonus tier (e.g., user gets 1% at ₹100, next is 2% at ₹500)
+    if (baseBonusRule && sortedBonus.length > 1) {
+      const nextBonusTier = sortedBonus.find(r =>
+        parseFloat(r.percentage) > basePct);
+      if (nextBonusTier && loyaltyPct <= parseFloat(nextBonusTier.percentage)) {
+        const nextMin = parseFloat(nextBonusTier.min_deposit);
+        nextHint = `💡 <i>deposit ₹${formatNumber(nextMin)}+ to get ${parseFloat(nextBonusTier.percentage)}% bonus!</i>`;
+      }
     }
+
+    // If no simple bonus hint OR loyalty is already higher, show next loyalty tier
+    if (!nextHint) {
+      const nextLoyalty = loyaltyRules.find(r => parseFloat(r.rolling_30d_min) > rolling30d);
+      if (nextLoyalty) {
+        const needed = parseFloat(nextLoyalty.rolling_30d_min) - rolling30d;
+        const nextPct = parseFloat(nextLoyalty.percentage);
+        nextHint = `💡 <i>deposit ₹${formatNumber(needed)} more to unlock ${nextPct}%!</i>`;
+      }
+    }
+
+    if (nextHint) msg += `\n${nextHint}`;
     msg += `</blockquote>`;
 
     return { text: msg, telegraphUrl };

@@ -218,7 +218,6 @@ export async function updateRulesPage(pool) {
 
     const url = `https://telegra.ph/${page.path}`;
     await settingsRepo.setSetting(pool, 'telegraph_rules_url', url);
-    logger.info(`[Telegraph] Rules page updated: ${url}`);
     return url;
   } catch (err) {
     logger.error(`[Telegraph] Error updating rules page: ${err.message}`);
