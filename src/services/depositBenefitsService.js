@@ -257,7 +257,15 @@ export async function getDepositInfoMessage(pool, userId) {
     }
 
     // Get telegraph URL
-    const telegraphUrl = await settingsRepo.getSetting(pool, 'telegraph_rules_url');
+    let telegraphUrl = await settingsRepo.getSetting(pool, 'telegraph_rules_url');
+
+    // Auto-generate Telegraph page if it doesn't exist yet
+    if (!telegraphUrl) {
+      try {
+        const { updateRulesPage } = await import('./telegraphService.js');
+        telegraphUrl = await updateRulesPage(pool);
+      } catch {}
+    }
 
     // Build short, clean message
     let msg = `💎 <b>Extra deposit benefits</b> <i>(FREE)</i>\n\n`;
