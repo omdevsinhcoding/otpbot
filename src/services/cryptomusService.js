@@ -9,13 +9,29 @@ function makeSign(apiKey, data) {
   return crypto.createHash('md5').update(base64 + apiKey).digest('hex');
 }
 
+// ── Service list cache (30-min TTL) ─────────────────────────────
+// The service list (107 coins) almost never changes. Caching avoids
+// hitting the Cryptomus API on every user deposit screen open.
+const _serviceCache = new Map(); // merchantId → { data, ts }
+const SERVICE_CACHE_TTL = 24 * 60 * 60_000; // 24 hours — tokens/chains rarely change
+
 /**
  * List available payment services (currencies + networks)
+ * Uses in-memory cache with 30-min TTL.
  * @param {string} apiKey
  * @param {string} merchantId
+ * @param {boolean} [forceRefresh=false] - Bypass cache
  * @returns {Promise<Array<{ currency: string, network: string, is_available: boolean, commission: object, limit: object }>>}
  */
-export async function listServices(apiKey, merchantId) {
+export async function listServices(apiKey, merchantId, forceRefresh = false) {
+  // Check cache first
+  if (!forceRefresh) {
+    const cached = _serviceCache.get(merchantId);
+    if (cached && Date.now() - cached.ts < SERVICE_CACHE_TTL) {
+      return cached.data;
+    }
+  }
+
   try {
     const data = {};
     const sign = makeSign(apiKey, data);
@@ -30,14 +46,22 @@ export async function listServices(apiKey, merchantId) {
     });
     const result = await response.json();
     if (result.result && Array.isArray(result.result)) {
-      // Return ALL coins — don't filter by is_available (dashboard shows 106, API may mark some unavailable temporarily)
-      logger.info(`[Cryptomus] Fetched ${result.result.length} services (${result.result.filter(s => s.is_available).length} available)`);
-      return result.result;
+      const services = result.result;
+      // Cache the result
+      _serviceCache.set(merchantId, { data: services, ts: Date.now() });
+      logger.debug(`[Cryptomus] Fetched ${services.length} services (${services.filter(s => s.is_available).length} available) — cached for 24h`);
+      return services;
     }
     logger.error(`Cryptomus listServices error: ${result.message || 'Unknown'}`);
     return [];
   } catch (err) {
     logger.error(`Cryptomus listServices failed: ${err.message}`);
+    // Return stale cache on error if available
+    const stale = _serviceCache.get(merchantId);
+    if (stale) {
+      logger.warn('[Cryptomus] Returning stale cached services due to API error');
+      return stale.data;
+    }
     return [];
   }
 }
