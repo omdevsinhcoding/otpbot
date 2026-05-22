@@ -103,18 +103,21 @@ export const BTN_PAY_BACK = "◀️ Back to Admin";
 
 // ── Default welcome message (premium template) ──────────────────────
 export const DEFAULT_WELCOME_TEXT =
-`<b>🚀 Welcome To The Premium Bot, {first_name}!</b>
+`⭐️ <b>PREMIUM ACCESS GRANTED</b> ⭐️
 
-━━━━━━━━━━━━━━━
-⚡ Fast • Secure • Reliable
-💎 Premium Quality Experience
-🔐 Trusted By Thousands Of Users
-━━━━━━━━━━━━━━━
+Welcome aboard, {user}! 🎉
 
-<b>👤 Your Profile</b>
-┣ 🆔 ID: <code>{id}</code>
-┣ 👤 Name: {full_name}
-┗ 🌐 Username: @{username}
+<blockquote>💎 You now have full access to our premium services — fast, secure, and built for the best experience.
 
-🔥 Everything is ready for you.
-👇 Tap the buttons below and get started now.`;
+✅ Verified & Trusted
+⚡ Instant Processing
+🔒 End-to-End Secure</blockquote>
+
+┏━━━━━━━━━━━━━━━━━━┓
+┃  <b>📋 YOUR PROFILE</b>
+┃  🆔  <code>{id}</code>
+┃  👤  {full_name}
+┃  📎  @{username}
+┗━━━━━━━━━━━━━━━━━━┛
+
+<i>👇 Choose an option below to begin!</i>`;
