@@ -44,6 +44,112 @@ const COOLDOWN_MS = 3_000; // 3 seconds between checks per user
 // ── Concurrent check guard (prevents double-click issues) ───────────
 const activeChecks = new Set(); // chatIds currently being verified
 
+// ═══════════════════════════════════════════════════════════════════
+//  CRYPTO AUTO-POLL: auto-detect payment & auto-expire
+//  Polls Cryptomus API every 15s → instant credit on payment
+// ═══════════════════════════════════════════════════════════════════
+const cryptoPollers = new Map(); // orderId → intervalId
+
+function startCryptoAutoCheck(bot, pool, orderId, uuid, userId, chatId, msgId, apiKey, merchantId) {
+  // Don't double-start
+  if (cryptoPollers.has(orderId)) return;
+
+  const POLL_INTERVAL = 15_000; // 15 seconds
+  const MAX_DURATION = 65 * 60_000; // 65 minutes (a bit more than Cryptomus's 1 hour)
+  const startedAt = Date.now();
+
+  const intervalId = setInterval(async () => {
+    try {
+      // Check if max duration exceeded → auto-expire
+      if (Date.now() - startedAt > MAX_DURATION) {
+        clearInterval(intervalId);
+        cryptoPollers.delete(orderId);
+        const txn = await transactionRepo.getByOrderId(pool, orderId);
+        if (txn && txn.status === 'pending') {
+          await transactionRepo.updateStatus(pool, orderId, 'expired');
+          try {
+            await bot.api.sendMessage(chatId,
+              `⏰ <b>Payment Expired</b>\n\n` +
+              `📋 <b>Order:</b> <code>${orderId}</code>\n\n` +
+              `<i>Your payment time has expired.\nPlease create a new order.</i>`,
+              { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '💰 Deposit', callback_data: 'deposit:menu' }]] } }
+            );
+          } catch { /* user may have blocked bot */ }
+          // Try to delete old invoice message
+          try { await bot.api.deleteMessage(chatId, msgId); } catch { /* ignore */ }
+        }
+        return;
+      }
+
+      // Check Cryptomus API status
+      const result = await cryptomusService.checkPayment(apiKey, merchantId, uuid);
+
+      if (result.success) {
+        // ✅ PAID — instant credit!
+        clearInterval(intervalId);
+        cryptoPollers.delete(orderId);
+
+        const txn = await transactionRepo.getByOrderId(pool, orderId);
+        if (!txn || txn.status === 'success') return; // already credited
+
+        const creditAmount = parseFloat(txn.amount);
+        await transactionRepo.updateStatus(pool, orderId, 'success', uuid, { cryptomus_status: result.status });
+        await walletRepo.addBalance(pool, userId, creditAmount);
+        const newBalance = await walletRepo.getBalance(pool, userId);
+
+        // Delete old invoice message
+        try { await bot.api.deleteMessage(chatId, msgId); } catch { /* ignore */ }
+
+        // Send instant success notification
+        await bot.api.sendMessage(chatId,
+          `╔══════════════════════╗\n` +
+          `   ✅ <b>Payment Received!</b>\n` +
+          `╚══════════════════════╝\n\n` +
+          `💰 <b>Credited:</b> ₹${creditAmount.toFixed(2)}\n` +
+          `💳 <b>New Balance:</b> ₹${formatNumber(newBalance)}\n` +
+          `📋 <b>Order:</b> <code>${orderId}</code>\n\n` +
+          `🎉 <i>Your wallet has been updated instantly!</i>`,
+          { parse_mode: 'HTML' }
+        );
+        logger.info(`[Crypto AutoPoll] Payment ${orderId} credited ₹${creditAmount} to user ${userId}`);
+
+      } else if (['cancel', 'system_fail', 'fail', 'wrong_amount', 'wrong_amount_waiting'].includes(result.status)) {
+        // ❌ FAILED
+        clearInterval(intervalId);
+        cryptoPollers.delete(orderId);
+
+        const txn = await transactionRepo.getByOrderId(pool, orderId);
+        if (!txn || txn.status !== 'pending') return;
+
+        await transactionRepo.updateStatus(pool, orderId, 'failed', uuid, { cryptomus_status: result.status });
+        try { await bot.api.deleteMessage(chatId, msgId); } catch { /* ignore */ }
+        await bot.api.sendMessage(chatId,
+          `❌ <b>Payment Failed</b>\n\n` +
+          `📋 <b>Order:</b> <code>${orderId}</code>\n` +
+          `📊 <b>Status:</b> ${result.status}\n\n` +
+          `<i>Please try again with a new order.</i>`,
+          { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '💰 Deposit', callback_data: 'deposit:menu' }]] } }
+        );
+      }
+      // else status is 'process', 'check', 'confirming' etc → keep polling
+    } catch (err) {
+      logger.error(`[Crypto AutoPoll] Error checking ${orderId}: ${err.message}`);
+      // Don't stop polling on transient errors
+    }
+  }, POLL_INTERVAL);
+
+  cryptoPollers.set(orderId, intervalId);
+  logger.info(`[Crypto AutoPoll] Started for order ${orderId}, user ${userId}`);
+}
+
+function stopCryptoAutoCheck(orderId) {
+  const intervalId = cryptoPollers.get(orderId);
+  if (intervalId) {
+    clearInterval(intervalId);
+    cryptoPollers.delete(orderId);
+  }
+}
+
 
 // ═══════════════════════════════════════════════════════════════════
 //  SAFE REPLY HELPER
@@ -789,9 +895,9 @@ async function handleCryptoWebDeposit(ctx, amount) {
     .text('✅ Verify Payment', `deposit:check_crypto:${orderId}`).row()
     .text('❌ Cancel', `deposit:cancel_txn:${orderId}`);
 
-  await ctx.reply(
+  const sentMsg = await ctx.reply(
     `✨ <b>Invoice Generated</b>\n\n` +
-    `🎯 <b>Payment Time Limit:</b> 15 Minutes\n` +
+    `🎯 <b>Payment Time Limit:</b> 60 Minutes\n` +
     `━━━━━━━━━━━━━━━━━━━━━\n` +
     `💰 <b>Amount:</b> ₹${amount.toFixed(2)}\n` +
     `📋 <b>Order:</b> <code>${orderId}</code>\n` +
@@ -799,9 +905,12 @@ async function handleCryptoWebDeposit(ctx, amount) {
     `━━━━━━━━━━━━━━━━━━━━━\n\n` +
     `Tap <b>Pay Now</b> to pay inside Telegram.\n` +
     `All crypto currencies are accepted.\n\n` +
-    `<i>After payment, tap Verify Payment to confirm.</i>`,
+    `🔄 <i>Payment will be verified automatically.</i>`,
     { parse_mode: 'HTML', reply_markup: kb }
   );
+
+  // Start background auto-polling for instant credit
+  startCryptoAutoCheck(ctx.api, pool, orderId, result.uuid, ctx.from.id, ctx.chat.id, sentMsg.message_id, apiKey, merchantId);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -931,7 +1040,7 @@ async function handleCryptomusDeposit(ctx, currency, network, amount) {
 
   const caption =
     `✨ <b>Invoice Generated</b>\n\n` +
-    `🎯 <b>Payment Time Limit:</b> 15 Minutes\n` +
+    `🎯 <b>Payment Time Limit:</b> 60 Minutes\n` +
     `━━━━━━━━━━━━━━━━━━━━━\n` +
     `💰 <b>Amount:</b> ₹${amount.toFixed(2)}\n` +
     `🪙 <b>Amount Payable:</b> ${result.payAmount} ${result.payCurrency}\n` +
@@ -941,8 +1050,8 @@ async function handleCryptomusDeposit(ctx, currency, network, amount) {
     `${rateInfo}` +
     `━━━━━━━━━━━━━━━━━━━━━\n\n` +
     (result.address ? `🏦 <b>Payment Address:</b>\n<code>${result.address}</code>\n\n` : '') +
-    `⚠️ <b>Please send the exact amount to this address only.</b>\n` +
-    `⚠️ <b>Please complete your payment on time</b>`;
+    `⚠️ <b>Send exact amount to this address only.</b>\n` +
+    `🔄 <i>Payment will be verified automatically.</i>`;
 
   const kb = new InlineKeyboard();
   if (result.paymentUrl) kb.webApp('🌐 Pay via Web', result.paymentUrl).row();
@@ -970,9 +1079,14 @@ async function handleCryptomusDeposit(ctx, currency, network, amount) {
         uuid: result.uuid, address: result.address, photoFileId, qrMsgId: sentMsg.message_id,
       });
     }
+
+    // Start auto-polling for instant credit
+    startCryptoAutoCheck(ctx.api, pool, orderId, result.uuid, ctx.from.id, ctx.chat.id, sentMsg.message_id, apiKey, merchantId);
   } else {
     // No address returned — show text-only with web link
-    await ctx.reply(caption, { parse_mode: 'HTML', reply_markup: kb });
+    const sentMsg2 = await ctx.reply(caption, { parse_mode: 'HTML', reply_markup: kb });
+    // Start auto-polling for instant credit
+    startCryptoAutoCheck(ctx.api, pool, orderId, result.uuid, ctx.from.id, ctx.chat.id, sentMsg2.message_id, apiKey, merchantId);
   }
 }
 
@@ -1011,6 +1125,7 @@ composer.callbackQuery(/^deposit:check_crypto:CX-/, async (ctx) => {
     const result = await cryptomusService.checkPayment(apiKey, merchantId, uuid);
 
     if (result.success) {
+      stopCryptoAutoCheck(orderId); // Stop background polling
       const creditAmount = parseFloat(txn.amount);
       await transactionRepo.updateStatus(pool, orderId, 'success', uuid, { cryptomus_status: result.status });
       await walletRepo.addBalance(pool, ctx.from.id, creditAmount);
@@ -1070,6 +1185,7 @@ composer.callbackQuery(/^deposit:check_crypto:CRYPTO_/, async (ctx) => {
 composer.callbackQuery(/^deposit:cancel_txn:/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const orderId = ctx.callbackQuery.data.replace('deposit:cancel_txn:', '');
+  stopCryptoAutoCheck(orderId); // Stop background polling
   const txn = await transactionRepo.getByOrderId(ctx.dbPool, orderId);
   await transactionRepo.updateStatus(ctx.dbPool, orderId, 'cancelled');
   try { await ctx.deleteMessage(); } catch { /* ignore */ }

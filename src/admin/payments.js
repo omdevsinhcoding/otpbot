@@ -201,33 +201,49 @@ composer.callbackQuery('pay:bharatpay:remove_qr', adminRequired, async (ctx) => 
   await showBharatpaySettings(ctx);
 });
 
+
 // ═══════════════════════════════════════════════════════════════════
-//  CRYPTOMUS SETTINGS
+//  CRYPTOMUS SETTINGS — Premium Fintech UI
 // ═══════════════════════════════════════════════════════════════════
 
-// Crypto coin icon helper — authentic looking icons
-function coinIcon(coin) {
-  const icons = {
-    'USDT': '₮', 'BTC': '₿', 'ETH': 'Ξ', 'TRX': '⚡',
-    'DOGE': '🐕', 'LTC': 'Ł', 'BNB': '◆', 'SOL': '◎',
-    'XRP': '✕', 'MATIC': '⬡', 'TON': '💎', 'DASH': '◉',
-    'USDC': '💲', 'DAI': '◈', 'BUSD': '🅱️', 'ADA': '₳',
-    'DOT': '●', 'AVAX': '🔺', 'SHIB': '🐕‍🦺', 'FDUSD': '💵',
-  };
-  return icons[coin] || '🪙';
+// ── Services cache (prevents API spam for 400K+ users) ──────────
+let _svcCache = null;
+let _svcCacheKey = '';
+let _svcCacheExp = 0;
+
+async function getCachedServices(apiKey, merchantId) {
+  const key = `${apiKey}:${merchantId}`;
+  if (_svcCache && _svcCacheKey === key && Date.now() < _svcCacheExp) return _svcCache;
+  const data = await cryptomusService.listServices(apiKey, merchantId);
+  _svcCache = data;
+  _svcCacheKey = key;
+  _svcCacheExp = Date.now() + 5 * 60_000; // 5 min TTL
+  return data;
 }
 
-// Network display name helper
-function networkName(nw) {
-  const names = {
-    'tron': 'TRC20', 'bsc': 'BEP20', 'eth': 'ERC20', 'polygon': 'Polygon',
-    'arbitrum': 'Arbitrum', 'optimism': 'Optimism', 'avalanche': 'AVAX-C',
-    'btc': 'Bitcoin', 'ltc': 'Litecoin', 'doge': 'Dogecoin', 'dash': 'Dash',
-    'sol': 'Solana', 'ton': 'TON', 'xrp': 'XRP', 'ada': 'Cardano',
+// ── Coin ordering: stablecoins → major → L1 → rest ─────────────
+const COIN_RANK = [
+  'USDT','USDC','DAI','BUSD','FDUSD',
+  'BTC','ETH','BNB','SOL','XRP',
+  'TRX','TON','AVAX','ADA','DOT','POL','MATIC',
+  'LTC','DOGE','DASH','SHIB',
+];
+function coinSortKey(c) { const i = COIN_RANK.indexOf(c); return i >= 0 ? i : 100 + c.charCodeAt(0); }
+
+// ── Network display name ────────────────────────────────────────
+function nwLabel(nw) {
+  const m = {
+    'tron':'TRC-20','bsc':'BEP-20','eth':'ERC-20','polygon':'Polygon',
+    'arbitrum':'Arbitrum','optimism':'Optimism','avalanche':'AVAX-C',
+    'btc':'Bitcoin','ltc':'Litecoin','doge':'Dogecoin','dash':'Dash',
+    'sol':'Solana','ton':'TON','xrp':'XRP','ada':'Cardano',
   };
-  return names[nw?.toLowerCase()] || nw?.toUpperCase() || nw;
+  return m[nw?.toLowerCase()] || nw?.toUpperCase() || nw;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  MAIN SETTINGS PAGE
+// ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery('pay:cryptomus', adminRequired, async (ctx) => {
   await ctx.answerCallbackQuery();
   await showCryptomusSettings(ctx);
@@ -235,7 +251,7 @@ composer.callbackQuery('pay:cryptomus', adminRequired, async (ctx) => {
 
 async function showCryptomusSettings(ctx) {
   const pool = ctx.dbPool;
-  const [enabled, apiKey, merchantId, minAmount, maxAmount, selectedCurrenciesRaw, mode] = await Promise.all([
+  const [enabled, apiKey, merchantId, minAmt, maxAmt, currRaw, mode] = await Promise.all([
     settingsRepo.getSetting(pool, 'cryptomus_enabled'),
     settingsRepo.getSetting(pool, 'cryptomus_api_key'),
     settingsRepo.getSetting(pool, 'cryptomus_merchant_id'),
@@ -245,166 +261,156 @@ async function showCryptomusSettings(ctx) {
     settingsRepo.getSetting(pool, 'cryptomus_mode'),
   ]);
 
-  const currentMode = mode || 'web';
-  let selectedList = [];
-  try { selectedList = JSON.parse(selectedCurrenciesRaw || '[]'); } catch { selectedList = []; }
+  const md = mode || 'web';
+  let sel = [];
+  try { sel = JSON.parse(currRaw || '[]'); } catch { sel = []; }
 
-  // Group selected coins for display
-  const coinGroups = {};
-  for (const s of selectedList) {
-    if (!coinGroups[s.currency]) coinGroups[s.currency] = [];
-    coinGroups[s.currency].push(networkName(s.network));
+  // Build active coins summary
+  const groups = {};
+  for (const s of sel) {
+    if (!groups[s.currency]) groups[s.currency] = [];
+    groups[s.currency].push(nwLabel(s.network));
   }
-  let currDisplay = '❌ None';
-  if (Object.keys(coinGroups).length > 0) {
-    currDisplay = Object.entries(coinGroups)
-      .map(([coin, nets]) => `  ${coinIcon(coin)} ${coin}: ${nets.join(', ')}`)
-      .join('\n');
+  const coinSummary = Object.keys(groups).length > 0
+    ? Object.entries(groups).map(([c, nets]) => `  ${c}  ›  ${nets.join(' · ')}`).join('\n')
+    : '  None configured';
+
+  const limitStr = (minAmt || maxAmt)
+    ? `₹${minAmt || '0'}${maxAmt ? ' — ₹' + maxAmt : '+'}`
+    : 'No limits set';
+
+  const text =
+    `╭─── ₿  C R Y P T O ───╮\n\n` +
+    ` Status      ${enabled ? '◉ Active' : '○ Inactive'}\n` +
+    ` API Key     ${apiKey ? '✓ Configured' : '✗ Not set'}\n` +
+    ` Merchant    ${merchantId ? '✓ Configured' : '✗ Not set'}\n` +
+    ` Mode        ${md === 'inline' ? '⚡ Inline' : '🌐 Web'}\n` +
+    ` Deposit     ${limitStr}\n\n` +
+    `<b>Active Coins</b>\n${coinSummary}\n\n` +
+    `╰──────────────────────╯` +
+    (!apiKey || !merchantId ? '\n\n⚠️ <i>Configure API credentials first</i>' : '');
+
+  const kb = new InlineKeyboard();
+
+  // Row 1: Enable/Disable
+  kb.text(enabled ? '○  Disable' : '◉  Enable', 'pay:cryptomus:toggle').row();
+
+  // Row 2: Credentials
+  kb.text('🔑  API Key', 'pay:cryptomus:edit:cryptomus_api_key')
+    .text('🏪  Merchant', 'pay:cryptomus:edit:cryptomus_merchant_id').row();
+
+  // Row 3: Mode toggle
+  kb.text(md === 'inline' ? '🌐  Switch to Web' : '⚡  Switch to Inline', 'pay:cryptomus:toggle_mode').row();
+
+  // Row 4: Coin selection (inline mode only)
+  if (apiKey && merchantId && md === 'inline') {
+    kb.text('⬡  Coins & Networks', 'pay:cryptomus:currencies').row();
   }
 
-  let text =
-    `━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `   ₿ <b>CRYPTO SETTINGS</b>\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-    `📊 <b>Status:</b> ${enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
-    `🔑 <b>API Key:</b> ${apiKey ? '✅ Configured' : '❌ Not set'}\n` +
-    `🏪 <b>Merchant ID:</b> ${merchantId ? '✅ Configured' : '❌ Not set'}\n\n` +
-    `⚙️ <b>Mode:</b> ${currentMode === 'inline' ? '🤖 Inline (QR in Bot)' : '🌐 Web (Cryptomus Page)'}\n\n` +
-    `🪙 <b>Active Coins:</b>\n${currDisplay}\n\n` +
-    `💰 <b>Min Deposit:</b> ${minAmount ? '₹' + minAmount : '❌ Not set'}\n` +
-    `📈 <b>Max Deposit:</b> ${maxAmount ? '₹' + maxAmount : '♾️ No Limit'}`;
+  // Row 5: Limits
+  kb.text('↓  Min Deposit', 'pay:cryptomus:edit:cryptomus_min_amount')
+    .text('↑  Max Deposit', 'pay:cryptomus:edit:cryptomus_max_amount').row();
 
-  if (!apiKey || !merchantId) {
-    text += `\n\n⚠️ <i>Set API Key & Merchant ID to configure coins!</i>`;
-  }
-
-  const kb = new InlineKeyboard()
-    .text(enabled ? '🔴 Disable Crypto' : '🟢 Enable Crypto', 'pay:cryptomus:toggle').row()
-    .text('🔑 API Key', 'pay:cryptomus:edit:cryptomus_api_key')
-    .text('🏪 Merchant ID', 'pay:cryptomus:edit:cryptomus_merchant_id').row();
-
-  // Mode toggle
-  kb.text(currentMode === 'inline' ? '🌐 Switch → Web Mode' : '🤖 Switch → Inline Mode', 'pay:cryptomus:toggle_mode').row();
-
-  // Coin & Network selection
-  if (apiKey && merchantId) {
-    kb.text('🪙 Select Coins & Networks', 'pay:cryptomus:currencies').row();
-  }
-
-  // Amount settings
-  kb.text('💰 Set Min Amount', 'pay:cryptomus:edit:cryptomus_min_amount')
-    .text('📈 Set Max Amount', 'pay:cryptomus:edit:cryptomus_max_amount').row();
-
-  // Clear/No limit row
-  if (minAmount || maxAmount) {
-    if (minAmount) kb.text('🗑 Clear Min', 'pay:cryptomus:clear:cryptomus_min_amount');
-    if (maxAmount) kb.text('🚫 No Max Limit', 'pay:cryptomus:nolimit:cryptomus_max_amount');
+  // Row 6: Clear actions (only if something to clear)
+  const clearBtns = [];
+  if (minAmt) clearBtns.push({ text: '✗ Clear Min', data: 'pay:cryptomus:clear:cryptomus_min_amount' });
+  if (maxAmt) clearBtns.push({ text: '∞ No Max', data: 'pay:cryptomus:nolimit:cryptomus_max_amount' });
+  if (apiKey) clearBtns.push({ text: '✗ API Key', data: 'pay:cryptomus:clear:cryptomus_api_key' });
+  if (merchantId) clearBtns.push({ text: '✗ MID', data: 'pay:cryptomus:clear:cryptomus_merchant_id' });
+  for (let i = 0; i < clearBtns.length; i += 2) {
+    kb.text(clearBtns[i].text, clearBtns[i].data);
+    if (clearBtns[i + 1]) kb.text(clearBtns[i + 1].text, clearBtns[i + 1].data);
     kb.row();
   }
 
-  // Clear API creds
-  if (apiKey || merchantId) {
-    if (apiKey) kb.text('🗑 Clear API Key', 'pay:cryptomus:clear:cryptomus_api_key');
-    if (merchantId) kb.text('🗑 Clear MID', 'pay:cryptomus:clear:cryptomus_merchant_id');
-    kb.row();
-  }
-
-  kb.text('◀️ Back to Payments', 'admin:payments');
-
+  kb.text('◀  Back', 'admin:payments');
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
 }
 
+// ── Toggles ─────────────────────────────────────────────────────
 composer.callbackQuery('pay:cryptomus:toggle', adminRequired, async (ctx) => {
   await ctx.answerCallbackQuery();
   const pool = ctx.dbPool;
-  const current = await settingsRepo.getSetting(pool, 'cryptomus_enabled');
-  await settingsRepo.setSetting(pool, 'cryptomus_enabled', !current, ctx.from.id);
-  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key: 'cryptomus_enabled', value: !current });
+  const cur = await settingsRepo.getSetting(pool, 'cryptomus_enabled');
+  await settingsRepo.setSetting(pool, 'cryptomus_enabled', !cur, ctx.from.id);
+  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { key: 'cryptomus_enabled', value: !cur });
   await showCryptomusSettings(ctx);
 });
 
 composer.callbackQuery('pay:cryptomus:toggle_mode', adminRequired, async (ctx) => {
   const pool = ctx.dbPool;
-  const current = await settingsRepo.getSetting(pool, 'cryptomus_mode') || 'web';
-  const newMode = current === 'inline' ? 'web' : 'inline';
-  await settingsRepo.setSetting(pool, 'cryptomus_mode', newMode, ctx.from.id);
-  await ctx.answerCallbackQuery(`✅ Switched to ${newMode === 'inline' ? 'Inline (QR in Bot)' : 'Web (Cryptomus Page)'}`);
+  const cur = await settingsRepo.getSetting(pool, 'cryptomus_mode') || 'web';
+  const next = cur === 'inline' ? 'web' : 'inline';
+  await settingsRepo.setSetting(pool, 'cryptomus_mode', next, ctx.from.id);
+  await ctx.answerCallbackQuery(`Switched to ${next === 'inline' ? 'Inline' : 'Web'}`);
   await showCryptomusSettings(ctx);
 });
 
 // ═══════════════════════════════════════════════════════════════════
-//  STEP 1: SELECT COINS (grouped by currency)
+//  STEP 1 — COIN SELECTION (categorized, cached, premium)
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery('pay:cryptomus:currencies', adminRequired, async (ctx) => {
-  await ctx.answerCallbackQuery('🔄 Loading coins from Cryptomus...');
+  await ctx.answerCallbackQuery();
   const pool = ctx.dbPool;
   const apiKey = await settingsRepo.getSetting(pool, 'cryptomus_api_key');
   const merchantId = await settingsRepo.getSetting(pool, 'cryptomus_merchant_id');
 
-  const services = await cryptomusService.listServices(apiKey, merchantId);
-  if (services.length === 0) {
+  const services = await getCachedServices(apiKey, merchantId);
+  if (!services.length) {
     await ctx.editMessageText(
-      `⚠️ <b>Failed to load coins</b>\n\n` +
-      `Could not fetch currencies from Cryptomus API.\n` +
-      `Please verify your API Key & Merchant ID.\n\n` +
-      `<i>If issue persists, check if Cryptomus is accessible.</i>`,
-      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔄 Retry', 'pay:cryptomus:currencies').row().text('◀️ Back', 'pay:cryptomus') }
+      `⚠️  <b>Cannot load coins</b>\n\nVerify your API credentials and try again.`,
+      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('↻  Retry', 'pay:cryptomus:currencies').row().text('◀  Back', 'pay:cryptomus') }
     );
     return;
   }
 
-  let selectedList = [];
-  try {
-    const raw = await settingsRepo.getSetting(pool, 'cryptomus_currencies');
-    selectedList = JSON.parse(raw || '[]');
-  } catch { selectedList = []; }
+  let sel = [];
+  try { sel = JSON.parse(await settingsRepo.getSetting(pool, 'cryptomus_currencies') || '[]'); } catch { sel = []; }
 
-  // Group services by currency
+  // Group by currency, dedupe networks
   const coinMap = new Map();
   for (const svc of services) {
     if (!coinMap.has(svc.currency)) coinMap.set(svc.currency, []);
-    const existing = coinMap.get(svc.currency);
-    if (!existing.some(e => e.network === svc.network)) {
-      existing.push(svc);
-    }
+    const arr = coinMap.get(svc.currency);
+    if (!arr.some(e => e.network === svc.network)) arr.push(svc);
   }
 
+  // Sort coins by rank
+  const sortedCoins = [...coinMap.entries()].sort((a, b) => coinSortKey(a[0]) - coinSortKey(b[0]));
+
+  // Build keyboard — 2 per row, clean labels
   const kb = new InlineKeyboard();
-  const coins = [...coinMap.entries()];
+  for (let i = 0; i < sortedCoins.length; i += 2) {
+    const [c1, n1] = sortedCoins[i];
+    const a1 = n1.filter(n => sel.some(s => s.currency === c1 && s.network === n.network)).length;
+    const dot1 = a1 > 0 ? '●' : '○';
+    kb.text(`${dot1}  ${c1}  ${a1}∕${n1.length}`, `pay:cryptomus:coin_networks:${c1}`);
 
-  // 2 coins per row
-  for (let i = 0; i < coins.length; i += 2) {
-    const [coin1, nets1] = coins[i];
-    const sel1 = nets1.filter(n => selectedList.some(s => s.currency === coin1 && s.network === n.network)).length;
-    const check1 = sel1 > 0 ? '✅' : '⬜';
-    kb.text(`${coinIcon(coin1)} ${coin1} ${check1} ${sel1}/${nets1.length}`, `pay:cryptomus:coin_networks:${coin1}`);
-
-    if (i + 1 < coins.length) {
-      const [coin2, nets2] = coins[i + 1];
-      const sel2 = nets2.filter(n => selectedList.some(s => s.currency === coin2 && s.network === n.network)).length;
-      const check2 = sel2 > 0 ? '✅' : '⬜';
-      kb.text(`${coinIcon(coin2)} ${coin2} ${check2} ${sel2}/${nets2.length}`, `pay:cryptomus:coin_networks:${coin2}`);
+    if (i + 1 < sortedCoins.length) {
+      const [c2, n2] = sortedCoins[i + 1];
+      const a2 = n2.filter(n => sel.some(s => s.currency === c2 && s.network === n.network)).length;
+      const dot2 = a2 > 0 ? '●' : '○';
+      kb.text(`${dot2}  ${c2}  ${a2}∕${n2.length}`, `pay:cryptomus:coin_networks:${c2}`);
     }
     kb.row();
   }
 
-  kb.text('◀️ Back to Settings', 'pay:cryptomus');
+  kb.text('◀  Back', 'pay:cryptomus');
 
-  const totalSelected = selectedList.length;
+  const total = sel.length;
+  const coinCount = sortedCoins.length;
   await ctx.editMessageText(
-    `━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `   🪙 <b>SELECT COINS</b>\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-    `Tap any coin to configure its networks.\n\n` +
-    `✅ = active networks / total available\n` +
-    `⬜ = no networks selected\n\n` +
-    `📊 <b>Total active:</b> ${totalSelected} coin-network pair${totalSelected !== 1 ? 's' : ''}`,
+    `⬡  <b>S E L E C T   C O I N S</b>\n\n` +
+    `Tap a coin to configure its networks.\n\n` +
+    `  ●  active networks\n` +
+    `  ○  none selected\n\n` +
+    `<b>${total}</b> active pair${total !== 1 ? 's' : ''}  ·  <b>${coinCount}</b> coins available`,
     { parse_mode: 'HTML', reply_markup: kb }
   );
 });
 
 // ═══════════════════════════════════════════════════════════════════
-//  STEP 2: SELECT NETWORKS FOR A COIN
+//  STEP 2 — NETWORK SELECTION (per coin)
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery(/^pay:cryptomus:coin_networks:/, adminRequired, async (ctx) => {
   const coin = ctx.callbackQuery.data.split(':')[3];
@@ -416,131 +422,108 @@ async function showCoinNetworks(ctx, coin) {
   const pool = ctx.dbPool;
   const apiKey = await settingsRepo.getSetting(pool, 'cryptomus_api_key');
   const merchantId = await settingsRepo.getSetting(pool, 'cryptomus_merchant_id');
-  const services = await cryptomusService.listServices(apiKey, merchantId);
+  const services = await getCachedServices(apiKey, merchantId);
 
-  const coinNetworks = [];
+  // Get networks for this coin (dedupe)
+  const nets = [];
   const seen = new Set();
   for (const svc of services) {
-    if (svc.currency !== coin) continue;
-    if (seen.has(svc.network)) continue;
+    if (svc.currency !== coin || seen.has(svc.network)) continue;
     seen.add(svc.network);
-    coinNetworks.push(svc);
+    nets.push(svc);
   }
 
-  let selectedList = [];
-  try {
-    const raw = await settingsRepo.getSetting(pool, 'cryptomus_currencies');
-    selectedList = JSON.parse(raw || '[]');
-  } catch { selectedList = []; }
+  let sel = [];
+  try { sel = JSON.parse(await settingsRepo.getSetting(pool, 'cryptomus_currencies') || '[]'); } catch { sel = []; }
 
-  const selectedCount = coinNetworks.filter(n => selectedList.some(s => s.currency === coin && s.network === n.network)).length;
-  const allSelected = coinNetworks.length > 0 && coinNetworks.every(n => selectedList.some(s => s.currency === coin && s.network === n.network));
-  const icon = coinIcon(coin);
+  const active = nets.filter(n => sel.some(s => s.currency === coin && s.network === n.network)).length;
+  const allOn = nets.length > 0 && active === nets.length;
 
   const kb = new InlineKeyboard();
 
   // Network buttons — 2 per row
-  for (let i = 0; i < coinNetworks.length; i += 2) {
-    const svc1 = coinNetworks[i];
-    const sel1 = selectedList.some(s => s.currency === coin && s.network === svc1.network);
-    kb.text(`${sel1 ? '✅' : '⬜'} ${networkName(svc1.network)}`, `pay:cryptomus:toggle_cur:${coin}:${svc1.network}`);
+  for (let i = 0; i < nets.length; i += 2) {
+    const n1 = nets[i];
+    const on1 = sel.some(s => s.currency === coin && s.network === n1.network);
+    kb.text(`${on1 ? '◉' : '○'}  ${nwLabel(n1.network)}`, `pay:cryptomus:toggle_cur:${coin}:${n1.network}`);
 
-    if (i + 1 < coinNetworks.length) {
-      const svc2 = coinNetworks[i + 1];
-      const sel2 = selectedList.some(s => s.currency === coin && s.network === svc2.network);
-      kb.text(`${sel2 ? '✅' : '⬜'} ${networkName(svc2.network)}`, `pay:cryptomus:toggle_cur:${coin}:${svc2.network}`);
+    if (i + 1 < nets.length) {
+      const n2 = nets[i + 1];
+      const on2 = sel.some(s => s.currency === coin && s.network === n2.network);
+      kb.text(`${on2 ? '◉' : '○'}  ${nwLabel(n2.network)}`, `pay:cryptomus:toggle_cur:${coin}:${n2.network}`);
     }
     kb.row();
   }
 
-  // Select All / Deselect All
-  if (allSelected) {
-    kb.text('❌ Deselect All Networks', `pay:cryptomus:deselect_all:${coin}`).row();
-  } else {
-    kb.text('✅ Select All Networks', `pay:cryptomus:select_all:${coin}`).row();
-  }
+  // Select / Deselect all
+  kb.text(allOn ? '✗  Deselect All' : '✓  Select All', allOn ? `pay:cryptomus:deselect_all:${coin}` : `pay:cryptomus:select_all:${coin}`).row();
 
-  kb.text('◀️ Back to Coins', 'pay:cryptomus:currencies').text('◀️ Settings', 'pay:cryptomus');
+  // Navigation
+  kb.text('◀  Coins', 'pay:cryptomus:currencies').text('◀  Settings', 'pay:cryptomus');
 
   await ctx.editMessageText(
-    `━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `   ${icon} <b>${coin} — NETWORKS</b>\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-    `Select which ${coin} networks to enable.\n` +
-    `Users will see only the active networks.\n\n` +
-    `📊 <b>Active:</b> ${selectedCount} / ${coinNetworks.length} networks`,
+    `<b>${coin}</b>  ·  Networks\n\n` +
+    `Select which networks to enable.\n` +
+    `Users see only active networks.\n\n` +
+    `  ◉  active    ○  inactive\n\n` +
+    `<b>${active}</b> ∕ <b>${nets.length}</b> networks enabled`,
     { parse_mode: 'HTML', reply_markup: kb }
   );
 }
 
-// ── Toggle a single network on/off ──────────────────────────
+// ── Toggle single network ───────────────────────────────────────
 composer.callbackQuery(/^pay:cryptomus:toggle_cur:/, adminRequired, async (ctx) => {
-  const parts = ctx.callbackQuery.data.split(':');
-  const currency = parts[3];
-  const network = parts[4];
+  const [,, , currency, network] = ctx.callbackQuery.data.split(':');
   const pool = ctx.dbPool;
 
-  let selectedList = [];
-  try {
-    const raw = await settingsRepo.getSetting(pool, 'cryptomus_currencies');
-    selectedList = JSON.parse(raw || '[]');
-  } catch { selectedList = []; }
+  let sel = [];
+  try { sel = JSON.parse(await settingsRepo.getSetting(pool, 'cryptomus_currencies') || '[]'); } catch { sel = []; }
 
-  const idx = selectedList.findIndex(s => s.currency === currency && s.network === network);
-  if (idx >= 0) {
-    selectedList.splice(idx, 1);
-  } else {
-    selectedList.push({ currency, network });
-  }
+  const idx = sel.findIndex(s => s.currency === currency && s.network === network);
+  if (idx >= 0) sel.splice(idx, 1);
+  else sel.push({ currency, network });
 
-  await settingsRepo.setSetting(pool, 'cryptomus_currencies', JSON.stringify(selectedList), ctx.from.id);
-  await ctx.answerCallbackQuery(`${idx >= 0 ? '❌ Removed' : '✅ Added'} ${currency} (${networkName(network)})`);
+  await settingsRepo.setSetting(pool, 'cryptomus_currencies', JSON.stringify(sel), ctx.from.id);
+  await ctx.answerCallbackQuery(`${idx >= 0 ? '○' : '◉'}  ${currency} · ${nwLabel(network)}`);
   await showCoinNetworks(ctx, currency);
 });
 
-// ── Select All networks for a coin ──────────────────────────
+// ── Select all networks for a coin ──────────────────────────────
 composer.callbackQuery(/^pay:cryptomus:select_all:/, adminRequired, async (ctx) => {
   const coin = ctx.callbackQuery.data.split(':')[3];
   const pool = ctx.dbPool;
   const apiKey = await settingsRepo.getSetting(pool, 'cryptomus_api_key');
   const merchantId = await settingsRepo.getSetting(pool, 'cryptomus_merchant_id');
+  const services = await getCachedServices(apiKey, merchantId);
 
-  const services = await cryptomusService.listServices(apiKey, merchantId);
-  let selectedList = [];
-  try {
-    const raw = await settingsRepo.getSetting(pool, 'cryptomus_currencies');
-    selectedList = JSON.parse(raw || '[]');
-  } catch { selectedList = []; }
+  let sel = [];
+  try { sel = JSON.parse(await settingsRepo.getSetting(pool, 'cryptomus_currencies') || '[]'); } catch { sel = []; }
 
   const seen = new Set();
   for (const svc of services) {
-    if (svc.currency !== coin) continue;
-    if (seen.has(svc.network)) continue;
+    if (svc.currency !== coin || seen.has(svc.network)) continue;
     seen.add(svc.network);
-    if (!selectedList.some(s => s.currency === coin && s.network === svc.network)) {
-      selectedList.push({ currency: coin, network: svc.network });
+    if (!sel.some(s => s.currency === coin && s.network === svc.network)) {
+      sel.push({ currency: coin, network: svc.network });
     }
   }
 
-  await settingsRepo.setSetting(pool, 'cryptomus_currencies', JSON.stringify(selectedList), ctx.from.id);
-  await ctx.answerCallbackQuery(`✅ All ${coin} networks enabled!`);
+  await settingsRepo.setSetting(pool, 'cryptomus_currencies', JSON.stringify(sel), ctx.from.id);
+  await ctx.answerCallbackQuery(`✓  All ${coin} networks enabled`);
   await showCoinNetworks(ctx, coin);
 });
 
-// ── Deselect All networks for a coin ────────────────────────
+// ── Deselect all networks for a coin ────────────────────────────
 composer.callbackQuery(/^pay:cryptomus:deselect_all:/, adminRequired, async (ctx) => {
   const coin = ctx.callbackQuery.data.split(':')[3];
   const pool = ctx.dbPool;
 
-  let selectedList = [];
-  try {
-    const raw = await settingsRepo.getSetting(pool, 'cryptomus_currencies');
-    selectedList = JSON.parse(raw || '[]');
-  } catch { selectedList = []; }
+  let sel = [];
+  try { sel = JSON.parse(await settingsRepo.getSetting(pool, 'cryptomus_currencies') || '[]'); } catch { sel = []; }
 
-  selectedList = selectedList.filter(s => s.currency !== coin);
-  await settingsRepo.setSetting(pool, 'cryptomus_currencies', JSON.stringify(selectedList), ctx.from.id);
-  await ctx.answerCallbackQuery(`❌ All ${coin} networks disabled!`);
+  sel = sel.filter(s => s.currency !== coin);
+  await settingsRepo.setSetting(pool, 'cryptomus_currencies', JSON.stringify(sel), ctx.from.id);
+  await ctx.answerCallbackQuery(`✗  All ${coin} networks disabled`);
   await showCoinNetworks(ctx, coin);
 });
 
