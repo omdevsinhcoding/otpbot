@@ -266,15 +266,20 @@ async function showCryptomusSettings(ctx) {
   let sel = [];
   try { sel = JSON.parse(currRaw || '[]'); } catch { sel = []; }
 
-  // Fetch live coin count from Cryptomus API
+  // Fetch live coin count from Cryptomus API (deduped by currency+network)
   let totalPairs = 0;
   let totalCoins = 0;
   if (apiKey && merchantId) {
     try {
       const services = await getCachedServices(apiKey, merchantId);
-      totalPairs = services.length;
-      const uniqueCoins = new Set(services.map(s => s.currency));
-      totalCoins = uniqueCoins.size;
+      // Deduplicate by currency+network (same logic as coin list)
+      const dedupMap = new Map();
+      for (const svc of services) {
+        if (!dedupMap.has(svc.currency)) dedupMap.set(svc.currency, new Set());
+        dedupMap.get(svc.currency).add(svc.network);
+      }
+      totalCoins = dedupMap.size;
+      for (const [, nets] of dedupMap) totalPairs += nets.size;
     } catch { /* ignore */ }
   }
 
@@ -501,6 +506,10 @@ async function showCoinList(ctx, page, searchQuery) {
 
   const totalActive = sel.length;
   const allCoinsCount = coinMap.size;
+  // Count total networks (pairs) from the deduped map
+  let allPairsCount = 0;
+  for (const [, nets] of coinMap) allPairsCount += nets.length;
+
   let headerText = `🪙 <b>SELECT COINS</b>\n\n`;
   headerText += `<blockquote>`;
   headerText += `Tap a coin to configure its networks.\n\n`;
@@ -510,7 +519,7 @@ async function showCoinList(ctx, page, searchQuery) {
   if (q) {
     headerText += `🔍 Search: "<b>${escapeHtml(q)}</b>"  ·  ${totalCoins} result${totalCoins !== 1 ? 's' : ''}\n`;
   }
-  headerText += `✅ <b>${totalActive}</b> active pairs  ·  🪙 <b>${allCoinsCount}</b> coins total`;
+  headerText += `✅ <b>${totalActive}</b> active pairs  ·  🪙 <b>${allCoinsCount}</b> coins  ·  🔗 <b>${allPairsCount}</b> networks`;
   headerText += `</blockquote>`;
 
   await ctx.editMessageText(headerText, { parse_mode: 'HTML', reply_markup: kb });
