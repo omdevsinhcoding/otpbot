@@ -83,7 +83,7 @@ function startCryptoAutoCheck(api, pool, orderId, uuid, userId, chatId, msgId, a
           try { await api.deleteMessage(chatId, msgId); } catch {}
           await api.sendMessage(chatId,
             `⏰ <b>Payment Expired</b>\n\n` +
-            `📋 <b>Order:</b> <code>${orderId}</code>\n\n` +
+            `🆔 <b>Payment:</b> <code>${uuid}</code>\n\n` +
             `<i>Payment time has expired. Please create a new order.</i>`,
             { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '💰 Deposit', callback_data: 'deposit:menu' }]] } }
           );
@@ -107,13 +107,15 @@ function startCryptoAutoCheck(api, pool, orderId, uuid, userId, chatId, msgId, a
 
         try { await api.deleteMessage(chatId, msgId); } catch {}
         await api.sendMessage(chatId,
-          `╔══════════════════════╗\n` +
-          `   ✅ <b>Payment Received!</b>\n` +
-          `╚══════════════════════╝\n\n` +
-          `💰 <b>Credited:</b> ₹${creditAmount.toFixed(2)}\n` +
-          `💳 <b>New Balance:</b> ₹${formatNumber(newBalance)}\n` +
-          `📋 <b>Order:</b> <code>${orderId}</code>\n\n` +
-          `🎉 <i>Your wallet has been updated!</i>`,
+          `🎊🎊🎊🎊🎊🎊🎊🎊🎊🎊🎊\n\n` +
+          `    💎 <b>PAYMENT SUCCESSFUL</b> 💎\n\n` +
+          `🎊🎊🎊🎊🎊🎊🎊🎊🎊🎊🎊\n\n` +
+          `┏━━━━━━━━━━━━━━━━━━━━━━┓\n` +
+          `┃  💰 <b>Credited:</b> ₹${creditAmount.toFixed(2)}\n` +
+          `┃  💳 <b>Balance:</b>  ₹${formatNumber(newBalance)}\n` +
+          `┃  🆔 <b>Payment:</b>  <code>${uuid}</code>\n` +
+          `┗━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
+          `⚡ <i>Credited instantly via blockchain</i> ⚡`,
           { parse_mode: 'HTML' }
         );
         logger.info(`[Crypto] ✅ ${orderId} ₹${creditAmount} → user ${userId}`);
@@ -128,7 +130,7 @@ function startCryptoAutoCheck(api, pool, orderId, uuid, userId, chatId, msgId, a
         try { await api.deleteMessage(chatId, msgId); } catch {}
         await api.sendMessage(chatId,
           `❌ <b>Payment Failed</b>\n\n` +
-          `📋 <b>Order:</b> <code>${orderId}</code>\n` +
+          `🆔 <b>Payment:</b> <code>${uuid}</code>\n` +
           `📊 <b>Status:</b> ${result.status}\n\n` +
           `<i>Please try again with a new order.</i>`,
           { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '💰 Deposit', callback_data: 'deposit:menu' }]] } }
@@ -878,7 +880,18 @@ async function handleCryptoWebDeposit(ctx, amount) {
   });
 
   if (!result.success) {
-    await ctx.reply(`⚠️ Failed to create invoice: ${result.error}`);
+    // Parse Cryptomus minimum amount error
+    const minMatch = result.error?.match(/(\d+\.?\d*)\s*INR/i);
+    if (minMatch) {
+      await ctx.reply(
+        `⚠️ <b>Amount Too Low</b>\n\n` +
+        `Cryptomus requires minimum <b>₹${Math.ceil(parseFloat(minMatch[1]))}</b> for this payment.\n\n` +
+        `<i>Please try again with a higher amount.</i>`,
+        { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Try Again', 'deposit:crypto').text('‹ Back', 'deposit:menu') }
+      );
+    } else {
+      await ctx.reply(`⚠️ Invoice error: ${result.error}`);
+    }
     return;
   }
 
@@ -906,7 +919,7 @@ async function handleCryptoWebDeposit(ctx, amount) {
     `🎯 <b>Payment Time Limit:</b> 60 Minutes\n` +
     `━━━━━━━━━━━━━━━━━━━━━\n` +
     `💰 <b>Amount:</b> ₹${amount.toFixed(2)}\n` +
-    `📋 <b>Order:</b> <code>${orderId}</code>\n` +
+    `🆔 <b>Payment ID:</b> <code>${result.uuid}</code>\n` +
     `${rateInfo}` +
     `━━━━━━━━━━━━━━━━━━━━━\n\n` +
     `Tap <b>Pay Now</b> to pay inside Telegram.\n` +
@@ -1016,21 +1029,50 @@ async function handleCryptomusDeposit(ctx, currency, network, amount) {
     return;
   }
 
+  // Fetch commission for this coin+network from Cryptomus
+  let commissionPercent = 0;
+  try {
+    const services = await cryptomusService.listServices(apiKey, merchantId);
+    const match = services.find(s => s.currency === currency && s.network === network);
+    if (match?.commission?.percent) {
+      commissionPercent = parseFloat(match.commission.percent) || 0;
+    }
+  } catch { /* fallback to 0% commission */ }
+
+  // Calculate: user pays amount + commission, gets credited original amount
+  const commissionAmount = commissionPercent > 0 ? Math.ceil(amount * commissionPercent) / 100 : 0;
+  const invoiceAmount = amount + commissionAmount;
+
   const orderId = `CX-${Date.now().toString().slice(-8)}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
   await walletRepo.ensureWallet(pool, ctx.from.id);
 
   const result = await cryptomusService.createInvoice(apiKey, merchantId, {
-    amount, currency: 'INR', toCurrency: currency, network, orderId,
+    amount: invoiceAmount, currency: 'INR', toCurrency: currency, network, orderId,
   });
 
   if (!result.success) {
-    await ctx.reply(`⚠️ Failed to create invoice: ${result.error}`);
+    const minMatch = result.error?.match(/(\d+\.?\d*)\s*INR/i);
+    if (minMatch) {
+      await ctx.reply(
+        `⚠️ <b>Amount Too Low</b>\n\n` +
+        `Cryptomus requires minimum <b>₹${Math.ceil(parseFloat(minMatch[1]))}</b> for ${_coinEmoji(currency)} <b>${currency}</b> on <b>${_networkLabel(network)}</b>.\n\n` +
+        `<i>Please try again with a higher amount.</i>`,
+        { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Try Again', 'deposit:crypto').text('‹ Back', 'deposit:menu') }
+      );
+    } else {
+      await ctx.reply(`⚠️ Invoice error: ${result.error}`);
+    }
     return;
   }
 
+  // Store original amount (what user gets credited), not invoice amount
   await transactionRepo.createTransaction(pool, {
     userId: ctx.from.id, gateway: 'cryptomus', orderId, amount,
-    gatewayData: { uuid: result.uuid, paymentUrl: result.paymentUrl, address: result.address, payAmount: result.payAmount, payCurrency: result.payCurrency, network: result.network },
+    gatewayData: {
+      uuid: result.uuid, paymentUrl: result.paymentUrl, address: result.address,
+      payAmount: result.payAmount, payCurrency: result.payCurrency, network: result.network,
+      commissionPercent, commissionAmount, invoiceAmount,
+    },
   });
 
   // Fetch live Binance P2P rate for display
@@ -1044,15 +1086,22 @@ async function handleCryptomusDeposit(ctx, currency, network, amount) {
                `💱 <b>Approx:</b> ${approxCrypto} ${currency}\n`;
   }
 
+  // Build commission display
+  const commissionLine = commissionPercent > 0
+    ? `💸 <b>Gateway Fee:</b> ${commissionPercent}% (₹${commissionAmount.toFixed(2)})\n` +
+      `💵 <b>Total Payable:</b> ₹${invoiceAmount.toFixed(2)}\n`
+    : '';
+
   const caption =
     `✨ <b>Invoice Generated</b>\n\n` +
     `🎯 <b>Payment Time Limit:</b> 60 Minutes\n` +
     `━━━━━━━━━━━━━━━━━━━━━\n` +
-    `💰 <b>Amount:</b> ₹${amount.toFixed(2)}\n` +
-    `🪙 <b>Amount Payable:</b> ${result.payAmount} ${result.payCurrency}\n` +
+    `💰 <b>Deposit Amount:</b> ₹${amount.toFixed(2)}\n` +
+    `${commissionLine}` +
+    `🪙 <b>Crypto Payable:</b> ${result.payAmount} ${result.payCurrency}\n` +
     `🚀 <b>Pay using:</b> ${result.payCurrency}\n` +
     `🔗 <b>Network:</b> ${nwDisplay}\n` +
-    `📋 <b>Order:</b> <code>${orderId}</code>\n` +
+    `🆔 <b>Payment ID:</b> <code>${result.uuid}</code>\n` +
     `${rateInfo}` +
     `━━━━━━━━━━━━━━━━━━━━━\n\n` +
     (result.address ? `🏦 <b>Payment Address:</b>\n<code>${result.address}</code>\n\n` : '') +
@@ -1070,7 +1119,7 @@ async function handleCryptomusDeposit(ctx, currency, network, amount) {
       storeName: `${currency} (${nwDisplay})`,
       amount: result.payAmount,
       currency: result.payCurrency + ' ',
-      refId: orderId,
+      refId: result.uuid,
       upiLink: result.address,
       developer: '@Erroroo',
       subtitle: 'Send exact amount to this address',
@@ -1142,13 +1191,15 @@ composer.callbackQuery(/^deposit:check_crypto:CX-/, async (ctx) => {
       try { await ctx.deleteMessage(); } catch { /* ignore */ }
       const newBalance = await walletRepo.getBalance(pool, ctx.from.id);
       await ctx.reply(
-        `╔══════════════════════╗\n` +
-        `   ✅ <b>Payment Received!</b>\n` +
-        `╚══════════════════════╝\n\n` +
-        `💰 <b>Credited:</b> ₹${creditAmount.toFixed(2)}\n` +
-        `💳 <b>New Balance:</b> ₹${formatNumber(newBalance)}\n` +
-        `📋 <b>Order:</b> <code>${orderId}</code>\n\n` +
-        `🎉 <i>Thank you!</i>`,
+        `🎊🎊🎊🎊🎊🎊🎊🎊🎊🎊🎊\n\n` +
+        `    💎 <b>PAYMENT SUCCESSFUL</b> 💎\n\n` +
+        `🎊🎊🎊🎊🎊🎊🎊🎊🎊🎊🎊\n\n` +
+        `┏━━━━━━━━━━━━━━━━━━━━━━┓\n` +
+        `┃  💰 <b>Credited:</b> ₹${creditAmount.toFixed(2)}\n` +
+        `┃  💳 <b>Balance:</b>  ₹${formatNumber(newBalance)}\n` +
+        `┃  🆔 <b>Payment:</b>  <code>${uuid}</code>\n` +
+        `┗━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
+        `⚡ <i>Credited instantly via blockchain</i> ⚡`,
         { parse_mode: 'HTML' }
       );
     } else {
@@ -1215,23 +1266,44 @@ composer.callbackQuery(/^deposit:cancel_txn:/, async (ctx) => {
   const txn = await transactionRepo.getByOrderId(pool, orderId);
 
   // Cancel on Cryptomus side if it's a crypto order with UUID
+  let cryptoCancelled = false;
   if (txn?.gateway_data?.uuid && orderId.startsWith('CX-')) {
     const apiKey = await settingsRepo.getSetting(pool, 'cryptomus_api_key');
     const merchantId = await settingsRepo.getSetting(pool, 'cryptomus_merchant_id');
     if (apiKey && merchantId) {
-      await cryptomusService.cancelPayment(apiKey, merchantId, txn.gateway_data.uuid).catch(() => {});
+      // Try cancel — retry once if first attempt fails
+      let cancelResult = await cryptomusService.cancelPayment(apiKey, merchantId, txn.gateway_data.uuid);
+      if (!cancelResult.success) {
+        // Retry once after 1 second
+        await new Promise(r => setTimeout(r, 1000));
+        cancelResult = await cryptomusService.cancelPayment(apiKey, merchantId, txn.gateway_data.uuid);
+      }
+      cryptoCancelled = cancelResult.success;
+      if (cryptoCancelled) {
+        logger.info(`[Cancel] ✅ Cryptomus cancelled: ${orderId} (uuid: ${txn.gateway_data.uuid})`);
+      } else {
+        logger.warn(`[Cancel] ⚠️ Cryptomus cancel failed: ${orderId} — ${cancelResult.error}`);
+      }
     }
   }
 
   await transactionRepo.updateStatus(pool, orderId, 'cancelled');
   try { await ctx.deleteMessage(); } catch { /* ignore */ }
+
+  const cancelStatus = orderId.startsWith('CX-')
+    ? (cryptoCancelled
+        ? `✅ <i>Cancelled on Cryptomus gateway</i>`
+        : `⚠️ <i>Bot-side cancelled. Gateway may take a few minutes to update.</i>`)
+    : '';
+
   await ctx.reply(
     `╔══════════════════════╗\n` +
     `   🚫 <b>Payment Cancelled</b>\n` +
     `╚══════════════════════╝\n\n` +
     `📋 <b>Order:</b> <code>${orderId}</code>\n` +
     `💰 <b>Amount:</b> ₹${txn ? parseFloat(txn.amount).toFixed(2) : '0.00'}\n\n` +
-    `<i>Order cancelled on both sides.\nYou can create a new order anytime.</i>`,
+    `${cancelStatus}\n` +
+    `<i>You can create a new order anytime.</i>`,
     { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💰 Deposit', 'deposit:menu') }
   );
 });

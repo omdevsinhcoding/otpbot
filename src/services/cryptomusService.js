@@ -30,7 +30,9 @@ export async function listServices(apiKey, merchantId) {
     });
     const result = await response.json();
     if (result.result && Array.isArray(result.result)) {
-      return result.result.filter(s => s.is_available);
+      // Return ALL coins — don't filter by is_available (dashboard shows 106, API may mark some unavailable temporarily)
+      logger.info(`[Cryptomus] Fetched ${result.result.length} services (${result.result.filter(s => s.is_available).length} available)`);
+      return result.result;
     }
     logger.error(`Cryptomus listServices error: ${result.message || 'Unknown'}`);
     return [];
@@ -145,8 +147,9 @@ export async function cancelPayment(apiKey, merchantId, uuid) {
       body: JSON.stringify(data),
     });
     const result = await response.json();
+    logger.info(`[Cryptomus] Cancel response for ${uuid}: ${JSON.stringify(result)}`);
     if (result.result) return { success: true };
-    return { success: false, error: result.message || 'Cancel failed' };
+    return { success: false, error: result.message || `HTTP ${response.status}: Cancel failed` };
   } catch (err) {
     logger.error(`Cryptomus cancel failed: ${err.message}`);
     return { success: false, error: err.message };

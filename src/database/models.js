@@ -195,7 +195,7 @@ export const DEFAULT_SETTINGS = {
   cryptomus_enabled: false,
   cryptomus_api_key: '',
   cryptomus_merchant_id: '',
-  cryptomus_min_amount: 1,
+  cryptomus_min_amount: 100,
   cryptomus_max_amount: 10000,
 };
 
