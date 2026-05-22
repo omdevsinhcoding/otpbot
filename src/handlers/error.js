@@ -14,6 +14,11 @@ export function setupErrorHandler(bot) {
     }
 
     if (e instanceof GrammyError) {
+      // Harmless — user double-clicked or message didn't change
+      if (e.description?.includes('message is not modified')) return;
+      // Harmless — callback query expired before we could answer
+      if (e.description?.includes('query is too old')) return;
+
       if (e.description?.includes('Forbidden') || e.description?.includes('blocked')) {
         logger.warn(`Forbidden (user blocked bot): ${e.description}`);
         return;
