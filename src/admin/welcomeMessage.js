@@ -180,7 +180,7 @@ composer.callbackQuery('welcome:buttons', adminRequired, async (ctx) => {
         const colorLabel = btn.color === 'success' ? '🟢' : btn.color === 'primary' ? '🔵' : btn.color === 'danger' ? '🔴' : '';
         const colorTag = colorLabel ? `${colorLabel} ` : '';
         text += `┃ ${i + 1}. ${colorTag}${escapeHtml(btn.text)} → ${truncateText(btn.url, 40)}\n`;
-        kb.text(`🗑 Remove #${i + 1}`, `welcome:remove_btn:${i}`).row();
+        kb.text(`✏️ #${i + 1}`, `welcome:edit_btn:${i}`).text(`🗑 #${i + 1}`, `welcome:remove_btn:${i}`).row();
       }
     });
   }
@@ -198,6 +198,36 @@ composer.callbackQuery('welcome:add_btn', adminRequired, async (ctx) => {
     'Send the button in format:\n' +
     '<code>Button Text | https://url</code>\n\n' +
     '<i>After sending, you will pick a color for the button.</i>',
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('❌ Cancel', 'welcome:cancel_edit') }
+  );
+});
+
+// ── Edit button ─────────────────────────────────────────────────
+composer.callbackQuery(/^welcome:edit_btn:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const idx = Number(ctx.callbackQuery.data.split(':')[2]);
+  const pool = ctx.dbPool;
+  const welcome = await welcomeRepo.getWelcomeMessage(pool);
+  if (!welcome) return;
+
+  const buttons = welcome.buttons || [];
+  const flat = buttons.flat();
+  if (idx < 0 || idx >= flat.length) {
+    await ctx.editMessageText('⚠️ Button not found.', {
+      reply_markup: new InlineKeyboard().text('‹ Back', 'welcome:buttons')
+    });
+    return;
+  }
+
+  const btn = flat[idx];
+  const colorLabel = btn.color === 'success' ? '🟢 Green' : btn.color === 'primary' ? '🔵 Blue' : btn.color === 'danger' ? '🔴 Red' : '⬜ Default';
+  states.set(ctx.chat.id, { step: 'edit_btn_text', data: { index: idx, welcomeId: welcome.id } });
+  await ctx.editMessageText(
+    `✏️ <b>Edit Button #${idx + 1}</b>\n\n` +
+    `Current:\n<code>${escapeHtml(btn.text)} | ${escapeHtml(btn.url)}</code>\n` +
+    `Color: ${colorLabel}\n\n` +
+    `Send the new button in format:\n<code>Button Text | https://url</code>\n\n` +
+    `<i>After sending, you will pick a new color.</i>`,
     { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('❌ Cancel', 'welcome:cancel_edit') }
   );
 });
@@ -256,6 +286,48 @@ composer.on('message:text', async (ctx, next) => {
         .text('🔘 Manage Buttons', 'welcome:buttons').row()
         .text('👁 Preview', 'welcome:preview').text('◀ Back', 'admin:welcome')
     });
+    return;
+  }
+
+  if (state.step === 'edit_btn_text') {
+    const parts = ctx.message.text.split('|').map(s => s.trim());
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      await ctx.reply('⚠️ Invalid format. Use: <code>Button Text | https://url</code>', {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('✏️ Try Again', `welcome:edit_btn:${state.data.index}`).text('‹ Back', 'welcome:buttons')
+      });
+      return;
+    }
+
+    let validUrl = false;
+    try {
+      const u = new URL(parts[1]);
+      validUrl = (u.protocol === 'http:' || u.protocol === 'https:') && u.hostname.includes('.');
+    } catch {}
+
+    if (!validUrl) {
+      await ctx.reply('⚠️ Invalid URL!', {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('✏️ Try Again', `welcome:edit_btn:${state.data.index}`).text('‹ Back', 'welcome:buttons')
+      });
+      return;
+    }
+
+    // Save new text/url, move to color picker
+    states.set(ctx.chat.id, { step: 'pick_edit_color', data: { ...state.data, btnText: parts[0], btnUrl: parts[1] } });
+
+    const colorKb = new InlineKeyboard();
+    for (const c of BUTTON_COLORS) {
+      colorKb.text(c.label, c.cb);
+      if (c.style) colorKb.style(c.style);
+      colorKb.row();
+    }
+    colorKb.text('❌ Cancel', 'welcome:cancel_edit');
+
+    await ctx.reply(
+      `🎨 <b>Pick a color for:</b> "${escapeHtml(parts[0])}"`,
+      { parse_mode: 'HTML', reply_markup: colorKb }
+    );
     return;
   }
 
@@ -320,12 +392,14 @@ composer.on('message:text', async (ctx, next) => {
 composer.callbackQuery(/^welcome:color:(.+)$/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const state = states.get(ctx.chat.id);
-  if (!state || state.step !== 'pick_color' || !state.data) {
+  if (!state || !['pick_color', 'pick_edit_color'].includes(state.step) || !state.data) {
     await ctx.editMessageText('⚠️ Session expired. Please try again.', {
       reply_markup: new InlineKeyboard().text('‹ Back', 'welcome:buttons')
     });
     return;
   }
+
+  const isEdit = state.step === 'pick_edit_color';
 
   const colorRaw = ctx.callbackQuery.data.split(':')[2];
   const color = colorRaw === 'none' ? '' : colorRaw; // 'success', 'primary', 'danger', or ''
@@ -343,13 +417,27 @@ composer.callbackQuery(/^welcome:color:(.+)$/, adminRequired, async (ctx) => {
   }
 
   const buttons = welcome.buttons || [];
-  buttons.push({ text: btnText, url: btnUrl, color: color || undefined });
-  await welcomeRepo.updateWelcomeButtons(pool, welcome.id, buttons);
+  const newBtn = { text: btnText, url: btnUrl, color: color || undefined };
+
+  if (isEdit && state.data.index !== undefined) {
+    // Replace existing button
+    const flat = buttons.flat();
+    if (state.data.index >= 0 && state.data.index < flat.length) {
+      flat[state.data.index] = newBtn;
+      // Rebuild as flat array
+      await welcomeRepo.updateWelcomeButtons(pool, welcome.id, flat);
+    }
+  } else {
+    // Add new button
+    buttons.push(newBtn);
+    await welcomeRepo.updateWelcomeButtons(pool, welcome.id, buttons);
+  }
   states.delete(ctx.chat.id);
 
   const colorLabel = color === 'success' ? '🟢 ' : color === 'primary' ? '🔵 ' : color === 'danger' ? '🔴 ' : '';
+  const actionLabel = isEdit ? 'updated' : 'added';
   await ctx.editMessageText(
-    `✅ Button ${colorLabel}"${escapeHtml(btnText)}" added!`,
+    `✅ Button ${colorLabel}"${escapeHtml(btnText)}" ${actionLabel}!`,
     { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔘 View Buttons', 'welcome:buttons').text('‹ Back', 'admin:welcome') }
   );
 });
