@@ -37,11 +37,7 @@ export async function checkForceJoin(ctx) {
       }
     }
 
-    // Read admin-configured button style
-    const btnStyle = await getSetting(pool, 'fj_btn_style') || 'success';
-    kb.text('✅ Joined', 'fjcheck:verify');
-    if (btnStyle) kb.style(btnStyle);
-    kb.row();
+    kb.text('✅ Joined', 'fjcheck:verify').style('success').row();
 
     // Build clickable user mention
     const firstName = ctx.from.first_name || 'User';
@@ -116,10 +112,7 @@ export async function verifyForceJoin(ctx) {
         kb.row();
       }
     }
-    kb.text('✅ Joined', 'fjcheck:verify');
-    const btnStyle2 = await getSetting(pool, 'fj_btn_style') || 'success';
-    if (btnStyle2) kb.style(btnStyle2);
-    kb.row();
+    kb.text('✅ Joined', 'fjcheck:verify').style('success').row();
 
     const totalRequired = channels.length;
     const joinedCount = totalRequired - notJoined.length;
