@@ -10,6 +10,7 @@ import * as binanceRate from '../services/binanceRateService.js';
 
 import { formatNumber, escapeHtml } from '../utils/formatters.js';
 import { generateBrandedQR } from '../services/qrImageService.js';
+import * as depositBenefitsService from '../services/depositBenefitsService.js';
 import logger from '../utils/logger.js';
 
 // ── Crypto display helpers ──────────────────────────────────────
@@ -36,6 +37,66 @@ function _networkLabel(nw) {
 
 const composer = new Composer();
 const userStates = new Map(); // chatId → { step, gateway, msgId }
+
+/**
+ * Premium deposit success message — unified across all gateways.
+ * @param {number} amount - Original deposit amount
+ * @param {number} newBalance - Balance after all adjustments
+ * @param {string} orderId
+ * @param {Object} [benefits] - Benefits calculation result (optional)
+ */
+function buildSuccessMessage(amount, newBalance, orderId, benefits = null) {
+  const now = new Date();
+  const day = String(now.getDate()).padStart(2, '0');
+  const mon = String(now.getMonth() + 1).padStart(2, '0');
+  const yr = now.getFullYear();
+  let hr = now.getHours();
+  const min = String(now.getMinutes()).padStart(2, '0');
+  const ampm = hr >= 12 ? 'PM' : 'AM';
+  hr = hr % 12 || 12;
+  const dateStr = `${day}-${mon}-${yr}  ${hr}:${min} ${ampm}`;
+
+  let msg =
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `     🔥 <b>Dᴇᴘᴏsɪᴛ Sᴜᴄᴄᴇssғᴜʟ</b> 🔥\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `<blockquote>` +
+    `⚡ <b>Aᴍᴏᴜɴᴛ :</b>  ₹${parseFloat(amount).toFixed(2)} INR\n` +
+    `💎 <b>Bᴀʟᴀɴᴄᴇ :</b>  ₹${formatNumber(newBalance)} INR\n` +
+    `🧾 <b>Oʀᴅᴇʀ  :</b>  <code>${orderId}</code>\n` +
+    `📅 <b>Dᴀᴛᴇ   :</b>  ${dateStr}` +
+    `</blockquote>\n\n`;
+
+  // Append benefits info if present
+  if (benefits && benefits.active && (benefits.taxAmount > 0 || benefits.bonusAmount > 0)) {
+    msg += benefits.userMessage + '\n\n';
+  }
+
+  msg += `💗 <i>Tʜᴀɴᴋs Fᴏʀ Yᴏᴜʀ Dᴇᴘᴏsɪᴛ!</i>`;
+  return msg;
+}
+
+/**
+ * Apply deposit benefits (tax/bonus) and return adjusted balance + message.
+ * Call AFTER walletRepo.addBalance() for the base deposit.
+ */
+async function applyBenefits(pool, userId, depositAmount, orderId) {
+  try {
+    const benefits = await depositBenefitsService.calculateBenefits(pool, userId, depositAmount, orderId);
+    if (!benefits.active) return { benefits: null, newBalance: await walletRepo.getBalance(pool, userId) };
+
+    // Apply net adjustment (bonus - tax) atomically
+    if (benefits.netAdjustment !== 0) {
+      await walletRepo.addBalance(pool, userId, benefits.netAdjustment);
+    }
+
+    const newBalance = await walletRepo.getBalance(pool, userId);
+    return { benefits, newBalance };
+  } catch (err) {
+    logger.error(`[Benefits] Apply error: ${err.message}`);
+    return { benefits: null, newBalance: await walletRepo.getBalance(pool, userId) };
+  }
+}
 
 // ── Per-user rate limit for Check Payment (anti-spam at 400K scale) ──
 const checkCooldowns = new Map(); // chatId → timestamp of last check
@@ -104,19 +165,10 @@ function startCryptoAutoCheck(api, pool, orderId, uuid, userId, chatId, msgId, a
         const updated = await transactionRepo.updateStatus(pool, orderId, 'success', uuid, { cryptomus_status: result.status });
         if (!updated) return; // already credited by PAID button
         await walletRepo.addBalance(pool, userId, creditAmount);
-        const newBalance = await walletRepo.getBalance(pool, userId);
+        const { benefits, newBalance } = await applyBenefits(pool, userId, creditAmount, orderId);
 
         try { await api.deleteMessage(chatId, msgId); } catch {}
-        await api.sendMessage(chatId,
-          `🎊🎊🎊🎊🎊🎊🎊🎊🎊🎊🎊\n\n` +
-          `    💎 <b>PAYMENT SUCCESSFUL</b> 💎\n\n` +
-          `🎊🎊🎊🎊🎊🎊🎊🎊🎊🎊🎊\n\n` +
-          `┏━━━━━━━━━━━━━━━━━━━━━━┓\n` +
-          `┃  💰 <b>Credited:</b> ₹${creditAmount.toFixed(2)}\n` +
-          `┃  💳 <b>Balance:</b>  ₹${formatNumber(newBalance)}\n` +
-          `┃  📋 <b>Order:</b>    <code>${orderId}</code>\n` +
-          `┗━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
-          `⚡ <i>Credited instantly via blockchain</i> ⚡`,
+        await api.sendMessage(chatId, buildSuccessMessage(creditAmount, newBalance, orderId, benefits),
           { parse_mode: 'HTML' }
         );
         logger.info(`[Crypto] ✅ ${orderId} ₹${creditAmount} → user ${userId}`);
@@ -486,12 +538,8 @@ async function _doPaytmCheck(ctx, pool, orderId) {
       });
       await walletRepo.addBalance(pool, ctx.from.id, creditAmount);
       try { await ctx.api.deleteMessage(ctx.chat.id, verifyMsg.message_id); } catch { /* ignore */ }
-      const newBalance = await walletRepo.getBalance(pool, ctx.from.id);
-      await ctx.reply(
-        `✅ <b>Payment Successful!</b>\n\n` +
-        `💰 <b>Amount:</b> ₹${creditAmount}\n` +
-        `💳 <b>New Balance:</b> ₹${formatNumber(newBalance)}\n\n` +
-        `Thank you! 🎉`,
+      const { benefits, newBalance } = await applyBenefits(pool, ctx.from.id, creditAmount, orderId);
+      await ctx.reply(buildSuccessMessage(creditAmount, newBalance, orderId, benefits),
         { parse_mode: 'HTML' }
       );
       return;
@@ -730,11 +778,8 @@ async function handleBharatpayUTR(ctx) {
     await transactionRepo.updateStatus(pool, orderId, 'success', utr, result);
     await walletRepo.addBalance(pool, ctx.from.id, result.amount);
 
-
-
-    const newBalance = await walletRepo.getBalance(pool, ctx.from.id);
-    await ctx.reply(
-      `✅ <b>Payment Verified!</b>\n\n💰 <b>Amount:</b> ₹${result.amount}\n👤 <b>Payer:</b> ${escapeHtml(result.payerName || 'N/A')}\n💳 <b>New Balance:</b> ₹${formatNumber(newBalance)}\n\n🎉 Thank you!`,
+    const { benefits, newBalance } = await applyBenefits(pool, ctx.from.id, result.amount, orderId);
+    await ctx.reply(buildSuccessMessage(result.amount, newBalance, orderId, benefits),
       { parse_mode: 'HTML' }
     );
   } else if (result.found && result.amount < minAmount) {
@@ -1195,17 +1240,8 @@ composer.callbackQuery(/^deposit:check_crypto:CX-/, async (ctx) => {
       }
       await walletRepo.addBalance(pool, ctx.from.id, creditAmount);
       try { await ctx.deleteMessage(); } catch { /* ignore */ }
-      const newBalance = await walletRepo.getBalance(pool, ctx.from.id);
-      await ctx.reply(
-        `🎊🎊🎊🎊🎊🎊🎊🎊🎊🎊🎊\n\n` +
-        `    💎 <b>PAYMENT SUCCESSFUL</b> 💎\n\n` +
-        `🎊🎊🎊🎊🎊🎊🎊🎊🎊🎊🎊\n\n` +
-        `┏━━━━━━━━━━━━━━━━━━━━━━┓\n` +
-        `┃  💰 <b>Credited:</b> ₹${creditAmount.toFixed(2)}\n` +
-        `┃  💳 <b>Balance:</b>  ₹${formatNumber(newBalance)}\n` +
-        `┃  📋 <b>Order:</b>    <code>${orderId}</code>\n` +
-        `┗━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
-        `⚡ <i>Credited instantly via blockchain</i> ⚡`,
+      const { benefits, newBalance } = await applyBenefits(pool, ctx.from.id, creditAmount, orderId);
+      await ctx.reply(buildSuccessMessage(creditAmount, newBalance, orderId, benefits),
         { parse_mode: 'HTML' }
       );
     } else {
@@ -1247,9 +1283,8 @@ composer.callbackQuery(/^deposit:check_crypto:CRYPTO_/, async (ctx) => {
     await transactionRepo.updateStatus(pool, orderId, 'success', uuid, result);
     await walletRepo.addBalance(pool, ctx.from.id, creditAmount);
     try { await ctx.deleteMessage(); } catch { /* ignore */ }
-    const newBalance = await walletRepo.getBalance(pool, ctx.from.id);
-    await ctx.reply(
-      `✅ <b>Crypto Payment Successful!</b>\n\n💰 <b>Credited:</b> ₹${creditAmount.toFixed(2)}\n💳 <b>New Balance:</b> ₹${formatNumber(newBalance)}\n\n🎉`,
+    const { benefits, newBalance } = await applyBenefits(pool, ctx.from.id, creditAmount, orderId);
+    await ctx.reply(buildSuccessMessage(creditAmount, newBalance, orderId, benefits),
       { parse_mode: 'HTML' }
     );
   } else {

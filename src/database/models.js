@@ -169,6 +169,45 @@ CREATE INDEX IF NOT EXISTS idx_txn_user ON transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_txn_status ON transactions(status);
 CREATE INDEX IF NOT EXISTS idx_txn_order ON transactions(order_id);
 CREATE INDEX IF NOT EXISTS idx_txn_expiry ON transactions(status, expires_at) WHERE status = 'pending';
+
+CREATE TABLE IF NOT EXISTS deposit_rules (
+    id              SERIAL PRIMARY KEY,
+    title           VARCHAR(255) NOT NULL,
+    emoji           VARCHAR(10) DEFAULT '🎁',
+    rule_type       VARCHAR(20) NOT NULL,
+    min_deposit     DECIMAL(12,2) DEFAULT 0,
+    max_deposit     DECIMAL(12,2) DEFAULT 0,
+    rolling_30d_min DECIMAL(12,2) DEFAULT 0,
+    percentage      DECIMAL(5,2) NOT NULL,
+    priority        INT NOT NULL DEFAULT 100,
+    is_enabled      BOOLEAN NOT NULL DEFAULT TRUE,
+    vip_only        BOOLEAN NOT NULL DEFAULT FALSE,
+    custom_message  TEXT DEFAULT '',
+    expires_at      TIMESTAMPTZ,
+    created_by      BIGINT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_deposit_rules_type ON deposit_rules(rule_type);
+CREATE INDEX IF NOT EXISTS idx_deposit_rules_priority ON deposit_rules(priority);
+CREATE INDEX IF NOT EXISTS idx_deposit_rules_enabled ON deposit_rules(is_enabled);
+
+CREATE TABLE IF NOT EXISTS bonus_history (
+    id              BIGSERIAL PRIMARY KEY,
+    user_id         BIGINT NOT NULL,
+    order_id        VARCHAR(100),
+    rule_id         INT,
+    rule_title      VARCHAR(255),
+    rule_type       VARCHAR(20) NOT NULL,
+    deposit_amount  DECIMAL(12,2) NOT NULL,
+    applied_pct     DECIMAL(5,2) NOT NULL,
+    bonus_amount    DECIMAL(12,2) NOT NULL,
+    rolling_30d     DECIMAL(12,2) DEFAULT 0,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_bonus_history_user ON bonus_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_bonus_history_order ON bonus_history(order_id);
+CREATE INDEX IF NOT EXISTS idx_bonus_history_created ON bonus_history(created_at);
 `;
 
 export const DEFAULT_SETTINGS = {
@@ -202,6 +241,7 @@ export const DEFAULT_SETTINGS = {
   tc_enabled: false,
   tc_buttons: [],
   tc_message: "Dear Users,\nThere Are Some Terms & Conditions Given Please Read Carefully, Else If You Face Any Problem Related To Terms And Conditions So We Can't Help You...",
+  deposit_benefits_enabled: false,
 };
 
 export async function initDb(pool) {
