@@ -83,7 +83,7 @@ function startCryptoAutoCheck(api, pool, orderId, uuid, userId, chatId, msgId, a
           try { await api.deleteMessage(chatId, msgId); } catch {}
           await api.sendMessage(chatId,
             `⏰ <b>Payment Expired</b>\n\n` +
-            `🆔 <b>Payment:</b> <code>${uuid}</code>\n\n` +
+            `📋 <b>Order:</b> <code>${orderId}</code>\n\n` +
             `<i>Payment time has expired. Please create a new order.</i>`,
             { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '💰 Deposit', callback_data: 'deposit:menu' }]] } }
           );
@@ -113,7 +113,7 @@ function startCryptoAutoCheck(api, pool, orderId, uuid, userId, chatId, msgId, a
           `┏━━━━━━━━━━━━━━━━━━━━━━┓\n` +
           `┃  💰 <b>Credited:</b> ₹${creditAmount.toFixed(2)}\n` +
           `┃  💳 <b>Balance:</b>  ₹${formatNumber(newBalance)}\n` +
-          `┃  🆔 <b>Payment:</b>  <code>${uuid}</code>\n` +
+          `┃  📋 <b>Order:</b>    <code>${orderId}</code>\n` +
           `┗━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
           `⚡ <i>Credited instantly via blockchain</i> ⚡`,
           { parse_mode: 'HTML' }
@@ -130,7 +130,7 @@ function startCryptoAutoCheck(api, pool, orderId, uuid, userId, chatId, msgId, a
         try { await api.deleteMessage(chatId, msgId); } catch {}
         await api.sendMessage(chatId,
           `❌ <b>Payment Failed</b>\n\n` +
-          `🆔 <b>Payment:</b> <code>${uuid}</code>\n` +
+          `📋 <b>Order:</b> <code>${orderId}</code>\n` +
           `📊 <b>Status:</b> ${result.status}\n\n` +
           `<i>Please try again with a new order.</i>`,
           { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '💰 Deposit', callback_data: 'deposit:menu' }]] } }
@@ -919,7 +919,7 @@ async function handleCryptoWebDeposit(ctx, amount) {
     `🎯 <b>Payment Time Limit:</b> 60 Minutes\n` +
     `━━━━━━━━━━━━━━━━━━━━━\n` +
     `💰 <b>Amount:</b> ₹${amount.toFixed(2)}\n` +
-    `🆔 <b>Payment ID:</b> <code>${result.uuid}</code>\n` +
+    `📋 <b>Order:</b> <code>${orderId}</code>\n` +
     `${rateInfo}` +
     `━━━━━━━━━━━━━━━━━━━━━\n\n` +
     `Tap <b>Pay Now</b> to pay inside Telegram.\n` +
@@ -1101,7 +1101,7 @@ async function handleCryptomusDeposit(ctx, currency, network, amount) {
     `🪙 <b>Crypto Payable:</b> ${result.payAmount} ${result.payCurrency}\n` +
     `🚀 <b>Pay using:</b> ${result.payCurrency}\n` +
     `🔗 <b>Network:</b> ${nwDisplay}\n` +
-    `🆔 <b>Payment ID:</b> <code>${result.uuid}</code>\n` +
+    `📋 <b>Order:</b> <code>${orderId}</code>\n` +
     `${rateInfo}` +
     `━━━━━━━━━━━━━━━━━━━━━\n\n` +
     (result.address ? `🏦 <b>Payment Address:</b>\n<code>${result.address}</code>\n\n` : '') +
@@ -1119,7 +1119,7 @@ async function handleCryptomusDeposit(ctx, currency, network, amount) {
       storeName: `${currency} (${nwDisplay})`,
       amount: result.payAmount,
       currency: result.payCurrency + ' ',
-      refId: result.uuid,
+      refId: orderId,
       upiLink: result.address,
       developer: '@Erroroo',
       subtitle: 'Send exact amount to this address',
@@ -1197,7 +1197,7 @@ composer.callbackQuery(/^deposit:check_crypto:CX-/, async (ctx) => {
         `┏━━━━━━━━━━━━━━━━━━━━━━┓\n` +
         `┃  💰 <b>Credited:</b> ₹${creditAmount.toFixed(2)}\n` +
         `┃  💳 <b>Balance:</b>  ₹${formatNumber(newBalance)}\n` +
-        `┃  🆔 <b>Payment:</b>  <code>${uuid}</code>\n` +
+        `┃  📋 <b>Order:</b>    <code>${orderId}</code>\n` +
         `┗━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
         `⚡ <i>Credited instantly via blockchain</i> ⚡`,
         { parse_mode: 'HTML' }
