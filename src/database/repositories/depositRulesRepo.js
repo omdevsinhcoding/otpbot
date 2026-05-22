@@ -7,13 +7,14 @@
 export async function createRule(pool, data) {
   const { rows } = await pool.query(
     `INSERT INTO deposit_rules 
-     (title, emoji, rule_type, min_deposit, max_deposit, rolling_30d_min,
+     (title, emoji, rule_type, min_deposit, max_deposit, rolling_30d_min, rolling_period_days,
       percentage, priority, is_enabled, vip_only, custom_message, expires_at, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
      RETURNING *`,
     [
       data.title, data.emoji || '🎁', data.rule_type,
       data.min_deposit || 0, data.max_deposit || 0, data.rolling_30d_min || 0,
+      data.rolling_period_days || 30,
       data.percentage, data.priority || 100, data.is_enabled !== false,
       data.vip_only || false, data.custom_message || '', data.expires_at || null,
       data.created_by || null,
@@ -103,15 +104,15 @@ export async function countRules(pool) {
   return rows[0];
 }
 
-// ── Rolling 30-day deposit ──────────────────────────────────────
+// ── Rolling deposit (custom period) ─────────────────────────────
 
-export async function getUserRolling30d(pool, userId) {
+export async function getUserRolling30d(pool, userId, days = 30) {
   const { rows } = await pool.query(
     `SELECT COALESCE(SUM(amount), 0)::numeric AS total
      FROM transactions
      WHERE user_id = $1 AND status = 'success'
-       AND created_at >= NOW() - INTERVAL '30 days'`,
-    [userId]
+       AND created_at >= NOW() - INTERVAL '1 day' * $2`,
+    [userId, days]
   );
   return parseFloat(rows[0].total) || 0;
 }

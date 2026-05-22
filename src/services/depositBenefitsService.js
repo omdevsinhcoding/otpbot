@@ -81,10 +81,17 @@ export async function calculateBenefits(pool, userId, depositAmount, orderId = n
     const rules = await depositRulesRepo.getActiveRules(pool);
     if (rules.length === 0) return result;
 
-    // Get user's rolling 30-day deposit total
-    result.rolling30d = await depositRulesRepo.getUserRolling30d(pool, userId);
+    // Cache rolling deposit totals per period (avoid duplicate queries)
+    const rollingCache = {};
+    async function getRolling(days) {
+      if (!rollingCache[days]) {
+        rollingCache[days] = await depositRulesRepo.getUserRolling30d(pool, userId, days);
+      }
+      return rollingCache[days];
+    }
 
-
+    // Get default 30-day for result display
+    result.rolling30d = await getRolling(30);
 
     // ── Tax pass: find highest-priority matching tax rule ──────
     const taxRules = rules.filter(r => r.rule_type === 'tax');
@@ -93,18 +100,21 @@ export async function calculateBenefits(pool, userId, depositAmount, orderId = n
         const pct = parseFloat(rule.percentage);
         result.taxAmount = Math.round(depositAmount * pct / 100 * 100) / 100;
         result.taxRule = rule;
-        break; // First match wins (highest priority)
+        break;
       }
     }
 
     // ── Bonus pass: find highest-priority matching bonus/loyalty rule
     const bonusRules = rules.filter(r => r.rule_type === 'bonus' || r.rule_type === 'loyalty_bonus');
     for (const rule of bonusRules) {
-      if (ruleMatches(rule, depositAmount, result.rolling30d)) {
+      // Use rule's custom period for loyalty rules
+      const period = parseInt(rule.rolling_period_days) || 30;
+      const rollingTotal = await getRolling(period);
+      if (ruleMatches(rule, depositAmount, rollingTotal)) {
         const pct = parseFloat(rule.percentage);
         result.bonusAmount = Math.round(depositAmount * pct / 100 * 100) / 100;
         result.bonusRule = rule;
-        break; // First match wins (highest priority)
+        break;
       }
     }
 

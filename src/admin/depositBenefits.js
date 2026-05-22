@@ -1,12 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════
-//  💎 DEPOSIT BENEFITS — Dead Simple Admin Panel
+//  💎 DEPOSIT BENEFITS — 100% Button-Based + Custom Fallback
 //
-//  Rules explained in plain language:
-//  • Tax:     "Deposits below ₹100 → 10% tax deducted"
-//  • Bonus:   "Deposits ₹500 or more → 5% extra bonus"
-//  • Loyalty: "30-day total ₹5000+ → 7% loyalty bonus"
-//
-//  Add a rule in 2 taps. No jargon. No VIP. No priority.
+//  Every value = button tap. Custom button → type ONE number.
+//  Custom day period for loyalty (not just 30 days).
 // ═══════════════════════════════════════════════════════════════════
 
 import { Composer, InlineKeyboard } from 'grammy';
@@ -23,60 +19,56 @@ const composer = new Composer();
 const states = new Map();
 registerAdminState(states);
 
+const ICONS = { tax: '💸', bonus: '🎁', loyalty_bonus: '🏆' };
+
 // ── Plain-language helpers ──────────────────────────────────────
 
-function describeTax(r) {
-  const max = parseFloat(r.max_deposit) || 0;
-  const pct = parseFloat(r.percentage);
-  if (max > 0) return `Deposits below ₹${formatNumber(max)} → ${pct}% tax deducted`;
-  return `All deposits → ${pct}% tax deducted`;
-}
-
-function describeBonus(r) {
-  const min = parseFloat(r.min_deposit) || 0;
-  const pct = parseFloat(r.percentage);
-  return `Deposits ₹${formatNumber(min)} or more → ${pct}% extra bonus`;
-}
-
-function describeLoyalty(r) {
-  const rolling = parseFloat(r.rolling_30d_min) || 0;
-  const pct = parseFloat(r.percentage);
-  return `30-day total ₹${formatNumber(rolling)}+ → ${pct}% loyalty bonus`;
-}
-
 function describeRule(r) {
-  if (r.rule_type === 'tax') return describeTax(r);
-  if (r.rule_type === 'bonus') return describeBonus(r);
-  return describeLoyalty(r);
+  const pct = parseFloat(r.percentage);
+  const days = parseInt(r.rolling_period_days) || 30;
+  if (r.rule_type === 'tax') {
+    const max = parseFloat(r.max_deposit) || 0;
+    return max > 0 ? `Deposits below ₹${formatNumber(max)} → ${pct}% tax` : `All deposits → ${pct}% tax`;
+  }
+  if (r.rule_type === 'bonus') {
+    const min = parseFloat(r.min_deposit) || 0;
+    return `Deposits ₹${formatNumber(min)}+ → ${pct}% bonus`;
+  }
+  const min = parseFloat(r.min_deposit) || 0;
+  const rolling = parseFloat(r.rolling_30d_min) || 0;
+  let desc = '';
+  if (min > 0) desc += `Deposit ₹${formatNumber(min)}+ AND `;
+  desc += `${days}-day total ₹${formatNumber(rolling)}+ → ${pct}% bonus`;
+  return desc;
 }
 
 function exampleCalc(r) {
   const pct = parseFloat(r.percentage);
   if (r.rule_type === 'tax') {
     const max = parseFloat(r.max_deposit) || 100;
-    const sample = Math.min(50, max);
-    const taxAmt = (sample * pct / 100).toFixed(0);
-    return `User deposits ₹${sample} → ₹${taxAmt} tax → Gets ₹${(sample - taxAmt).toFixed(0)}`;
+    const s = Math.min(50, max);
+    const t = Math.round(s * pct / 100);
+    return `₹${s} deposit → ₹${t} tax → Gets ₹${s - t}`;
   }
   if (r.rule_type === 'bonus') {
     const min = parseFloat(r.min_deposit) || 500;
-    const sample = min > 0 ? min : 500;
-    const bonusAmt = (sample * pct / 100).toFixed(0);
-    return `User deposits ₹${sample} → ₹${bonusAmt} bonus → Gets ₹${(+sample + +bonusAmt).toFixed(0)}`;
+    const s = Math.max(min, 100);
+    const b = Math.round(s * pct / 100);
+    return `₹${s} deposit → ₹${b} bonus → Gets ₹${s + b}`;
   }
-  const sample = 1000;
-  const bonusAmt = (sample * pct / 100).toFixed(0);
-  return `User deposits ₹${sample} → ₹${bonusAmt} extra bonus`;
+  const min = parseFloat(r.min_deposit) || 100;
+  const s = Math.max(min, 100);
+  const b = Math.round(s * pct / 100);
+  return `₹${s} deposit → ₹${b} bonus → Gets ₹${s + b}`;
 }
 
-const ICONS = { tax: '💸', bonus: '🎁', loyalty_bonus: '🏆' };
-
 // ═══════════════════════════════════════════════════════════════════
-//  DASHBOARD — Everything visible at a glance
+//  DASHBOARD
 // ═══════════════════════════════════════════════════════════════════
 
 composer.callbackQuery('admin:benefits', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
+  states.delete(ctx.chat.id);
   await showDashboard(ctx);
 });
 
@@ -84,341 +76,526 @@ async function showDashboard(ctx) {
   const pool = ctx.dbPool;
   const enabled = await settingsRepo.getSetting(pool, 'deposit_benefits_enabled');
   const rules = await depositRulesRepo.getAllRules(pool);
-
   const onoff = enabled ? '🟢 ON' : '🔴 OFF';
   const toggleBtn = enabled ? '🔴 Turn OFF' : '🟢 Turn ON';
 
-  let text = `💎 <b>Deposit Benefits</b>: ${onoff}\n`;
-
+  let text = `💎 <b>Deposit Benefits</b>  ${onoff}\n`;
   if (rules.length === 0) {
-    text += `\n<i>No rules yet.</i>\n\n`;
-    text += `<blockquote>` +
-      `<b>What is this?</b>\n\n` +
-      `You can set rules to automatically:\n` +
-      `• Charge tax on small deposits\n` +
-      `• Give bonus on big deposits\n` +
-      `• Reward users who deposit regularly\n\n` +
-      `Tap "➕ Add Rule" to get started.` +
-      `</blockquote>`;
+    text += `\n<blockquote><b>What is this?</b>\n\n` +
+      `Set automatic rules for deposits:\n` +
+      `• 💸 Charge tax on small deposits\n` +
+      `• 🎁 Give bonus on big deposits\n` +
+      `• 🏆 Reward loyal users\n\n` +
+      `Everything works with buttons!</blockquote>`;
   } else {
-    text += `\n<b>Your Rules:</b>\n\n`;
-    for (let i = 0; i < rules.length; i++) {
-      const r = rules[i];
-      const icon = ICONS[r.rule_type] || '📌';
-      const status = r.is_enabled ? '🟢' : '⚫';
-      text += `${status} ${icon} ${describeRule(r)}\n`;
-      text += `<i>   → ${exampleCalc(r)}</i>\n\n`;
+    text += `\n`;
+    for (const r of rules) {
+      const s = r.is_enabled ? '🟢' : '⚫';
+      text += `${s} ${ICONS[r.rule_type]} ${describeRule(r)}\n`;
+      text += `<i>   ${exampleCalc(r)}</i>\n\n`;
     }
   }
 
-  const kb = new InlineKeyboard()
-    .text(toggleBtn, 'benefits:toggle').row()
+  const kb = new InlineKeyboard().text(toggleBtn, 'benefits:toggle').row()
     .text('➕ Add Rule', 'benefits:add').row();
-
   if (rules.length > 0) {
-    kb.text('📋 Edit / Remove Rules', 'benefits:manage').row();
-    kb.text('🔮 Test Rules', 'benefits:test').text('📊 Stats', 'benefits:stats').row();
+    kb.text('📋 Edit / Remove', 'benefits:manage').row();
+    kb.text('🔮 Test', 'benefits:test').text('📊 Stats', 'benefits:stats').row();
   }
   kb.text('◀ Back', 'admin:back');
-
-  try {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
-  } catch {
-    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
-  }
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
 }
 
-// Toggle
 composer.callbackQuery('benefits:toggle', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
-  const pool = ctx.dbPool;
-  const cur = await settingsRepo.getSetting(pool, 'deposit_benefits_enabled');
-  await settingsRepo.setSetting(pool, 'deposit_benefits_enabled', !cur, ctx.from.id);
-  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED,
-    { action: 'toggle_benefits', enabled: !cur });
+  const cur = await settingsRepo.getSetting(ctx.dbPool, 'deposit_benefits_enabled');
+  await settingsRepo.setSetting(ctx.dbPool, 'deposit_benefits_enabled', !cur, ctx.from.id);
   await showDashboard(ctx);
 });
 
 // ═══════════════════════════════════════════════════════════════════
-//  ADD RULE — 2 taps, plain language
+//  ADD RULE WIZARD — All buttons + custom fallback
 // ═══════════════════════════════════════════════════════════════════
+
+// ── Step 1: Pick type ──
 
 composer.callbackQuery('benefits:add', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   states.delete(ctx.chat.id);
-
-  const text =
-    `➕ <b>What do you want to do?</b>\n\n` +
-    `<blockquote>` +
-    `💸 <b>Charge tax on small deposits</b>\n` +
-    `   Example: Deposits below ₹100 → 10% tax\n\n` +
-    `🎁 <b>Give bonus on big deposits</b>\n` +
-    `   Example: Deposits ₹500+ → 5% extra\n\n` +
-    `🏆 <b>Reward loyal depositors</b>\n` +
-    `   Example: 30-day total ₹5000+ → 7% bonus` +
-    `</blockquote>`;
-
+  const text = `➕ <b>What do you want to do?</b>\n\n<blockquote>` +
+    `💸 <b>Charge tax</b> on small deposits\n` +
+    `🎁 <b>Give bonus</b> on big deposits\n` +
+    `🏆 <b>Reward loyal</b> users</blockquote>`;
   const kb = new InlineKeyboard()
-    .text('💸 Charge Tax', 'benefits:create:tax').row()
-    .text('🎁 Give Bonus', 'benefits:create:bonus').row()
-    .text('🏆 Reward Loyalty', 'benefits:create:loyalty_bonus').row()
+    .text('💸 Charge Tax', 'bwiz:type:tax').row()
+    .text('🎁 Give Bonus', 'bwiz:type:bonus').row()
+    .text('🏆 Reward Loyalty', 'bwiz:type:loyalty_bonus').row()
     .text('◀ Back', 'admin:benefits');
-
-  try {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
-  } catch {
-    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
-  }
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
 });
 
-// Type selected → ask for 2 numbers
-composer.callbackQuery(/^benefits:create:/, adminRequired, async (ctx) => {
+// ── Step 2: Pick amount ──
+
+composer.callbackQuery(/^bwiz:type:/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
-  const type = ctx.callbackQuery.data.replace('benefits:create:', '');
-  states.set(ctx.chat.id, { step: 'input', type });
+  const type = ctx.callbackQuery.data.replace('bwiz:type:', '');
+  states.set(ctx.chat.id, { type });
+  await showAmountStep(ctx, type);
+});
 
-  let text;
+async function showAmountStep(ctx, type) {
+  let text, kb;
   if (type === 'tax') {
-    text =
-      `💸 <b>Tax Rule</b>\n\n` +
-      `Send two numbers:\n` +
-      `<b>Below what amount?</b>  and  <b>What % tax?</b>\n\n` +
-      `<code>100 10</code>\n\n` +
-      `<blockquote>` +
-      `This means:\n` +
-      `Deposits below ₹100 → 10% tax\n\n` +
-      `So if user deposits ₹50:\n` +
-      `₹50 - 10% tax (₹5) = User gets ₹45` +
-      `</blockquote>`;
+    text = `💸 <b>Tax deposits below which amount?</b>\n\n<i>Tap an amount or type your own:</i>`;
+    kb = new InlineKeyboard()
+      .text('Below ₹50', 'bwiz:amt1:50').text('Below ₹100', 'bwiz:amt1:100').row()
+      .text('Below ₹200', 'bwiz:amt1:200').text('Below ₹500', 'bwiz:amt1:500').row()
+      .text('Below ₹1000', 'bwiz:amt1:1000').text('Below ₹2000', 'bwiz:amt1:2000').row()
+      .text('✏️ Custom Amount', 'bwiz:custom:amt1').row()
+      .text('◀ Back', 'benefits:add');
   } else if (type === 'bonus') {
-    text =
-      `🎁 <b>Bonus Rule</b>\n\n` +
-      `Send two numbers:\n` +
-      `<b>Minimum deposit?</b>  and  <b>What % bonus?</b>\n\n` +
-      `<code>500 5</code>\n\n` +
-      `<blockquote>` +
-      `This means:\n` +
-      `Deposits ₹500 or more → 5% extra bonus\n\n` +
-      `So if user deposits ₹1000:\n` +
-      `₹1000 + 5% bonus (₹50) = User gets ₹1050` +
-      `</blockquote>`;
+    text = `🎁 <b>Give bonus on deposits above?</b>\n\n<i>Minimum deposit to qualify:</i>`;
+    kb = new InlineKeyboard()
+      .text('₹100+', 'bwiz:amt1:100').text('₹200+', 'bwiz:amt1:200').row()
+      .text('₹500+', 'bwiz:amt1:500').text('₹1000+', 'bwiz:amt1:1000').row()
+      .text('₹2000+', 'bwiz:amt1:2000').text('₹5000+', 'bwiz:amt1:5000').row()
+      .text('✏️ Custom Amount', 'bwiz:custom:amt1').row()
+      .text('◀ Back', 'benefits:add');
   } else {
-    text =
-      `🏆 <b>Loyalty Bonus</b>\n\n` +
-      `Send two numbers:\n` +
-      `<b>30-day deposit total?</b>  and  <b>What % bonus?</b>\n\n` +
-      `<code>5000 7</code>\n\n` +
-      `<blockquote>` +
-      `This means:\n` +
-      `Users who deposited ₹5000+ in last 30 days\n` +
-      `→ Get 7% extra bonus on every deposit\n\n` +
-      `So if user deposits ₹1000:\n` +
-      `₹1000 + 7% bonus (₹70) = User gets ₹1070` +
-      `</blockquote>`;
+    text = `🏆 <b>Minimum single deposit to qualify?</b>\n\n<i>User must deposit at least this much:</i>`;
+    kb = new InlineKeyboard()
+      .text('Any Amount', 'bwiz:amt1:0').row()
+      .text('₹50+', 'bwiz:amt1:50').text('₹100+', 'bwiz:amt1:100').row()
+      .text('₹200+', 'bwiz:amt1:200').text('₹500+', 'bwiz:amt1:500').row()
+      .text('₹1000+', 'bwiz:amt1:1000').text('₹2000+', 'bwiz:amt1:2000').row()
+      .text('✏️ Custom Amount', 'bwiz:custom:amt1').row()
+      .text('◀ Back', 'benefits:add');
   }
-
-  try {
-    await ctx.editMessageText(text, {
-      parse_mode: 'HTML',
-      reply_markup: new InlineKeyboard().text('◀ Go Back', 'benefits:add')
-    });
-  } catch {
-    await ctx.reply(text, {
-      parse_mode: 'HTML',
-      reply_markup: new InlineKeyboard().text('◀ Go Back', 'benefits:add')
-    });
-  }
-});
-
-// Parse input → create rule
-composer.on('message:text', async (ctx, next) => {
-  const state = states.get(ctx.chat?.id);
-  if (!state) return next();
-
-  const pool = ctx.dbPool;
-  const text = ctx.message.text.trim();
-
-  switch (state.step) {
-    case 'input': {
-      const nums = text.split(/[\s,]+/).map(Number);
-      if (nums.length < 2 || nums.some(isNaN)) {
-        await ctx.reply('⚠️ Send 2 numbers. Example: <code>100 10</code>', { parse_mode: 'HTML' });
-        return;
-      }
-
-      const [val1, pct] = nums;
-      if (pct <= 0 || pct > 100) { await ctx.reply('⚠️ Percentage must be between 1 and 100.'); return; }
-      if (val1 < 0) { await ctx.reply('⚠️ Amount cannot be negative.'); return; }
-
-      let ruleData;
-      if (state.type === 'tax') {
-        ruleData = {
-          rule_type: 'tax', emoji: '💸',
-          title: `${pct}% Tax (below ₹${formatNumber(val1)})`,
-          min_deposit: 0, max_deposit: val1, percentage: pct, rolling_30d_min: 0,
-        };
-      } else if (state.type === 'bonus') {
-        ruleData = {
-          rule_type: 'bonus', emoji: '🎁',
-          title: `${pct}% Bonus (₹${formatNumber(val1)}+)`,
-          min_deposit: val1, max_deposit: 0, percentage: pct, rolling_30d_min: 0,
-        };
-      } else {
-        ruleData = {
-          rule_type: 'loyalty_bonus', emoji: '🏆',
-          title: `${pct}% Loyalty (30d ₹${formatNumber(val1)}+)`,
-          min_deposit: 0, max_deposit: 0, percentage: pct, rolling_30d_min: val1,
-        };
-      }
-
-      // Check if similar rule exists
-      const existing = await depositRulesRepo.getAllRules(pool);
-      const conflict = existing.find(e => {
-        if (e.rule_type !== ruleData.rule_type) return false;
-        if (state.type === 'tax') return Math.abs(parseFloat(e.max_deposit) - val1) < 10;
-        if (state.type === 'bonus') return Math.abs(parseFloat(e.min_deposit) - val1) < 10;
-        return Math.abs(parseFloat(e.rolling_30d_min) - val1) < 100;
-      });
-
-      if (conflict) {
-        states.set(ctx.chat.id, { step: 'conflict', ruleData });
-        await ctx.reply(
-          `⚠️ <b>You already have a similar rule!</b>\n\n` +
-          `${ICONS[conflict.rule_type]} ${describeRule(conflict)}\n\n` +
-          `<i>Do you want to edit that rule, or create a new one anyway?</i>`,
-          { parse_mode: 'HTML', reply_markup: new InlineKeyboard()
-            .text('✏️ Edit Existing Rule', `benefits:edit:${conflict.id}`).row()
-            .text('✅ Create New Anyway', 'benefits:force_create').row()
-            .text('❌ Cancel', 'admin:benefits')
-          }
-        );
-        return;
-      }
-
-      // No conflict → create
-      await createRule(ctx, pool, ruleData);
-      states.delete(ctx.chat.id);
-      return;
-    }
-
-    case 'edit_pct': {
-      const pct = parseFloat(text);
-      if (isNaN(pct) || pct <= 0 || pct > 100) { await ctx.reply('⚠️ Enter a number between 1 and 100:'); return; }
-      await depositRulesRepo.updateRule(pool, state.ruleId, { percentage: pct });
-      // Auto-update title
-      const r = await depositRulesRepo.getRule(pool, state.ruleId);
-      if (r) await autoUpdateTitle(pool, r);
-      states.delete(ctx.chat.id);
-      await ctx.reply('✅ Percentage updated!');
-      await showEditScreen(ctx, state.ruleId);
-      return;
-    }
-
-    case 'edit_amount': {
-      const val = parseFloat(text);
-      if (isNaN(val) || val < 0) { await ctx.reply('⚠️ Enter a valid amount:'); return; }
-      const r = await depositRulesRepo.getRule(pool, state.ruleId);
-      if (!r) { states.delete(ctx.chat.id); return; }
-
-      if (r.rule_type === 'tax') {
-        await depositRulesRepo.updateRule(pool, state.ruleId, { max_deposit: val });
-      } else if (r.rule_type === 'bonus') {
-        await depositRulesRepo.updateRule(pool, state.ruleId, { min_deposit: val });
-      } else {
-        await depositRulesRepo.updateRule(pool, state.ruleId, { rolling_30d_min: val });
-      }
-      // Auto-update title
-      const updated = await depositRulesRepo.getRule(pool, state.ruleId);
-      if (updated) await autoUpdateTitle(pool, updated);
-      states.delete(ctx.chat.id);
-      await ctx.reply('✅ Amount updated!');
-      await showEditScreen(ctx, state.ruleId);
-      return;
-    }
-
-    case 'test_user': {
-      const userId = parseInt(text);
-      if (isNaN(userId)) { await ctx.reply('⚠️ Send a user ID (number):'); return; }
-      state.userId = userId;
-      state.step = 'test_amount';
-      states.set(ctx.chat.id, state);
-      await ctx.reply('💰 Now send the <b>deposit amount</b> to test:', { parse_mode: 'HTML' });
-      return;
-    }
-
-    case 'test_amount': {
-      const amount = parseFloat(text);
-      if (isNaN(amount) || amount <= 0) { await ctx.reply('⚠️ Send a positive amount:'); return; }
-      states.delete(ctx.chat.id);
-      await runTest(ctx, state.userId, amount);
-      return;
-    }
-
-    default:
-      return next();
-  }
-});
-
-// Auto-update title based on current values
-async function autoUpdateTitle(pool, r) {
-  let title;
-  if (r.rule_type === 'tax') {
-    title = `${parseFloat(r.percentage)}% Tax (below ₹${formatNumber(parseFloat(r.max_deposit))})`;
-  } else if (r.rule_type === 'bonus') {
-    title = `${parseFloat(r.percentage)}% Bonus (₹${formatNumber(parseFloat(r.min_deposit))}+)`;
-  } else {
-    title = `${parseFloat(r.percentage)}% Loyalty (30d ₹${formatNumber(parseFloat(r.rolling_30d_min))}+)`;
-  }
-  await depositRulesRepo.updateRule(pool, r.id, { title });
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
 }
 
-// Force create despite conflict
-composer.callbackQuery('benefits:force_create', adminRequired, async (ctx) => {
+// Amount selected
+composer.callbackQuery(/^bwiz:amt1:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const amt = parseInt(ctx.callbackQuery.data.replace('bwiz:amt1:', ''));
+  const state = states.get(ctx.chat.id);
+  if (!state) return;
+  state.amount1 = amt;
+  states.set(ctx.chat.id, state);
+
+  if (state.type === 'loyalty_bonus') {
+    await showDaysStep(ctx, state);
+  } else {
+    await showPctStep(ctx, state);
+  }
+});
+
+// ── Step 3 (Loyalty): Pick day period ──
+
+async function showDaysStep(ctx, state) {
+  const minLabel = state.amount1 > 0 ? `₹${formatNumber(state.amount1)}+` : 'Any amount';
+  const text =
+    `🏆 <b>Check deposits in how many days?</b>\n\n` +
+    `✅ Min deposit: <b>${minLabel}</b>\n\n` +
+    `<i>How far back should we count deposits?</i>`;
+
+  const kb = new InlineKeyboard()
+    .text('7 Days', 'bwiz:days:7').text('15 Days', 'bwiz:days:15').row()
+    .text('30 Days', 'bwiz:days:30').text('45 Days', 'bwiz:days:45').row()
+    .text('60 Days', 'bwiz:days:60').text('90 Days', 'bwiz:days:90').row()
+    .text('✏️ Custom Days', 'bwiz:custom:days').row()
+    .text('◀ Back', `bwiz:type:loyalty_bonus`);
+
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
+}
+
+composer.callbackQuery(/^bwiz:days:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const days = parseInt(ctx.callbackQuery.data.replace('bwiz:days:', ''));
+  const state = states.get(ctx.chat.id);
+  if (!state) return;
+  state.days = days;
+  states.set(ctx.chat.id, state);
+  await showRollingStep(ctx, state);
+});
+
+// ── Step 4 (Loyalty): Pick rolling total ──
+
+async function showRollingStep(ctx, state) {
+  const minLabel = state.amount1 > 0 ? `₹${formatNumber(state.amount1)}+` : 'Any';
+  const text =
+    `🏆 <b>Total deposit in ${state.days} days must be?</b>\n\n` +
+    `✅ Min deposit: <b>${minLabel}</b>\n` +
+    `✅ Period: <b>${state.days} days</b>\n\n` +
+    `<i>User's total deposits in last ${state.days} days must be at least:</i>`;
+
+  const kb = new InlineKeyboard()
+    .text('₹500+', 'bwiz:roll:500').text('₹1000+', 'bwiz:roll:1000').row()
+    .text('₹2000+', 'bwiz:roll:2000').text('₹3000+', 'bwiz:roll:3000').row()
+    .text('₹5000+', 'bwiz:roll:5000').text('₹10000+', 'bwiz:roll:10000').row()
+    .text('₹20000+', 'bwiz:roll:20000').text('₹50000+', 'bwiz:roll:50000').row()
+    .text('✏️ Custom Amount', 'bwiz:custom:roll').row()
+    .text('◀ Back', `bwiz:type:loyalty_bonus`);
+
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
+}
+
+composer.callbackQuery(/^bwiz:roll:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const rolling = parseInt(ctx.callbackQuery.data.replace('bwiz:roll:', ''));
+  const state = states.get(ctx.chat.id);
+  if (!state) return;
+  state.rolling = rolling;
+  states.set(ctx.chat.id, state);
+  await showPctStep(ctx, state);
+});
+
+// ── Percentage step (all types) ──
+
+async function showPctStep(ctx, state) {
+  const icon = ICONS[state.type];
+  let summary = '';
+  if (state.type === 'tax') {
+    summary = `Tax deposits below ₹${formatNumber(state.amount1)}`;
+  } else if (state.type === 'bonus') {
+    summary = `Bonus on deposits ₹${formatNumber(state.amount1)}+`;
+  } else {
+    const minLabel = state.amount1 > 0 ? `₹${formatNumber(state.amount1)}+` : 'Any';
+    summary = `Min: ${minLabel} | ${state.days}-day total: ₹${formatNumber(state.rolling)}+`;
+  }
+
+  const label = state.type === 'tax' ? 'How much tax?' : 'How much bonus?';
+  const text = `${icon} <b>${label}</b>\n\n✅ ${summary}\n\n<i>Tap the percentage:</i>`;
+
+  const kb = new InlineKeyboard()
+    .text('1%', 'bwiz:pct:1').text('2%', 'bwiz:pct:2').text('3%', 'bwiz:pct:3').row()
+    .text('5%', 'bwiz:pct:5').text('7%', 'bwiz:pct:7').text('8%', 'bwiz:pct:8').row()
+    .text('10%', 'bwiz:pct:10').text('12%', 'bwiz:pct:12').text('15%', 'bwiz:pct:15').row()
+    .text('20%', 'bwiz:pct:20').text('25%', 'bwiz:pct:25').text('50%', 'bwiz:pct:50').row()
+    .text('✏️ Custom %', 'bwiz:custom:pct').row()
+    .text('◀ Back', `bwiz:type:${state.type}`);
+
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
+}
+
+composer.callbackQuery(/^bwiz:pct:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const pct = parseInt(ctx.callbackQuery.data.replace('bwiz:pct:', ''));
+  const state = states.get(ctx.chat.id);
+  if (!state) return;
+  state.pct = pct;
+  states.set(ctx.chat.id, state);
+  await showConfirmStep(ctx, state);
+});
+
+// ── Confirm step ──
+
+async function showConfirmStep(ctx, state) {
+  const icon = ICONS[state.type];
+  let ruleDesc, example;
+
+  if (state.type === 'tax') {
+    ruleDesc = `Deposits below ₹${formatNumber(state.amount1)} → ${state.pct}% tax`;
+    const s = Math.min(50, state.amount1);
+    const t = Math.round(s * state.pct / 100);
+    example = `User deposits ₹${s} → ₹${t} tax → Gets ₹${s - t}`;
+  } else if (state.type === 'bonus') {
+    ruleDesc = `Deposits ₹${formatNumber(state.amount1)}+ → ${state.pct}% bonus`;
+    const s = state.amount1;
+    const b = Math.round(s * state.pct / 100);
+    example = `User deposits ₹${s} → ₹${b} bonus → Gets ₹${s + b}`;
+  } else {
+    const minLabel = state.amount1 > 0 ? `Deposit ₹${formatNumber(state.amount1)}+ AND ` : '';
+    ruleDesc = `${minLabel}${state.days}-day total ₹${formatNumber(state.rolling)}+ → ${state.pct}% bonus`;
+    const s = Math.max(state.amount1 || 100, 100);
+    const b = Math.round(s * state.pct / 100);
+    example = `User deposits ₹${s} (${state.days}-day total ₹${formatNumber(state.rolling)}+) → ₹${b} bonus → Gets ₹${s + b}`;
+  }
+
+  const text =
+    `${icon} <b>Confirm Rule</b>\n\n` +
+    `<blockquote>${ruleDesc}\n\n<b>Example:</b>\n${example}</blockquote>\n\n` +
+    `<i>Is this correct?</i>`;
+
+  const kb = new InlineKeyboard()
+    .text('✅ Yes, Create', 'bwiz:save').row()
+    .text('◀ Change', `bwiz:type:${state.type}`).text('❌ Cancel', 'admin:benefits');
+
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
+}
+
+// ── Save ──
+
+composer.callbackQuery('bwiz:save', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const state = states.get(ctx.chat.id);
-  if (!state?.ruleData) {
-    await ctx.reply('⚠️ Session expired.', { reply_markup: new InlineKeyboard().text('◀ Back', 'admin:benefits') });
+  if (!state) { await ctx.editMessageText('⚠️ Session expired.', { reply_markup: new InlineKeyboard().text('◀ Back', 'admin:benefits') }); return; }
+
+  const pool = ctx.dbPool;
+  const days = state.days || 30;
+  let ruleData;
+
+  if (state.type === 'tax') {
+    ruleData = { rule_type: 'tax', emoji: '💸',
+      title: `${state.pct}% Tax (below ₹${formatNumber(state.amount1)})`,
+      min_deposit: 0, max_deposit: state.amount1, percentage: state.pct, rolling_30d_min: 0, rolling_period_days: 30 };
+  } else if (state.type === 'bonus') {
+    ruleData = { rule_type: 'bonus', emoji: '🎁',
+      title: `${state.pct}% Bonus (₹${formatNumber(state.amount1)}+)`,
+      min_deposit: state.amount1, max_deposit: 0, percentage: state.pct, rolling_30d_min: 0, rolling_period_days: 30 };
+  } else {
+    const min = state.amount1 || 0;
+    ruleData = { rule_type: 'loyalty_bonus', emoji: '🏆',
+      title: min > 0
+        ? `${state.pct}% Loyalty (₹${formatNumber(min)}+ & ${days}d ₹${formatNumber(state.rolling)}+)`
+        : `${state.pct}% Loyalty (${days}d ₹${formatNumber(state.rolling)}+)`,
+      min_deposit: min, max_deposit: 0, percentage: state.pct, rolling_30d_min: state.rolling, rolling_period_days: days };
+  }
+
+  // Conflict check
+  const existing = await depositRulesRepo.getAllRules(pool);
+  const conflict = existing.find(e => {
+    if (e.rule_type !== ruleData.rule_type) return false;
+    if (state.type === 'tax') return Math.abs(parseFloat(e.max_deposit) - state.amount1) < 10;
+    if (state.type === 'bonus') return Math.abs(parseFloat(e.min_deposit) - state.amount1) < 10;
+    return Math.abs(parseFloat(e.rolling_30d_min) - (state.rolling || 0)) < 100;
+  });
+
+  if (conflict) {
+    states.set(ctx.chat.id, { ...state, ruleData });
+    await ctx.editMessageText(
+      `⚠️ <b>Similar rule exists!</b>\n\n${ICONS[conflict.rule_type]} ${describeRule(conflict)}\n\n<i>Edit existing or create new?</i>`,
+      { parse_mode: 'HTML', reply_markup: new InlineKeyboard()
+        .text('✏️ Edit Existing', `benefits:edit:${conflict.id}`).row()
+        .text('✅ Create Anyway', 'bwiz:force').row()
+        .text('❌ Cancel', 'admin:benefits') }
+    );
     return;
   }
-  await createRule(ctx, ctx.dbPool, state.ruleData);
+
+  await saveRule(ctx, pool, ruleData);
   states.delete(ctx.chat.id);
 });
 
-// Helper: create and show success
-async function createRule(ctx, pool, data) {
+composer.callbackQuery('bwiz:force', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const state = states.get(ctx.chat.id);
+  if (!state?.ruleData) { await ctx.editMessageText('⚠️ Expired.', { reply_markup: new InlineKeyboard().text('◀ Back', 'admin:benefits') }); return; }
+  await saveRule(ctx, ctx.dbPool, state.ruleData);
+  states.delete(ctx.chat.id);
+});
+
+async function saveRule(ctx, pool, data) {
   const existing = await depositRulesRepo.getAllRules(pool);
   const sameType = existing.filter(e => e.rule_type === data.rule_type);
   const priority = sameType.reduce((max, e) => Math.max(max, e.priority), 0) + 10;
-
-  const saved = await depositRulesRepo.createRule(pool, {
-    ...data, priority, created_by: ctx.from.id,
-  });
-
+  const saved = await depositRulesRepo.createRule(pool, { ...data, priority, created_by: ctx.from.id });
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED,
     { action: 'add_deposit_rule', rule_id: saved.id, title: saved.title });
 
-  const icon = ICONS[saved.rule_type];
-  const desc = describeRule(saved);
-  const example = exampleCalc(saved);
-
-  const msg =
-    `✅ <b>Rule Created!</b>\n\n` +
-    `${icon} ${desc}\n\n` +
-    `<blockquote>${example}</blockquote>`;
-
-  const kb = new InlineKeyboard()
-    .text('➕ Add Another Rule', 'benefits:add').row()
-    .text('◀ Back to Dashboard', 'admin:benefits');
-
-  try {
-    await ctx.editMessageText(msg, { parse_mode: 'HTML', reply_markup: kb });
-  } catch {
-    await ctx.reply(msg, { parse_mode: 'HTML', reply_markup: kb });
-  }
+  const msg = `✅ <b>Rule Created!</b>\n\n${ICONS[saved.rule_type]} ${describeRule(saved)}\n<i>${exampleCalc(saved)}</i>`;
+  const kb = new InlineKeyboard().text('➕ Add Another', 'benefits:add').row().text('◀ Dashboard', 'admin:benefits');
+  try { await ctx.editMessageText(msg, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(msg, { parse_mode: 'HTML', reply_markup: kb }); }
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  MANAGE RULES — Simple list with edit/on-off/delete
+//  CUSTOM INPUT HANDLERS — For when preset buttons aren't enough
+// ═══════════════════════════════════════════════════════════════════
+
+// Custom amount trigger
+composer.callbackQuery('bwiz:custom:amt1', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const state = states.get(ctx.chat.id);
+  if (!state) return;
+  state.customStep = 'amt1';
+  states.set(ctx.chat.id, state);
+  const hint = state.type === 'tax' ? 'below what amount?' : 'minimum deposit?';
+  await ctx.editMessageText(`✏️ Type the amount (${hint}):`, {
+    parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Cancel', `bwiz:type:${state.type}`)
+  });
+});
+
+// Custom days trigger
+composer.callbackQuery('bwiz:custom:days', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const state = states.get(ctx.chat.id);
+  if (!state) return;
+  state.customStep = 'days';
+  states.set(ctx.chat.id, state);
+  await ctx.editMessageText(`✏️ Type number of days (e.g. 50):`, {
+    parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Cancel', `bwiz:type:loyalty_bonus`)
+  });
+});
+
+// Custom rolling amount trigger
+composer.callbackQuery('bwiz:custom:roll', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const state = states.get(ctx.chat.id);
+  if (!state) return;
+  state.customStep = 'roll';
+  states.set(ctx.chat.id, state);
+  await ctx.editMessageText(`✏️ Type the total deposit amount needed in ${state.days} days:`, {
+    parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Cancel', `bwiz:type:loyalty_bonus`)
+  });
+});
+
+// Custom percentage trigger
+composer.callbackQuery('bwiz:custom:pct', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const state = states.get(ctx.chat.id);
+  if (!state) return;
+  state.customStep = 'pct';
+  states.set(ctx.chat.id, state);
+  await ctx.editMessageText(`✏️ Type the percentage (1–100):`, {
+    parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Cancel', `bwiz:type:${state.type}`)
+  });
+});
+
+// Custom edit triggers
+composer.callbackQuery(/^bedit:custom:/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const parts = ctx.callbackQuery.data.split(':');
+  // bedit:custom:pct:5  or  bedit:custom:amt:5  or  bedit:custom:min:5  or  bedit:custom:days:5  or  bedit:custom:roll:5
+  const field = parts[2];
+  const id = parseInt(parts[3]);
+  const state = states.get(ctx.chat.id) || {};
+  state.editField = field;
+  state.editId = id;
+  states.set(ctx.chat.id, state);
+
+  const hints = {
+    pct: 'Type the new percentage (1–100):',
+    amt: 'Type the new amount:',
+    min: 'Type the new minimum deposit (0 = any):',
+    days: 'Type the number of days:',
+    roll: 'Type the total deposit needed:',
+  };
+
+  await ctx.editMessageText(`✏️ ${hints[field] || 'Type the value:'}`, {
+    parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Cancel', `benefits:edit:${id}`)
+  });
+});
+
+// ── Text input handler for ALL custom values ──
+
+composer.on('message:text', async (ctx, next) => {
+  const state = states.get(ctx.chat?.id);
+  if (!state) return next();
+  const pool = ctx.dbPool;
+  const input = ctx.message.text.trim();
+  const num = parseFloat(input);
+
+  // ── Wizard custom inputs ──
+  if (state.customStep) {
+    if (isNaN(num) || num < 0) { await ctx.reply('⚠️ Enter a valid positive number:'); return; }
+
+    if (state.customStep === 'amt1') {
+      state.amount1 = num;
+      delete state.customStep;
+      states.set(ctx.chat.id, state);
+      if (state.type === 'loyalty_bonus') await showDaysStep(ctx, state);
+      else await showPctStep(ctx, state);
+      return;
+    }
+    if (state.customStep === 'days') {
+      if (num < 1 || num > 365) { await ctx.reply('⚠️ Days must be 1–365:'); return; }
+      state.days = Math.round(num);
+      delete state.customStep;
+      states.set(ctx.chat.id, state);
+      await showRollingStep(ctx, state);
+      return;
+    }
+    if (state.customStep === 'roll') {
+      state.rolling = num;
+      delete state.customStep;
+      states.set(ctx.chat.id, state);
+      await showPctStep(ctx, state);
+      return;
+    }
+    if (state.customStep === 'pct') {
+      if (num <= 0 || num > 100) { await ctx.reply('⚠️ Percentage must be 1–100:'); return; }
+      state.pct = num;
+      delete state.customStep;
+      states.set(ctx.chat.id, state);
+      await showConfirmStep(ctx, state);
+      return;
+    }
+  }
+
+  // ── Edit custom inputs ──
+  if (state.editField && state.editId) {
+    if (isNaN(num) || num < 0) { await ctx.reply('⚠️ Enter a valid positive number:'); return; }
+    const id = state.editId;
+    const field = state.editField;
+    const r = await depositRulesRepo.getRule(pool, id);
+    if (!r) { states.delete(ctx.chat.id); return; }
+
+    if (field === 'pct') {
+      if (num <= 0 || num > 100) { await ctx.reply('⚠️ Percentage must be 1–100:'); return; }
+      await depositRulesRepo.updateRule(pool, id, { percentage: num });
+    } else if (field === 'amt') {
+      if (r.rule_type === 'tax') await depositRulesRepo.updateRule(pool, id, { max_deposit: num });
+      else if (r.rule_type === 'bonus') await depositRulesRepo.updateRule(pool, id, { min_deposit: num });
+      else await depositRulesRepo.updateRule(pool, id, { rolling_30d_min: num });
+    } else if (field === 'min') {
+      await depositRulesRepo.updateRule(pool, id, { min_deposit: num });
+    } else if (field === 'days') {
+      if (num < 1 || num > 365) { await ctx.reply('⚠️ Days must be 1–365:'); return; }
+      await depositRulesRepo.updateRule(pool, id, { rolling_period_days: Math.round(num) });
+    } else if (field === 'roll') {
+      await depositRulesRepo.updateRule(pool, id, { rolling_30d_min: num });
+    }
+
+    const updated = await depositRulesRepo.getRule(pool, id);
+    if (updated) await autoTitle(pool, updated);
+    states.delete(ctx.chat.id);
+    await ctx.reply('✅ Updated!');
+    await showEdit(ctx, id);
+    return;
+  }
+
+  // ── Test simulator ──
+  if (state.step === 'test_user') {
+    const userId = parseInt(input);
+    if (isNaN(userId)) { await ctx.reply('⚠️ Send a user ID (number):'); return; }
+    state.userId = userId;
+    state.step = 'test_amount';
+    states.set(ctx.chat.id, state);
+    await ctx.reply('💰 Now send the <b>deposit amount</b>:', { parse_mode: 'HTML' });
+    return;
+  }
+  if (state.step === 'test_amount') {
+    const amount = parseFloat(input);
+    if (isNaN(amount) || amount <= 0) { await ctx.reply('⚠️ Send a positive amount:'); return; }
+    states.delete(ctx.chat.id);
+    const benefits = await depositBenefitsService.calculateBenefits(pool, state.userId, amount, null, true);
+    let text = `🔮 <b>Test Result</b>\n\n👤 User: <code>${state.userId}</code>\n💰 Deposit: ₹${amount.toFixed(2)}\n\n<blockquote>`;
+    if (!benefits.active) { text += `System is OFF\nUser gets: ₹${amount.toFixed(2)}`; }
+    else {
+      if (benefits.taxRule) text += `💸 Tax: ${parseFloat(benefits.taxRule.percentage)}% = -₹${benefits.taxAmount.toFixed(2)}\n`;
+      if (benefits.bonusRule) text += `🎁 Bonus: +${parseFloat(benefits.bonusRule.percentage)}% = +₹${benefits.bonusAmount.toFixed(2)}\n`;
+      if (!benefits.taxRule && !benefits.bonusRule) text += `No rules matched.\n`;
+      text += `\n<b>User gets: ₹${benefits.creditAmount.toFixed(2)}</b>`;
+    }
+    text += `</blockquote>`;
+    await ctx.reply(text, { parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard().text('🔮 Test Again', 'benefits:test').text('◀ Dashboard', 'admin:benefits') });
+    return;
+  }
+
+  return next();
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  MANAGE RULES
 // ═══════════════════════════════════════════════════════════════════
 
 composer.callbackQuery('benefits:manage', adminRequired, async (ctx) => {
@@ -428,270 +605,282 @@ composer.callbackQuery('benefits:manage', adminRequired, async (ctx) => {
 
 async function showManage(ctx) {
   const rules = await depositRulesRepo.getAllRules(ctx.dbPool);
-
   if (rules.length === 0) {
-    try {
-      await ctx.editMessageText('📋 No rules yet.', {
-        reply_markup: new InlineKeyboard().text('➕ Add Rule', 'benefits:add').text('◀ Back', 'admin:benefits')
-      });
-    } catch {
-      await ctx.reply('📋 No rules yet.', {
-        reply_markup: new InlineKeyboard().text('➕ Add Rule', 'benefits:add').text('◀ Back', 'admin:benefits')
-      });
-    }
-    return;
+    try { await ctx.editMessageText('📋 No rules yet.', {
+      reply_markup: new InlineKeyboard().text('➕ Add Rule', 'benefits:add').text('◀ Back', 'admin:benefits')
+    }); } catch {} return;
   }
-
-  let text = `📋 <b>Your Rules</b>\n\n<i>Tap a rule to edit or remove it.</i>\n\n`;
-
+  let text = `📋 <b>Your Rules</b>\n\n<i>Tap a rule to edit:</i>\n\n`;
   for (const r of rules) {
-    const status = r.is_enabled ? '🟢' : '⚫';
-    const icon = ICONS[r.rule_type] || '📌';
-    text += `${status} ${icon} ${describeRule(r)}\n\n`;
+    text += `${r.is_enabled ? '🟢' : '⚫'} ${ICONS[r.rule_type]} ${describeRule(r)}\n\n`;
   }
-
   const kb = new InlineKeyboard();
   for (const r of rules) {
-    const shortDesc = r.rule_type === 'tax'
-      ? `💸 ${parseFloat(r.percentage)}% Tax`
-      : r.rule_type === 'bonus'
-        ? `🎁 ${parseFloat(r.percentage)}% Bonus`
+    const l = r.rule_type === 'tax' ? `💸 ${parseFloat(r.percentage)}% Tax`
+      : r.rule_type === 'bonus' ? `🎁 ${parseFloat(r.percentage)}% Bonus`
         : `🏆 ${parseFloat(r.percentage)}% Loyalty`;
-    kb.text(shortDesc, `benefits:edit:${r.id}`).row();
+    kb.text(l, `benefits:edit:${r.id}`).row();
   }
-  kb.text('➕ Add Rule', 'benefits:add').row();
-  kb.text('◀ Back', 'admin:benefits');
-
-  try {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
-  } catch {
-    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
-  }
+  kb.text('➕ Add Rule', 'benefits:add').row().text('◀ Dashboard', 'admin:benefits');
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  EDIT RULE — Only 2 things to change: amount and percentage
+//  EDIT RULE — Buttons + custom fallback
 // ═══════════════════════════════════════════════════════════════════
 
 composer.callbackQuery(/^benefits:edit:\d+$/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   states.delete(ctx.chat.id);
   const id = parseInt(ctx.callbackQuery.data.split(':')[2]);
-  await showEditScreen(ctx, id);
+  await showEdit(ctx, id);
 });
 
-async function showEditScreen(ctx, id) {
+async function showEdit(ctx, id) {
   const r = await depositRulesRepo.getRule(ctx.dbPool, id);
   if (!r) {
-    try {
-      await ctx.editMessageText('⚠️ Rule not found.', { reply_markup: new InlineKeyboard().text('◀ Back', 'admin:benefits') });
-    } catch {
-      await ctx.reply('⚠️ Rule not found.', { reply_markup: new InlineKeyboard().text('◀ Back', 'admin:benefits') });
-    }
+    try { await ctx.editMessageText('⚠️ Not found.', { reply_markup: new InlineKeyboard().text('◀ Back', 'benefits:manage') }); } catch {}
     return;
   }
 
-  const icon = ICONS[r.rule_type] || '📌';
+  const icon = ICONS[r.rule_type];
   const status = r.is_enabled ? '🟢 Active' : '⚫ Off';
-  const desc = describeRule(r);
-  const example = exampleCalc(r);
-
-  const amountLabel = r.rule_type === 'tax'
-    ? `💰 Change Amount (now: ₹${formatNumber(parseFloat(r.max_deposit))})`
-    : r.rule_type === 'bonus'
-      ? `💰 Change Amount (now: ₹${formatNumber(parseFloat(r.min_deposit))})`
-      : `💰 Change Amount (now: ₹${formatNumber(parseFloat(r.rolling_30d_min))})`;
-
   const toggleLabel = r.is_enabled ? '⚫ Turn Off' : '🟢 Turn On';
+  const days = parseInt(r.rolling_period_days) || 30;
 
-  let text =
-    `✏️ <b>Edit Rule</b>\n\n` +
-    `${icon} ${desc}\n` +
-    `Status: ${status}\n\n` +
-    `<blockquote>${example}</blockquote>`;
+  let text = `✏️ <b>Edit Rule</b>\n\n${icon} ${describeRule(r)}\nStatus: ${status}\n\n<blockquote>${exampleCalc(r)}</blockquote>\n\n<i>What to change?</i>`;
 
   const kb = new InlineKeyboard()
-    .text(`📊 Change % (now: ${parseFloat(r.percentage)}%)`, `benefits:chg_pct:${id}`).row()
-    .text(amountLabel, `benefits:chg_amt:${id}`).row()
-    .text(toggleLabel, `benefits:onoff:${id}`).row()
-    .text('🗑 Delete This Rule', `benefits:del:${id}`).row()
+    .text(`📊 Change % (now ${parseFloat(r.percentage)}%)`, `bedit:pct:${id}`).row();
+
+  if (r.rule_type === 'tax') {
+    kb.text(`💰 Tax Limit (now below ₹${formatNumber(parseFloat(r.max_deposit))})`, `bedit:amt:${id}`).row();
+  } else if (r.rule_type === 'bonus') {
+    kb.text(`💰 Min Deposit (now ₹${formatNumber(parseFloat(r.min_deposit))}+)`, `bedit:amt:${id}`).row();
+  } else {
+    kb.text(`💰 Min Deposit (now ₹${formatNumber(parseFloat(r.min_deposit))}+)`, `bedit:min:${id}`).row();
+    kb.text(`📅 Period (now ${days} days)`, `bedit:days:${id}`).row();
+    kb.text(`🏦 ${days}-Day Total (now ₹${formatNumber(parseFloat(r.rolling_30d_min))}+)`, `bedit:roll:${id}`).row();
+  }
+
+  kb.text(toggleLabel, `bedit:toggle:${id}`).row()
+    .text('🗑 Delete', `bedit:del:${id}`).row()
     .text('◀ Back', 'benefits:manage');
 
-  try {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
-  } catch {
-    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
-  }
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
 }
 
-// Change percentage
-composer.callbackQuery(/^benefits:chg_pct:\d+$/, adminRequired, async (ctx) => {
+// ── Edit % with buttons ──
+composer.callbackQuery(/^bedit:pct:\d+$/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const id = parseInt(ctx.callbackQuery.data.split(':')[2]);
-  states.set(ctx.chat.id, { step: 'edit_pct', ruleId: id });
-
-  try {
-    await ctx.editMessageText(
-      `📊 <b>Change Percentage</b>\n\nSend the new percentage (1–100):`,
-      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Cancel', `benefits:edit:${id}`) }
-    );
-  } catch {
-    await ctx.reply(
-      `📊 <b>Change Percentage</b>\n\nSend the new percentage (1–100):`,
-      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Cancel', `benefits:edit:${id}`) }
-    );
-  }
+  const kb = new InlineKeyboard()
+    .text('1%', `bset:pct:${id}:1`).text('2%', `bset:pct:${id}:2`).text('3%', `bset:pct:${id}:3`).row()
+    .text('5%', `bset:pct:${id}:5`).text('7%', `bset:pct:${id}:7`).text('8%', `bset:pct:${id}:8`).row()
+    .text('10%', `bset:pct:${id}:10`).text('12%', `bset:pct:${id}:12`).text('15%', `bset:pct:${id}:15`).row()
+    .text('20%', `bset:pct:${id}:20`).text('25%', `bset:pct:${id}:25`).text('50%', `bset:pct:${id}:50`).row()
+    .text('✏️ Custom %', `bedit:custom:pct:${id}`).row()
+    .text('◀ Cancel', `benefits:edit:${id}`);
+  try { await ctx.editMessageText(`📊 <b>New percentage?</b>`, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(`📊 <b>New percentage?</b>`, { parse_mode: 'HTML', reply_markup: kb }); }
 });
 
-// Change amount
-composer.callbackQuery(/^benefits:chg_amt:\d+$/, adminRequired, async (ctx) => {
+composer.callbackQuery(/^bset:pct:\d+:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const p = ctx.callbackQuery.data.split(':');
+  const id = parseInt(p[2]), pct = parseInt(p[3]);
+  await depositRulesRepo.updateRule(ctx.dbPool, id, { percentage: pct });
+  const r = await depositRulesRepo.getRule(ctx.dbPool, id);
+  if (r) await autoTitle(ctx.dbPool, r);
+  await showEdit(ctx, id);
+});
+
+// ── Edit amount with buttons ──
+composer.callbackQuery(/^bedit:amt:\d+$/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const id = parseInt(ctx.callbackQuery.data.split(':')[2]);
   const r = await depositRulesRepo.getRule(ctx.dbPool, id);
   if (!r) return;
-
-  states.set(ctx.chat.id, { step: 'edit_amount', ruleId: id });
-
-  let hint;
-  if (r.rule_type === 'tax') hint = 'Below what deposit amount should tax apply?';
-  else if (r.rule_type === 'bonus') hint = 'Minimum deposit amount to give bonus?';
-  else hint = 'Minimum 30-day total deposit to qualify?';
-
-  try {
-    await ctx.editMessageText(
-      `💰 <b>Change Amount</b>\n\n${hint}\n\nSend the new amount:`,
-      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Cancel', `benefits:edit:${id}`) }
-    );
-  } catch {
-    await ctx.reply(
-      `💰 <b>Change Amount</b>\n\n${hint}\n\nSend the new amount:`,
-      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Cancel', `benefits:edit:${id}`) }
-    );
+  let amounts, label;
+  if (r.rule_type === 'tax') {
+    label = 'Tax deposits below?'; amounts = [50, 100, 200, 500, 1000, 2000, 5000];
+  } else if (r.rule_type === 'bonus') {
+    label = 'Min deposit for bonus?'; amounts = [100, 200, 500, 1000, 2000, 5000, 10000];
+  } else {
+    return; // loyalty uses bedit:roll instead
   }
+  const kb = new InlineKeyboard();
+  for (let i = 0; i < amounts.length; i += 3) {
+    for (const a of amounts.slice(i, i + 3)) kb.text(`₹${formatNumber(a)}`, `bset:amt:${id}:${a}`);
+    kb.row();
+  }
+  kb.text('✏️ Custom', `bedit:custom:amt:${id}`).row().text('◀ Cancel', `benefits:edit:${id}`);
+  try { await ctx.editMessageText(`💰 <b>${label}</b>`, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch {}
 });
 
-// Toggle on/off
-composer.callbackQuery(/^benefits:onoff:\d+$/, adminRequired, async (ctx) => {
+composer.callbackQuery(/^bset:amt:\d+:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const p = ctx.callbackQuery.data.split(':');
+  const id = parseInt(p[2]), amt = parseInt(p[3]);
+  const r = await depositRulesRepo.getRule(ctx.dbPool, id);
+  if (!r) return;
+  if (r.rule_type === 'tax') await depositRulesRepo.updateRule(ctx.dbPool, id, { max_deposit: amt });
+  else await depositRulesRepo.updateRule(ctx.dbPool, id, { min_deposit: amt });
+  const updated = await depositRulesRepo.getRule(ctx.dbPool, id);
+  if (updated) await autoTitle(ctx.dbPool, updated);
+  await showEdit(ctx, id);
+});
+
+// ── Edit min deposit (loyalty) with buttons ──
+composer.callbackQuery(/^bedit:min:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const id = parseInt(ctx.callbackQuery.data.split(':')[2]);
+  const kb = new InlineKeyboard()
+    .text('Any', `bset:min:${id}:0`).row()
+    .text('₹50+', `bset:min:${id}:50`).text('₹100+', `bset:min:${id}:100`).text('₹200+', `bset:min:${id}:200`).row()
+    .text('₹500+', `bset:min:${id}:500`).text('₹1000+', `bset:min:${id}:1000`).text('₹2000+', `bset:min:${id}:2000`).row()
+    .text('✏️ Custom', `bedit:custom:min:${id}`).row().text('◀ Cancel', `benefits:edit:${id}`);
+  try { await ctx.editMessageText(`💰 <b>Min single deposit?</b>`, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch {}
+});
+
+composer.callbackQuery(/^bset:min:\d+:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const p = ctx.callbackQuery.data.split(':');
+  const id = parseInt(p[2]), amt = parseInt(p[3]);
+  await depositRulesRepo.updateRule(ctx.dbPool, id, { min_deposit: amt });
+  const r = await depositRulesRepo.getRule(ctx.dbPool, id);
+  if (r) await autoTitle(ctx.dbPool, r);
+  await showEdit(ctx, id);
+});
+
+// ── Edit days (loyalty) with buttons ──
+composer.callbackQuery(/^bedit:days:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const id = parseInt(ctx.callbackQuery.data.split(':')[2]);
+  const kb = new InlineKeyboard()
+    .text('7 Days', `bset:days:${id}:7`).text('15 Days', `bset:days:${id}:15`).row()
+    .text('30 Days', `bset:days:${id}:30`).text('45 Days', `bset:days:${id}:45`).row()
+    .text('60 Days', `bset:days:${id}:60`).text('90 Days', `bset:days:${id}:90`).row()
+    .text('✏️ Custom', `bedit:custom:days:${id}`).row().text('◀ Cancel', `benefits:edit:${id}`);
+  try { await ctx.editMessageText(`📅 <b>Check deposits in how many days?</b>`, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch {}
+});
+
+composer.callbackQuery(/^bset:days:\d+:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const p = ctx.callbackQuery.data.split(':');
+  const id = parseInt(p[2]), days = parseInt(p[3]);
+  await depositRulesRepo.updateRule(ctx.dbPool, id, { rolling_period_days: days });
+  const r = await depositRulesRepo.getRule(ctx.dbPool, id);
+  if (r) await autoTitle(ctx.dbPool, r);
+  await showEdit(ctx, id);
+});
+
+// ── Edit rolling total (loyalty) with buttons ──
+composer.callbackQuery(/^bedit:roll:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const id = parseInt(ctx.callbackQuery.data.split(':')[2]);
+  const r = await depositRulesRepo.getRule(ctx.dbPool, id);
+  const days = r ? parseInt(r.rolling_period_days) || 30 : 30;
+  const kb = new InlineKeyboard()
+    .text('₹500+', `bset:roll:${id}:500`).text('₹1000+', `bset:roll:${id}:1000`).row()
+    .text('₹2000+', `bset:roll:${id}:2000`).text('₹3000+', `bset:roll:${id}:3000`).row()
+    .text('₹5000+', `bset:roll:${id}:5000`).text('₹10000+', `bset:roll:${id}:10000`).row()
+    .text('₹20000+', `bset:roll:${id}:20000`).text('₹50000+', `bset:roll:${id}:50000`).row()
+    .text('✏️ Custom', `bedit:custom:roll:${id}`).row().text('◀ Cancel', `benefits:edit:${id}`);
+  try { await ctx.editMessageText(`🏦 <b>Total deposit needed in ${days} days?</b>`, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch {}
+});
+
+composer.callbackQuery(/^bset:roll:\d+:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const p = ctx.callbackQuery.data.split(':');
+  const id = parseInt(p[2]), amt = parseInt(p[3]);
+  await depositRulesRepo.updateRule(ctx.dbPool, id, { rolling_30d_min: amt });
+  const r = await depositRulesRepo.getRule(ctx.dbPool, id);
+  if (r) await autoTitle(ctx.dbPool, r);
+  await showEdit(ctx, id);
+});
+
+// ── Toggle / Delete ──
+
+composer.callbackQuery(/^bedit:toggle:\d+$/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const id = parseInt(ctx.callbackQuery.data.split(':')[2]);
   await depositRulesRepo.toggleRule(ctx.dbPool, id);
-  await showEditScreen(ctx, id);
+  await showEdit(ctx, id);
 });
 
-// Delete
-composer.callbackQuery(/^benefits:del:\d+$/, adminRequired, async (ctx) => {
+composer.callbackQuery(/^bedit:del:\d+$/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const id = parseInt(ctx.callbackQuery.data.split(':')[2]);
   const r = await depositRulesRepo.getRule(ctx.dbPool, id);
   if (!r) { await showManage(ctx); return; }
-
-  const text =
-    `🗑 <b>Delete this rule?</b>\n\n` +
-    `${ICONS[r.rule_type]} ${describeRule(r)}\n\n` +
-    `<i>This cannot be undone.</i>`;
-
-  await ctx.editMessageText(text, {
-    parse_mode: 'HTML',
-    reply_markup: new InlineKeyboard()
-      .text('🗑 Yes, Delete', `benefits:confirm_del:${id}`).text('❌ No, Keep', `benefits:edit:${id}`)
-  });
+  await ctx.editMessageText(
+    `🗑 <b>Delete?</b>\n\n${ICONS[r.rule_type]} ${describeRule(r)}\n\n<i>Cannot be undone.</i>`,
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard()
+      .text('🗑 Yes', `bedit:confirm_del:${id}`).text('❌ No', `benefits:edit:${id}`) }
+  );
 });
 
-composer.callbackQuery(/^benefits:confirm_del:\d+$/, adminRequired, async (ctx) => {
+composer.callbackQuery(/^bedit:confirm_del:\d+$/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const id = parseInt(ctx.callbackQuery.data.split(':')[2]);
   await depositRulesRepo.deleteRule(ctx.dbPool, id);
-  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED,
-    { action: 'delete_rule', rule_id: id });
   await showManage(ctx);
 });
 
+// ── Auto title ──
+
+async function autoTitle(pool, r) {
+  const pct = parseFloat(r.percentage);
+  const days = parseInt(r.rolling_period_days) || 30;
+  let title;
+  if (r.rule_type === 'tax') {
+    title = `${pct}% Tax (below ₹${formatNumber(parseFloat(r.max_deposit))})`;
+  } else if (r.rule_type === 'bonus') {
+    title = `${pct}% Bonus (₹${formatNumber(parseFloat(r.min_deposit))}+)`;
+  } else {
+    const min = parseFloat(r.min_deposit) || 0;
+    const rolling = parseFloat(r.rolling_30d_min) || 0;
+    title = min > 0
+      ? `${pct}% Loyalty (₹${formatNumber(min)}+ & ${days}d ₹${formatNumber(rolling)}+)`
+      : `${pct}% Loyalty (${days}d ₹${formatNumber(rolling)}+)`;
+  }
+  await depositRulesRepo.updateRule(pool, r.id, { title });
+}
+
 // ═══════════════════════════════════════════════════════════════════
-//  TEST RULES — See exactly what happens
+//  TEST + STATS
 // ═══════════════════════════════════════════════════════════════════
 
 composer.callbackQuery('benefits:test', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   states.set(ctx.chat.id, { step: 'test_user' });
-
-  try {
-    await ctx.editMessageText(
-      `🔮 <b>Test Rules</b>\n\n` +
-      `Send a <b>User ID</b> to test with:\n\n` +
-      `<i>This will show what happens when that user deposits — without actually giving money.</i>`,
-      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Cancel', 'admin:benefits') }
-    );
-  } catch {
-    await ctx.reply(
-      `🔮 <b>Test Rules</b>\n\nSend a <b>User ID</b>:`,
-      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Cancel', 'admin:benefits') }
-    );
-  }
+  try { await ctx.editMessageText(
+    `🔮 <b>Test Rules</b>\n\nSend a <b>User ID</b>:\n\n<i>Tests without giving real money.</i>`,
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Cancel', 'admin:benefits') }
+  ); } catch {}
 });
-
-async function runTest(ctx, userId, amount) {
-  const benefits = await depositBenefitsService.calculateBenefits(ctx.dbPool, userId, amount, null, true);
-
-  let text = `🔮 <b>Test Result</b>\n\n`;
-  text += `User: <code>${userId}</code>\n`;
-  text += `Deposit: ₹${amount.toFixed(2)}\n\n`;
-
-  if (!benefits.active) {
-    text += `<blockquote>System is OFF — no rules applied.\nUser gets: ₹${amount.toFixed(2)}</blockquote>`;
-  } else {
-    text += `<blockquote>`;
-    if (benefits.taxRule) {
-      text += `💸 Tax: ${parseFloat(benefits.taxRule.percentage)}% = -₹${benefits.taxAmount.toFixed(2)}\n`;
-    }
-    if (benefits.bonusRule) {
-      text += `🎁 Bonus: +${parseFloat(benefits.bonusRule.percentage)}% = +₹${benefits.bonusAmount.toFixed(2)}\n`;
-    }
-    if (!benefits.taxRule && !benefits.bonusRule) {
-      text += `No rules matched this deposit.\n`;
-    }
-    text += `\n<b>User gets: ₹${benefits.creditAmount.toFixed(2)}</b>`;
-    text += `</blockquote>`;
-  }
-
-  await ctx.reply(text, {
-    parse_mode: 'HTML',
-    reply_markup: new InlineKeyboard()
-      .text('🔮 Test Again', 'benefits:test').text('◀ Dashboard', 'admin:benefits')
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════════
-//  STATS
-// ═══════════════════════════════════════════════════════════════════
 
 composer.callbackQuery('benefits:stats', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
-  const pool = ctx.dbPool;
-
   const [daily, weekly, allTime] = await Promise.all([
-    depositRulesRepo.getStats(pool, 1),
-    depositRulesRepo.getStats(pool, 7),
-    depositRulesRepo.getStats(pool),
+    depositRulesRepo.getStats(ctx.dbPool, 1),
+    depositRulesRepo.getStats(ctx.dbPool, 7),
+    depositRulesRepo.getStats(ctx.dbPool),
   ]);
-
-  let text = `📊 <b>Bonus Stats</b>\n\n`;
-
-  text += `<blockquote>`;
-  text += `<b>Today</b>\n`;
-  text += `Bonus given: ₹${formatNumber(daily.totalBonus)} (${daily.bonusCount} times)\n`;
-  text += `Tax collected: ₹${formatNumber(daily.totalTax)} (${daily.taxCount} times)\n\n`;
-  text += `<b>Last 7 Days</b>\n`;
-  text += `Bonus: ₹${formatNumber(weekly.totalBonus)} (${weekly.bonusCount})\n`;
-  text += `Tax: ₹${formatNumber(weekly.totalTax)} (${weekly.taxCount})\n\n`;
-  text += `<b>All Time</b>\n`;
-  text += `Bonus: ₹${formatNumber(allTime.totalBonus)}\n`;
-  text += `Tax: ₹${formatNumber(allTime.totalTax)}`;
-  text += `</blockquote>`;
-
-  await ctx.editMessageText(text, {
-    parse_mode: 'HTML',
+  let text = `📊 <b>Stats</b>\n\n<blockquote>`;
+  text += `<b>Today</b>  Bonus: ₹${formatNumber(daily.totalBonus)} (${daily.bonusCount}×)  Tax: ₹${formatNumber(daily.totalTax)} (${daily.taxCount}×)\n\n`;
+  text += `<b>7 Days</b>  Bonus: ₹${formatNumber(weekly.totalBonus)} (${weekly.bonusCount}×)  Tax: ₹${formatNumber(weekly.totalTax)} (${weekly.taxCount}×)\n\n`;
+  text += `<b>All Time</b>  Bonus: ₹${formatNumber(allTime.totalBonus)}  Tax: ₹${formatNumber(allTime.totalTax)}</blockquote>`;
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML',
     reply_markup: new InlineKeyboard().text('🔄 Refresh', 'benefits:stats').text('◀ Back', 'admin:benefits')
-  });
+  }); } catch {}
 });
 
 export default composer;

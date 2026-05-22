@@ -178,6 +178,7 @@ CREATE TABLE IF NOT EXISTS deposit_rules (
     min_deposit     DECIMAL(12,2) DEFAULT 0,
     max_deposit     DECIMAL(12,2) DEFAULT 0,
     rolling_30d_min DECIMAL(12,2) DEFAULT 0,
+    rolling_period_days INT DEFAULT 30,
     percentage      DECIMAL(5,2) NOT NULL,
     priority        INT NOT NULL DEFAULT 100,
     is_enabled      BOOLEAN NOT NULL DEFAULT TRUE,
@@ -256,6 +257,11 @@ export async function initDb(pool) {
   try {
     await pool.query(`ALTER TABLE force_join_channels ADD COLUMN IF NOT EXISTS btn_style VARCHAR(20) DEFAULT ''`);
     await pool.query(`ALTER TABLE force_join_channels ADD COLUMN IF NOT EXISTS btn_text VARCHAR(100) DEFAULT ''`);
+  } catch { /* table may not exist yet */ }
+
+  // Migration: add rolling_period_days to deposit_rules
+  try {
+    await pool.query(`ALTER TABLE deposit_rules ADD COLUMN IF NOT EXISTS rolling_period_days INT DEFAULT 30`);
   } catch { /* table may not exist yet */ }
 
   await pool.query(SCHEMA_SQL);
