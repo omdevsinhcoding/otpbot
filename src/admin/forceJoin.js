@@ -24,18 +24,18 @@ async function showForceJoinPanel(ctx) {
   const enabled = await settingsRepo.getSetting(pool, 'force_join_enabled');
   const channels = await forceJoinRepo.getActiveChannels(pool);
   const count = channels.length;
-  const btnStyle = await settingsRepo.getSetting(pool, 'fj_btn_style') || 'success';
+  const verifyStyle = await settingsRepo.getSetting(pool, 'fj_btn_style') || 'success';
   const customMsg = await settingsRepo.getSetting(pool, 'fj_message');
 
   const statusEmoji = enabled ? '🟢' : '🔴';
   const toggleLabel = enabled ? '🔴 Disable' : '🟢 Enable';
-  const colorInfo = COLOR_OPTIONS.find(c => c.style === btnStyle) || COLOR_OPTIONS[0];
+  const verifyColor = COLOR_OPTIONS.find(c => c.style === verifyStyle) || COLOR_OPTIONS[0];
 
   let text = `🔗 <b>FORCE JOIN</b>\n\n`;
   text += `<blockquote>`;
   text += `${statusEmoji} <b>Status:</b> ${enabled ? 'Active' : 'Inactive'}\n`;
   text += `📢 <b>Channels:</b> ${count} configured\n`;
-  text += `🎨 <b>Button Color:</b> ${colorInfo.label}\n`;
+  text += `✅ <b>Verify Btn:</b> ${verifyColor.label}\n`;
   text += `💬 <b>Message:</b> ${customMsg ? '✅ Custom' : '✅ Default'}`;
   text += `</blockquote>\n\n`;
 
@@ -45,7 +45,8 @@ async function showForceJoinPanel(ctx) {
     for (let i = 0; i < channels.length; i++) {
       const ch = channels[i];
       const display = ch.channel_username ? `@${escapeHtml(ch.channel_username)}` : String(ch.channel_id);
-      text += `${i + 1}. ${display} — ${escapeHtml(ch.channel_title || 'N/A')}\n`;
+      const chColor = COLOR_OPTIONS.find(c => c.style === (ch.btn_style || '')) || COLOR_OPTIONS[3];
+      text += `${i + 1}. ${chColor.emoji} ${display} — ${escapeHtml(ch.channel_title || 'N/A')}\n`;
     }
     text += `</blockquote>`;
   } else {
@@ -55,13 +56,15 @@ async function showForceJoinPanel(ctx) {
   const kb = new InlineKeyboard()
     .text(toggleLabel, 'forcejoin:toggle').row()
     .text('➕ Add Channel', 'forcejoin:add').row()
-    .text(`🎨 Button Color`, 'forcejoin:color').text('💬 Set Message', 'forcejoin:set_msg').row();
+    .text(`✅ Verify Btn Color`, 'forcejoin:color').text('💬 Set Message', 'forcejoin:set_msg').row();
 
-  // Remove buttons for each channel
+  // Per-channel color + remove buttons
   if (count > 0) {
     for (const ch of channels) {
       const display = ch.channel_username ? `@${ch.channel_username}` : String(ch.channel_id);
-      kb.text(`🗑 ${display}`, `forcejoin:remove:${ch.channel_id}`).row();
+      const shortDisplay = display.length > 15 ? display.slice(0, 15) + '…' : display;
+      kb.text(`🎨 ${shortDisplay}`, `forcejoin:ch_color:${ch.channel_id}`)
+        .text(`🗑 ${shortDisplay}`, `forcejoin:remove:${ch.channel_id}`).row();
     }
   }
 
@@ -261,13 +264,59 @@ composer.callbackQuery('forcejoin:color', adminRequired, async (ctx) => {
   );
 });
 
-// ── Set color ───────────────────────────────────────────────────
+// ── Set verify button color ─────────────────────────────────────
 composer.callbackQuery(/^forcejoin:set_color:(.+)$/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const raw = ctx.callbackQuery.data.split(':')[2];
   const style = raw === 'none' ? '' : raw;
   await settingsRepo.setSetting(ctx.dbPool, 'fj_btn_style', style, ctx.from.id);
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'fj_btn_style', value: style || 'default' });
+  await showForceJoinPanel(ctx);
+});
+
+// ── Per-channel color picker ────────────────────────────────────
+composer.callbackQuery(/^forcejoin:ch_color:-?\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const channelId = ctx.callbackQuery.data.split(':').slice(2).join(':');
+  const ch = await forceJoinRepo.getChannel(ctx.dbPool, Number(channelId));
+  if (!ch) {
+    await ctx.editMessageText('⚠️ Channel not found.', {
+      reply_markup: new InlineKeyboard().text('◀ Back', 'admin:forcejoin')
+    });
+    return;
+  }
+
+  const current = ch.btn_style || '';
+  const display = ch.channel_username ? `@${ch.channel_username}` : String(ch.channel_id);
+
+  const kb = new InlineKeyboard();
+  for (const c of COLOR_OPTIONS) {
+    const active = (c.style || '') === current ? ' ✓' : '';
+    kb.text(`${c.label}${active}`, `forcejoin:set_ch_color:${ch.channel_id}:${c.style || 'none'}`);
+    if (c.style) kb.style(c.style);
+    kb.row();
+  }
+  kb.text('◀ Back', 'admin:forcejoin');
+
+  await ctx.editMessageText(
+    `🎨 <b>Channel Button Color</b>\n\n` +
+    `Channel: <b>${escapeHtml(display)}</b>\n` +
+    `Title: <b>${escapeHtml(ch.channel_title || 'N/A')}</b>\n` +
+    `Current: <b>${(COLOR_OPTIONS.find(c => c.style === current) || COLOR_OPTIONS[3]).label}</b>\n\n` +
+    `Select a color for this channel's button:`,
+    { parse_mode: 'HTML', reply_markup: kb }
+  );
+});
+
+// ── Set per-channel color ───────────────────────────────────────
+composer.callbackQuery(/^forcejoin:set_ch_color:-?\d+:.+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const parts = ctx.callbackQuery.data.split(':');
+  // forcejoin:set_ch_color:<channelId>:<style>
+  const channelId = Number(parts[2]);
+  const style = parts[3] === 'none' ? '' : parts[3];
+  await forceJoinRepo.updateChannelStyle(ctx.dbPool, channelId, style);
+  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'fj_channel_style', channel_id: channelId, value: style || 'default' });
   await showForceJoinPanel(ctx);
 });
 
@@ -298,10 +347,5 @@ composer.callbackQuery('forcejoin:reset_msg', adminRequired, async (ctx) => {
   ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'reset_fj_message' });
   await showForceJoinPanel(ctx);
 });
-
-// ── Text handler (handles both channel input and message input) ──
-// This replaces the existing on('message:text') handler below
-// The existing handler at line ~128 already handles 'waiting_channel'
-// We need to also handle 'waiting_msg' — so we add it to the existing handler
 
 export default composer;

@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS force_join_channels (
     channel_username VARCHAR(255),
     channel_title    VARCHAR(512),
     invite_link      TEXT,
+    btn_style        VARCHAR(20)  DEFAULT '',
     is_active        BOOLEAN      NOT NULL DEFAULT TRUE,
     added_by         BIGINT,
     added_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW()
@@ -209,6 +210,11 @@ export async function initDb(pool) {
   try {
     await pool.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
   } catch { /* table may not exist yet on fresh install — that's fine */ }
+
+  // Migration: add btn_style column to force_join_channels
+  try {
+    await pool.query(`ALTER TABLE force_join_channels ADD COLUMN IF NOT EXISTS btn_style VARCHAR(20) DEFAULT ''`);
+  } catch { /* table may not exist yet */ }
 
   await pool.query(SCHEMA_SQL);
   logger.info('Schema applied successfully.');

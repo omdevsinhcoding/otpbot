@@ -31,7 +31,9 @@ export async function checkForceJoin(ctx) {
     for (const ch of channels) {
       const link = ch.invite_link || (ch.channel_username ? `https://t.me/${ch.channel_username}` : null);
       if (link) {
-        kb.url(`📢 ${ch.channel_title || 'Join Channel'}`, link).row();
+        kb.url(`📢 ${ch.channel_title || 'Join Channel'}`, link);
+        if (ch.btn_style) kb.style(ch.btn_style);
+        kb.row();
       }
     }
 
@@ -109,7 +111,9 @@ export async function verifyForceJoin(ctx) {
     for (const ch of notJoined) {
       const link = ch.invite_link || (ch.channel_username ? `https://t.me/${ch.channel_username}` : null);
       if (link) {
-        kb.url(`📢 ${ch.channel_title || 'Join Channel'}`, link).row();
+        kb.url(`📢 ${ch.channel_title || 'Join Channel'}`, link);
+        if (ch.btn_style) kb.style(ch.btn_style);
+        kb.row();
       }
     }
     kb.text('✅ Joined', 'fjcheck:verify');

@@ -1,14 +1,14 @@
-export async function addChannel(pool, { channelId, channelUsername, channelTitle, inviteLink, addedBy }) {
+export async function addChannel(pool, { channelId, channelUsername, channelTitle, inviteLink, addedBy, btnStyle }) {
   const { rows } = await pool.query(
-    `INSERT INTO force_join_channels (channel_id, channel_username, channel_title, invite_link, added_by)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO force_join_channels (channel_id, channel_username, channel_title, invite_link, btn_style, added_by)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (channel_id) DO UPDATE SET
        channel_username = EXCLUDED.channel_username,
        channel_title = EXCLUDED.channel_title,
        invite_link = EXCLUDED.invite_link,
        is_active = TRUE
      RETURNING *`,
-    [channelId, channelUsername || null, channelTitle || null, inviteLink || null, addedBy || null]
+    [channelId, channelUsername || null, channelTitle || null, inviteLink || null, btnStyle || '', addedBy || null]
   );
   return rows[0];
 }
@@ -29,6 +29,10 @@ export async function getChannel(pool, channelId) {
 
 export async function toggleChannel(pool, channelId, isActive) {
   await pool.query('UPDATE force_join_channels SET is_active = $2 WHERE channel_id = $1', [channelId, isActive]);
+}
+
+export async function updateChannelStyle(pool, channelId, btnStyle) {
+  await pool.query('UPDATE force_join_channels SET btn_style = $2 WHERE channel_id = $1', [channelId, btnStyle || '']);
 }
 
 export async function countChannels(pool) {
