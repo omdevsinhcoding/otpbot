@@ -29,6 +29,7 @@ import analyticsAdmin from './admin/analytics.js';  // Admin action logs
 import settingsPanel from './admin/settingsPanel.js';
 import botStats from './admin/botStats.js';
 import paymentsAdmin from './admin/payments.js';
+import termsAdmin from './admin/termsAndConditions.js';
 import depositHandler from './handlers/deposit.js';
 
 async function main() {
@@ -83,6 +84,7 @@ async function main() {
   bot.use(settingsPanel);
   bot.use(botStats);
   bot.use(paymentsAdmin);
+  bot.use(termsAdmin);
 
   // User handlers
   bot.use(startHandler);

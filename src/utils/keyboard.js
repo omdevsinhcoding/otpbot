@@ -50,9 +50,9 @@ export const PAYMENTS_MENU_KEYBOARD = new Keyboard()
 export const ADMIN_PANEL_KEYBOARD = new InlineKeyboard()
   .text('📢 Broadcast', `${ADMIN_CB}broadcast`).text('👥 Users', `${ADMIN_CB}users`).row()
   .text('🔗 Force Join', `${ADMIN_CB}forcejoin`).text('👑 Admins', `${ADMIN_CB}admins`).row()
-  .text('💬 Welcome Msg', `${ADMIN_CB}welcome`).text('⚙️ Settings', `${ADMIN_CB}settings`).row()
-  .text('💰 Payments', `${ADMIN_CB}payments`).text('🤖 Bot Stats', `${ADMIN_CB}botstats`).row()
-  .text('📋 Admin Logs', `${ADMIN_CB}logs`).row()
+  .text('💬 Welcome Msg', `${ADMIN_CB}welcome`).text('📜 T&C', `${ADMIN_CB}tc`).row()
+  .text('⚙️ Settings', `${ADMIN_CB}settings`).text('💰 Payments', `${ADMIN_CB}payments`).row()
+  .text('🤖 Bot Stats', `${ADMIN_CB}botstats`).text('📋 Admin Logs', `${ADMIN_CB}logs`).row()
   .text('❌ Close', `${ADMIN_CB}close`);
 
 // ── Dynamic keyboard builders ────────────────────────────────────────
@@ -71,12 +71,19 @@ export function buildInlineButtons(buttonsJson) {
       const btn = row;
       if (btn.url) kb.url(btn.text, btn.url);
       else kb.text(btn.text, btn.callback_data || 'noop');
+      // Apply Telegram style (success=green, primary=blue, danger=red)
+      if (btn.color && ['success', 'primary', 'danger'].includes(btn.color)) {
+        kb.style(btn.color);
+      }
       kb.row();
       continue;
     }
     for (const btn of row) {
       if (btn.url) kb.url(btn.text, btn.url);
       else kb.text(btn.text, btn.callback_data || 'noop');
+      if (btn.color && ['success', 'primary', 'danger'].includes(btn.color)) {
+        kb.style(btn.color);
+      }
     }
     kb.row();
   }

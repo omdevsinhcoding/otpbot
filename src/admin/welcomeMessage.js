@@ -4,8 +4,17 @@ import * as welcomeRepo from '../database/repositories/welcomeRepo.js';
 import * as settingsRepo from '../database/repositories/settingsRepo.js';
 import { ActionType } from '../utils/constants.js';
 import { buildInlineButtons } from '../utils/keyboard.js';
-import { truncateText, escapeHtml } from '../utils/formatters.js';
+import { truncateText, escapeHtml, replaceWelcomePlaceholders } from '../utils/formatters.js';
 import logger from '../utils/logger.js';
+
+// Available color options for buttons (Telegram Bot API 9.4 styles)
+// Telegram supports: 'success' (green), 'primary' (blue), 'danger' (red), default (no style)
+const BUTTON_COLORS = [
+  { style: 'success', label: '🟢 Green',   cb: 'welcome:color:success' },
+  { style: 'primary', label: '🔵 Blue',    cb: 'welcome:color:primary' },
+  { style: 'danger',  label: '🔴 Red',     cb: 'welcome:color:danger' },
+  { style: '',        label: '⬜ Default', cb: 'welcome:color:none' },
+];
 
 const composer = new Composer();
 const states = new Map(); // chatId → { step, data }
@@ -37,7 +46,19 @@ composer.callbackQuery('welcome:set', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   states.set(ctx.chat.id, { step: 'set_text' });
   await ctx.editMessageText(
-    '📝 <b>Set Welcome Message</b>\n\nSend me the new welcome message text.\nYou can use HTML formatting.',
+    '📝 <b>Set Welcome Message</b>\n\n' +
+    'Send me the new welcome message text.\n' +
+    'You can use HTML formatting.\n\n' +
+    '<b>📌 Available Placeholders:</b>\n' +
+    '<blockquote>' +
+    '<code>{user}</code> — Clickable mention link\n' +
+    '<code>{first_name}</code> — First name\n' +
+    '<code>{last_name}</code> — Last name\n' +
+    '<code>{full_name}</code> — Full name\n' +
+    '<code>{username}</code> — @username\n' +
+    '<code>{id}</code> — Telegram ID' +
+    '</blockquote>\n\n' +
+    '<i>Example:</i> <code>Hey {user}! Welcome to our bot, {first_name}!</code>',
     { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('❌ Cancel', 'welcome:cancel_edit') }
   );
 });
@@ -54,14 +75,16 @@ composer.callbackQuery('welcome:preview', adminRequired, async (ctx) => {
   }
 
   const kb = welcome.buttons?.length ? buildInlineButtons(welcome.buttons) : undefined;
+  // Replace placeholders with admin's own data for preview
+  const previewText = replaceWelcomePlaceholders(welcome.message_text, ctx.from);
 
   try {
     if (welcome.media_type === 'photo' && welcome.media_file_id) {
-      await ctx.replyWithPhoto(welcome.media_file_id, { caption: welcome.message_text, parse_mode: welcome.parse_mode || 'HTML', reply_markup: kb });
+      await ctx.replyWithPhoto(welcome.media_file_id, { caption: previewText, parse_mode: welcome.parse_mode || 'HTML', reply_markup: kb });
     } else if (welcome.media_type === 'video' && welcome.media_file_id) {
-      await ctx.replyWithVideo(welcome.media_file_id, { caption: welcome.message_text, parse_mode: welcome.parse_mode || 'HTML', reply_markup: kb });
+      await ctx.replyWithVideo(welcome.media_file_id, { caption: previewText, parse_mode: welcome.parse_mode || 'HTML', reply_markup: kb });
     } else {
-      await ctx.reply(welcome.message_text, { parse_mode: welcome.parse_mode || 'HTML', reply_markup: kb });
+      await ctx.reply(previewText, { parse_mode: welcome.parse_mode || 'HTML', reply_markup: kb });
     }
   } catch (err) {
     await ctx.reply(`⚠️ Preview failed: ${err.message}`);
@@ -108,7 +131,9 @@ composer.callbackQuery('welcome:buttons', adminRequired, async (ctx) => {
     buttons.forEach((row, i) => {
       const items = Array.isArray(row) ? row : [row];
       for (const btn of items) {
-        text += `┃ ${i + 1}. ${escapeHtml(btn.text)} → ${truncateText(btn.url, 40)}\n`;
+        const colorLabel = btn.color === 'success' ? '🟢' : btn.color === 'primary' ? '🔵' : btn.color === 'danger' ? '🔴' : '';
+        const colorTag = colorLabel ? `${colorLabel} ` : '';
+        text += `┃ ${i + 1}. ${colorTag}${escapeHtml(btn.text)} → ${truncateText(btn.url, 40)}\n`;
         kb.text(`🗑 Remove #${i + 1}`, `welcome:remove_btn:${i}`).row();
       }
     });
@@ -123,7 +148,10 @@ composer.callbackQuery('welcome:add_btn', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   states.set(ctx.chat.id, { step: 'add_btn_text' });
   await ctx.editMessageText(
-    '➕ <b>Add Button</b>\n\nSend the button in format:\n<code>Button Text | https://url</code>',
+    '➕ <b>Add Button</b>\n\n' +
+    'Send the button in format:\n' +
+    '<code>Button Text | https://url</code>\n\n' +
+    '<i>After sending, you will pick a color for the button.</i>',
     { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('❌ Cancel', 'welcome:cancel_edit') }
   );
 });
@@ -166,7 +194,6 @@ composer.on('message:text', async (ctx, next) => {
   }
 
   if (state.step === 'add_btn_text') {
-    states.delete(ctx.chat.id);
     const parts = ctx.message.text.split('|').map(s => s.trim());
     if (parts.length !== 2 || !parts[0] || !parts[1]) {
       await ctx.reply('⚠️ Invalid format. Use: <code>Button Text | https://url</code>', { parse_mode: 'HTML' });
@@ -175,16 +202,66 @@ composer.on('message:text', async (ctx, next) => {
 
     const pool = ctx.dbPool;
     const welcome = await welcomeRepo.getWelcomeMessage(pool);
-    if (!welcome) { await ctx.reply('⚠️ Set a welcome message first.'); return; }
+    if (!welcome) { states.delete(ctx.chat.id); await ctx.reply('⚠️ Set a welcome message first.'); return; }
 
-    const buttons = welcome.buttons || [];
-    buttons.push({ text: parts[0], url: parts[1] });
-    await welcomeRepo.updateWelcomeButtons(pool, welcome.id, buttons);
-    await ctx.reply(`✅ Button "${parts[0]}" added!`);
+    // Save button data temporarily, move to color selection
+    states.set(ctx.chat.id, { step: 'pick_color', data: { btnText: parts[0], btnUrl: parts[1], welcomeId: welcome.id } });
+
+    // Show color picker inline keyboard
+    const colorKb = new InlineKeyboard();
+    for (const c of BUTTON_COLORS) {
+      colorKb.text(c.label, c.cb);
+      if (c.style) colorKb.style(c.style);
+      colorKb.row();
+    }
+    colorKb.text('❌ Cancel', 'welcome:cancel_edit');
+
+    await ctx.reply(
+      `🎨 <b>Pick a color for:</b> "${escapeHtml(parts[0])}"\n\nSelect a color for the button:`,
+      { parse_mode: 'HTML', reply_markup: colorKb }
+    );
     return;
   }
 
   return next();
+});
+
+// ── Color picker callbacks ──────────────────────────────────────
+composer.callbackQuery(/^welcome:color:(.+)$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const state = states.get(ctx.chat.id);
+  if (!state || state.step !== 'pick_color' || !state.data) {
+    await ctx.editMessageText('⚠️ Session expired. Please try again.', {
+      reply_markup: new InlineKeyboard().text('‹ Back', 'welcome:buttons')
+    });
+    return;
+  }
+
+  const colorRaw = ctx.callbackQuery.data.split(':')[2];
+  const color = colorRaw === 'none' ? '' : colorRaw; // 'success', 'primary', 'danger', or ''
+  const { btnText, btnUrl, welcomeId } = state.data;
+
+  // Save the button with color
+  const pool = ctx.dbPool;
+  const welcome = await welcomeRepo.getWelcomeMessage(pool);
+  if (!welcome) {
+    states.delete(ctx.chat.id);
+    await ctx.editMessageText('⚠️ Welcome message not found.', {
+      reply_markup: new InlineKeyboard().text('‹ Back', 'admin:welcome')
+    });
+    return;
+  }
+
+  const buttons = welcome.buttons || [];
+  buttons.push({ text: btnText, url: btnUrl, color: color || undefined });
+  await welcomeRepo.updateWelcomeButtons(pool, welcome.id, buttons);
+  states.delete(ctx.chat.id);
+
+  const colorLabel = color === 'success' ? '🟢 ' : color === 'primary' ? '🔵 ' : color === 'danger' ? '🔴 ' : '';
+  await ctx.editMessageText(
+    `✅ Button ${colorLabel}"${escapeHtml(btnText)}" added!`,
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔘 View Buttons', 'welcome:buttons').text('‹ Back', 'admin:welcome') }
+  );
 });
 
 // ── Cancel edit ────────────────────────────────────────────────

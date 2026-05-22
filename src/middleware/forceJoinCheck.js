@@ -53,9 +53,13 @@ export async function checkForceJoin(ctx) {
     const totalRequired = channels.length;
     const joinedCount = totalRequired - notJoined.length;
 
-    let text = `🔗 <b>Join Required</b>\n\n`;
+    // Build clickable user mention
+    const firstName = ctx.from.first_name || 'User';
+    const userMention = `<a href="tg://user?id=${ctx.from.id}">${firstName.replace(/[<>&]/g, '')}</a>`;
+
+    let text = `👋 Hey! ${userMention}, Please Join Our Channel${notJoined.length > 1 ? 's' : ''} To Access The Bot\n\n`;
     text += `<blockquote>`;
-    text += `You must join <b>${notJoined.length}</b> channel${notJoined.length > 1 ? 's' : ''} to use this bot.\n\n`;
+    text += `You must join <b>${notJoined.length}</b> channel${notJoined.length > 1 ? 's' : ''} to continue.\n\n`;
     if (totalRequired > 1) {
       text += `Progress: ${joinedCount}/${totalRequired} joined`;
     }

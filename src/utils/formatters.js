@@ -71,3 +71,30 @@ export function truncateText(text, maxLen = 100) {
   const s = String(text);
   return s.length <= maxLen ? s : s.slice(0, maxLen) + '…';
 }
+
+/**
+ * Replace welcome message placeholders with actual user data.
+ * Supported: {user}, {first_name}, {last_name}, {full_name}, {username}, {id}
+ * @param {string} text - The welcome message text with placeholders
+ * @param {object} user - Telegram user object (ctx.from)
+ * @returns {string} Text with placeholders replaced
+ */
+export function replaceWelcomePlaceholders(text, user) {
+  if (!text || !user) return text || '';
+
+  const firstName = user.first_name || 'User';
+  const lastName = user.last_name || '';
+  const fullName = [firstName, lastName].filter(Boolean).join(' ');
+  const username = user.username ? `@${user.username}` : 'N/A';
+  const userId = user.id || '';
+  // Clickable mention link using tg://user deep link
+  const mentionLink = `<a href="tg://user?id=${userId}">${escapeHtml(firstName)}</a>`;
+
+  return text
+    .replace(/\{user\}/gi, mentionLink)
+    .replace(/\{first_name\}/gi, escapeHtml(firstName))
+    .replace(/\{last_name\}/gi, escapeHtml(lastName))
+    .replace(/\{full_name\}/gi, escapeHtml(fullName))
+    .replace(/\{username\}/gi, escapeHtml(username))
+    .replace(/\{id\}/gi, String(userId));
+}

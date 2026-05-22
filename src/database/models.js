@@ -197,6 +197,9 @@ export const DEFAULT_SETTINGS = {
   cryptomus_merchant_id: '',
   cryptomus_min_amount: 100,
   cryptomus_max_amount: 10000,
+  tc_enabled: false,
+  tc_url: '',
+  tc_message: "Dear Users,\nThere Are Some Terms & Conditions Given Please Read Carefully, Else If You Face Any Problem Related To Terms And Conditions So We Can't Help You...",
 };
 
 export async function initDb(pool) {
