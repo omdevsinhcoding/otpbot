@@ -66,6 +66,14 @@ composer.hears(new RegExp(`^${escRe(BTN_DEPOSIT)}$`), async (ctx) => {
   ]);
 
   let text = `💰 <b>Deposit Funds</b>\n\n💳 <b>Your Balance:</b> ₹${formatNumber(balance)}\n\nChoose a payment method:`;
+
+  // Show deposit benefits if enabled
+  try {
+    const depositBenefitsService = await import('../services/depositBenefitsService.js');
+    const benefitsInfo = await depositBenefitsService.getDepositInfoMessage(pool, ctx.from.id);
+    if (benefitsInfo) text += `\n${benefitsInfo}`;
+  } catch {}
+
   const kb = new InlineKeyboard();
   if (paytmOn) kb.text(`💳 ${paytmName || 'Pay via Automatic Gateway'}`, 'deposit:paytm').row();
   if (bharatpayOn) kb.text(`🏦 ${bharatpayName || 'Pay via UTR / Transaction ID'}`, 'deposit:bharatpay').row();
