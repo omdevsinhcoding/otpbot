@@ -166,7 +166,7 @@ function buildContent(rules, botName) {
  */
 export async function updateRulesPage(pool) {
   try {
-    const { default: depositRulesRepo } = await import('../database/repositories/depositRulesRepo.js');
+    const depositRulesRepo = await import('../database/repositories/depositRulesRepo.js');
     const rules = await depositRulesRepo.getActiveRules(pool);
     if (rules.length === 0) return null;
 
