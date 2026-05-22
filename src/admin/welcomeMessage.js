@@ -5,6 +5,7 @@ import * as settingsRepo from '../database/repositories/settingsRepo.js';
 import { ActionType } from '../utils/constants.js';
 import { buildInlineButtons } from '../utils/keyboard.js';
 import { truncateText, escapeHtml, replaceWelcomePlaceholders } from '../utils/formatters.js';
+import { DEFAULT_WELCOME_TEXT } from '../utils/constants.js';
 import logger from '../utils/logger.js';
 
 // Available color options for buttons (Telegram Bot API 9.4 styles)
@@ -36,6 +37,7 @@ composer.callbackQuery('admin:welcome', adminRequired, async (ctx) => {
     .text('📝 Set Message', 'welcome:set').text('👁 Preview', 'welcome:preview').row()
     .text(welcomeEnabled ? '🔴 Disable' : '🟢 Enable', 'welcome:toggle').row()
     .text('🔘 Manage Buttons', 'welcome:buttons').row()
+    .text('🔄 Reset Default', 'welcome:reset').row()
     .text('‹ Back', 'admin:back');
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
@@ -69,7 +71,7 @@ composer.callbackQuery('welcome:preview', adminRequired, async (ctx) => {
   const welcome = await welcomeRepo.getWelcomeMessage(ctx.dbPool);
   if (!welcome) {
     await ctx.editMessageText('⚠️ No welcome message set.', {
-      reply_markup: new InlineKeyboard().text('‹ Back', 'admin:welcome')
+      reply_markup: new InlineKeyboard().text('🔄 Reset Default', 'welcome:reset').text('‹ Back', 'admin:welcome')
     });
     return;
   }
@@ -86,11 +88,46 @@ composer.callbackQuery('welcome:preview', adminRequired, async (ctx) => {
     } else {
       await ctx.reply(previewText, { parse_mode: welcome.parse_mode || 'HTML', reply_markup: kb });
     }
+    // Always send back button after preview so admin can navigate back
+    await ctx.reply('👆 Preview shown above.', {
+      reply_markup: new InlineKeyboard()
+        .text('📝 Edit Message', 'welcome:set').text('🔘 Manage Buttons', 'welcome:buttons').row()
+        .text('◀ Back to Panel', 'admin:welcome')
+    });
   } catch (err) {
     await ctx.reply(`⚠️ Preview failed: ${err.message}`, {
       reply_markup: new InlineKeyboard().text('‹ Back', 'admin:welcome')
     });
   }
+});
+
+// ── Reset to default ────────────────────────────────────────────
+composer.callbackQuery('welcome:reset', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const pool = ctx.dbPool;
+  const existing = await welcomeRepo.getWelcomeMessage(pool);
+
+  if (existing) {
+    await pool.query(
+      `UPDATE welcome_messages SET message_text = $1, buttons = '[]'::jsonb, media_type = NULL, media_file_id = NULL, updated_by = $2, is_enabled = TRUE, updated_at = NOW() WHERE id = $3`,
+      [DEFAULT_WELCOME_TEXT, ctx.from.id, existing.id]
+    );
+  } else {
+    await welcomeRepo.setWelcomeMessage(pool, {
+      messageText: DEFAULT_WELCOME_TEXT,
+      buttons: [],
+      updatedBy: ctx.from.id,
+    });
+  }
+
+  await settingsRepo.setSetting(pool, 'welcome_enabled', true, ctx.from.id);
+  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'reset_welcome_default' });
+
+  await ctx.editMessageText('✅ Welcome message reset to default & enabled!', {
+    reply_markup: new InlineKeyboard()
+      .text('👁 Preview', 'welcome:preview').text('📝 Edit Message', 'welcome:set').row()
+      .text('◀ Back', 'admin:welcome')
+  });
 });
 
 // ── Toggle ──────────────────────────────────────────────────────

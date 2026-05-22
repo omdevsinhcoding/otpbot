@@ -7,6 +7,7 @@ import * as welcomeRepo from '../database/repositories/welcomeRepo.js';
 import * as settingsRepo from '../database/repositories/settingsRepo.js';
 import { getMainMenu, buildInlineButtons } from '../utils/keyboard.js';
 import { replaceWelcomePlaceholders } from '../utils/formatters.js';
+import { DEFAULT_WELCOME_TEXT } from '../utils/constants.js';
 import logger from '../utils/logger.js';
 
 const composer = new Composer();
@@ -62,14 +63,10 @@ async function sendWelcomeAndMenu(ctx) {
     logger.debug(`Welcome message fetch failed: ${err.message}`);
   }
 
-  // Default greeting — with clickable user mention link
-  const firstName = ctx.from.first_name || 'User';
-  const userMention = `<a href="tg://user?id=${ctx.from.id}">${firstName.replace(/[<>&]/g, '')}</a>`;
-  await ctx.reply(
-    `👋 <b>Welcome, ${userMention}!</b>\n\n` +
-    `Use the menu below to get started.`,
-    { parse_mode: 'HTML', reply_markup: mainMenu }
-  );
+  // Default premium greeting with user placeholders
+  const defaultText = replaceWelcomePlaceholders(DEFAULT_WELCOME_TEXT, ctx.from);
+  await ctx.reply(defaultText, { parse_mode: 'HTML' });
+  await ctx.reply('Select an option below:', { reply_markup: mainMenu });
 }
 
 composer.command('start', async (ctx) => {

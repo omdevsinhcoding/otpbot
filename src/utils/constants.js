@@ -100,3 +100,21 @@ export const BTN_PAY_PAYTM = "💳 Paytm";
 export const BTN_PAY_BHARATPAY = "🏦 BharatPay";
 export const BTN_PAY_CRYPTO = "₿ Crypto";
 export const BTN_PAY_BACK = "◀️ Back to Admin";
+
+// ── Default welcome message (premium template) ──────────────────────
+export const DEFAULT_WELCOME_TEXT =
+`<b>🚀 Welcome To The Premium Bot, {first_name}!</b>
+
+━━━━━━━━━━━━━━━
+⚡ Fast • Secure • Reliable
+💎 Premium Quality Experience
+🔐 Trusted By Thousands Of Users
+━━━━━━━━━━━━━━━
+
+<b>👤 Your Profile</b>
+┣ 🆔 ID: <code>{id}</code>
+┣ 👤 Name: {full_name}
+┗ 🌐 Username: @{username}
+
+🔥 Everything is ready for you.
+👇 Tap the buttons below and get started now.`;
