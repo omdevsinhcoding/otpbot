@@ -138,7 +138,14 @@ export async function verifyForceJoin(ctx) {
     text += `Progress: ${joinedCount}/${totalRequired} joined`;
     text += `</blockquote>`;
 
-    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+    try {
+      await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+    } catch (editErr) {
+      // Message unchanged — show popup alert instead
+      try {
+        await ctx.answerCallbackQuery({ text: `⚠️ You still need to join ${notJoined.length} channel${notJoined.length > 1 ? 's' : ''}!`, show_alert: true });
+      } catch {}
+    }
     return false;
   } catch (err) {
     logger.error(`Force join verify error: ${err.message}`);
