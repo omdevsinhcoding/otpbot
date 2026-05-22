@@ -1,8 +1,11 @@
 /**
  * Unicode Bold Sans-Serif Transformer for grammy
- * Converts all outgoing text to bold sans-serif Unicode characters.
- * Matches the thick/bold style seen in premium Telegram bots.
- * Preserves: HTML tags, <code> content, emoji, numbers, symbols
+ * Converts outgoing text to bold sans-serif Unicode characters.
+ *
+ * IMPORTANT: Reply keyboard buttons are NOT transformed because
+ * Telegram sends button text as a message when clicked, and the
+ * bot's hears() handlers match against the original text.
+ * Only message text, captions, and INLINE keyboard buttons are transformed.
  */
 
 /**
@@ -18,7 +21,7 @@ export function toBoldSans(text) {
   const len = text.length;
 
   while (i < len) {
-    // Skip <code>...</code> blocks (preserve order IDs, addresses, amounts)
+    // Skip <code>...</code> blocks
     if (text.slice(i, i + 6).toLowerCase() === '<code>') {
       const closeIdx = text.indexOf('</code>', i + 6);
       if (closeIdx !== -1) {
@@ -38,7 +41,7 @@ export function toBoldSans(text) {
       }
     }
 
-    // Skip HTML tags (don't convert tag names/attributes)
+    // Skip HTML tags entirely
     if (text[i] === '<') {
       const closeIdx = text.indexOf('>', i);
       if (closeIdx !== -1) {
@@ -50,16 +53,11 @@ export function toBoldSans(text) {
 
     const code = text.charCodeAt(i);
 
-    // A-Z → Bold Sans A-Z (U+1D5D4 + offset)
     if (code >= 65 && code <= 90) {
       result += String.fromCodePoint(0x1D5D4 + (code - 65));
-    }
-    // a-z → Bold Sans a-z (U+1D5EE + offset)
-    else if (code >= 97 && code <= 122) {
+    } else if (code >= 97 && code <= 122) {
       result += String.fromCodePoint(0x1D5EE + (code - 97));
-    }
-    // Everything else unchanged (emoji, numbers, ₹, symbols)
-    else {
+    } else {
       result += text[i];
     }
     i++;
@@ -69,60 +67,58 @@ export function toBoldSans(text) {
 }
 
 /**
- * Transform inline keyboard and reply keyboard button text
+ * Transform ONLY inline keyboard buttons (not reply keyboard).
+ * Returns a new object — never mutates the original.
  */
-function transformKeyboard(markup) {
-  if (!markup) return markup;
+function transformMarkup(raw) {
+  try {
+    const markup = JSON.parse(JSON.stringify(raw));
 
-  if (markup.inline_keyboard) {
-    markup.inline_keyboard = markup.inline_keyboard.map(row =>
-      row.map(btn => ({ ...btn, text: toBoldSans(btn.text) }))
-    );
+    // Transform inline keyboard buttons only
+    if (markup.inline_keyboard) {
+      markup.inline_keyboard = markup.inline_keyboard.map(row =>
+        row.map(btn => ({ ...btn, text: toBoldSans(btn.text) }))
+      );
+    }
+
+    // DO NOT transform reply keyboard buttons (markup.keyboard)
+    // because Telegram sends button text as a message on click,
+    // and hears() handlers need to match the original text.
+
+    return markup;
+  } catch {
+    return raw;
   }
-
-  if (markup.keyboard) {
-    markup.keyboard = markup.keyboard.map(row =>
-      row.map(btn => {
-        if (typeof btn === 'string') return toBoldSans(btn);
-        return { ...btn, text: toBoldSans(btn.text) };
-      })
-    );
-  }
-
-  return markup;
 }
 
 /**
- * grammy API transformer — intercepts all outgoing messages
- * and applies Bold Sans-Serif conversion automatically.
+ * grammy API transformer — Bold Sans-Serif for messages + inline buttons.
+ * Never crashes the bot (wrapped in try-catch).
  */
 export function boldSansTransformer(prev, method, payload, signal) {
-  // Text messages
-  if (['sendMessage', 'editMessageText'].includes(method) && payload.text) {
-    payload.text = toBoldSans(payload.text);
-  }
-
-  // Captions
-  if (['sendPhoto', 'sendVideo', 'sendDocument', 'sendAnimation',
-       'editMessageCaption'].includes(method) && payload.caption) {
-    payload.caption = toBoldSans(payload.caption);
-  }
-
-  // Keyboard buttons
-  if (payload.reply_markup) {
-    let markup;
-    if (typeof payload.reply_markup === 'string') {
-      markup = JSON.parse(payload.reply_markup);
-    } else {
-      // grammy Keyboard/InlineKeyboard classes need JSON round-trip to serialize
-      markup = JSON.parse(JSON.stringify(payload.reply_markup));
+  try {
+    // Text messages
+    if (['sendMessage', 'editMessageText'].includes(method) && payload.text) {
+      payload.text = toBoldSans(payload.text);
     }
-    payload.reply_markup = transformKeyboard(markup);
-  }
 
-  // Callback query popup text
-  if (method === 'answerCallbackQuery' && payload.text) {
-    payload.text = toBoldSans(payload.text);
+    // Captions
+    if (['sendPhoto', 'sendVideo', 'sendDocument', 'sendAnimation',
+         'editMessageCaption'].includes(method) && payload.caption) {
+      payload.caption = toBoldSans(payload.caption);
+    }
+
+    // Keyboard — only inline buttons, skip reply keyboard
+    if (payload.reply_markup) {
+      payload.reply_markup = transformMarkup(payload.reply_markup);
+    }
+
+    // Callback popup text
+    if (method === 'answerCallbackQuery' && payload.text) {
+      payload.text = toBoldSans(payload.text);
+    }
+  } catch {
+    // Silently pass through — never crash
   }
 
   return prev(method, payload, signal);
