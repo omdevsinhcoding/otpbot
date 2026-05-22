@@ -6,6 +6,7 @@ import * as transactionRepo from '../database/repositories/transactionRepo.js';
 import * as paytmService from '../services/paytmService.js';
 import * as bharatpayService from '../services/bharatpayService.js';
 import * as cryptomusService from '../services/cryptomusService.js';
+import * as binanceRate from '../services/binanceRateService.js';
 
 import { formatNumber, escapeHtml } from '../utils/formatters.js';
 import { generateBrandedQR } from '../services/qrImageService.js';
@@ -651,15 +652,31 @@ composer.callbackQuery('deposit:cryptomus', async (ctx) => {
     return;
   }
 
+  // Fetch live rates for all unique assets
+  const uniqueAssets = [...new Set(selectedCurrencies.map(c => c.currency))];
+  const rateResults = {};
+  await Promise.all(uniqueAssets.map(async (asset) => {
+    rateResults[asset] = await binanceRate.getLiveRate(asset, 'INR');
+  }));
+
   let text =
-    `🪙 <b>Crypto Deposit</b>\n\n` +
-    `Select your payment currency:\n\n` +
-    `👇 <b>Choose one below</b>`;
+    `🪙 <b>Please select your payment method (Crypto):</b>\n\n` +
+    `Choose any one option below 👇`;
 
   const kb = new InlineKeyboard();
-  for (const cur of selectedCurrencies) {
-    const icon = cur.currency === 'USDT' ? '💵' : cur.currency === 'TRX' ? '⚡' : cur.currency === 'BTC' ? '🟠' : cur.currency === 'ETH' ? '🔷' : '🪙';
-    kb.text(`${icon} ${cur.currency} (${cur.network})`, `deposit:crypto_cur:${cur.currency}:${cur.network}`).row();
+  // Place 2 buttons per row where possible
+  for (let i = 0; i < selectedCurrencies.length; i += 2) {
+    const cur1 = selectedCurrencies[i];
+    const icon1 = cur1.currency === 'USDT' ? '💵' : cur1.currency === 'TRX' ? '⚡' : cur1.currency === 'BTC' ? '🟠' : cur1.currency === 'ETH' ? '🔷' : cur1.currency === 'DOGE' ? '🐕' : '🪙';
+    const nw1 = cur1.network.charAt(0).toUpperCase() + cur1.network.slice(1);
+    kb.text(`${icon1} ${cur1.currency} (${nw1})`, `deposit:crypto_cur:${cur1.currency}:${cur1.network}`);
+    if (i + 1 < selectedCurrencies.length) {
+      const cur2 = selectedCurrencies[i + 1];
+      const icon2 = cur2.currency === 'USDT' ? '💵' : cur2.currency === 'TRX' ? '⚡' : cur2.currency === 'BTC' ? '🟠' : cur2.currency === 'ETH' ? '🔷' : cur2.currency === 'DOGE' ? '🐕' : '🪙';
+      const nw2 = cur2.network.charAt(0).toUpperCase() + cur2.network.slice(1);
+      kb.text(`${icon2} ${cur2.currency} (${nw2})`, `deposit:crypto_cur:${cur2.currency}:${cur2.network}`);
+    }
+    kb.row();
   }
   kb.text('‹ Back', 'deposit:menu').text('❌ Cancel', 'deposit:close');
 
@@ -763,14 +780,23 @@ composer.callbackQuery(/^deposit:crypto_cur:/, async (ctx) => {
   const minAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_min_amount')) || 1;
   const maxAmount = parseInt(await settingsRepo.getSetting(pool, 'cryptomus_max_amount')) || 0;
 
+  // Fetch live Binance P2P rate
+  const rateResult = await binanceRate.getLiveRate(currency, 'INR');
+  const rateText = rateResult.price
+    ? `📊 <b>Live Rate:</b> 1 ${currency} = ₹${rateResult.price.toFixed(2)}`
+    : `📊 <b>Rate:</b> Fetching from Cryptomus...`;
+
+  const nwDisplay = network.charAt(0).toUpperCase() + network.slice(1);
   let text =
-    `🪙 <b>${currency} (${network})</b>\n\n` +
-    `💰 <b>Select Deposit Amount (INR)</b>\n\n` +
+    `💰 <b>DEPOSIT</b>\n\n` +
+    `💲 Please select the amount in rupees you want to add.\n\n` +
+    `🪙 <b>Paying via:</b> ${currency} (${nwDisplay})\n` +
+    `${rateText}\n\n` +
     `📌 <b>Min:</b> ₹${minAmount}` +
     (maxAmount ? `  •  <b>Max:</b> ₹${maxAmount}` : '') + `\n\n` +
     `👇 <b>Choose an amount or enter custom</b>`;
 
-  const presets = [100, 300, 500, 1000, 2000, 5000, 10000].filter(a => a >= minAmount && (!maxAmount || a <= maxAmount));
+  const presets = [10, 50, 100, 300, 500, 1000, 5000, 10000].filter(a => a >= minAmount && (!maxAmount || a <= maxAmount));
   const kb = new InlineKeyboard();
   for (let i = 0; i < presets.length; i += 2) {
     kb.text(`₹${presets[i]}`, `deposit:crypto_amt:${currency}:${network}:${presets[i]}`);
@@ -856,27 +882,41 @@ async function handleCryptomusDeposit(ctx, currency, network, amount) {
     gatewayData: { uuid: result.uuid, paymentUrl: result.paymentUrl, address: result.address, payAmount: result.payAmount, payCurrency: result.payCurrency, network: result.network },
   });
 
+  // Fetch live Binance P2P rate for display
+  const rateResult = await binanceRate.getLiveRate(currency, 'INR');
+  const nwDisplay = network.charAt(0).toUpperCase() + network.slice(1);
+
+  let rateInfo = '';
+  if (rateResult.price) {
+    const approxCrypto = (amount / rateResult.price).toFixed(currency === 'BTC' ? 8 : ['USDT', 'USDC', 'BUSD', 'FDUSD'].includes(currency) ? 2 : 4);
+    rateInfo = `📊 <b>Rate:</b> 1 ${currency} = ₹${rateResult.price.toFixed(2)}\n` +
+               `💱 <b>Approx:</b> ${approxCrypto} ${currency}\n`;
+  }
+
   const caption =
-    `🪙 <b>Crypto Payment</b>\n\n` +
+    `✨ <b>Invoice Generated</b>\n\n` +
+    `🎯 <b>Payment Time Limit:</b> 15 Minutes\n` +
     `━━━━━━━━━━━━━━━━━━━━━\n` +
     `💰 <b>Amount:</b> ₹${amount.toFixed(2)}\n` +
-    `🪙 <b>Pay:</b> ${result.payAmount} ${result.payCurrency}\n` +
-    `🔗 <b>Network:</b> ${result.network || network}\n` +
+    `🪙 <b>Amount Payable:</b> ${result.payAmount} ${result.payCurrency}\n` +
+    `🚀 <b>Pay using:</b> ${result.payCurrency}\n` +
+    `🔗 <b>Network:</b> ${nwDisplay}\n` +
     `📋 <b>Order:</b> <code>${orderId}</code>\n` +
+    `${rateInfo}` +
     `━━━━━━━━━━━━━━━━━━━━━\n\n` +
-    (result.address ? `📮 <b>Address:</b>\n<code>${result.address}</code>\n\n` : '') +
-    `⚠️ <b>Send exact amount to the address above.</b>\n` +
-    `⏰ Payment expires in <b>60 minutes</b>`;
+    (result.address ? `🏦 <b>Payment Address:</b>\n<code>${result.address}</code>\n\n` : '') +
+    `⚠️ <b>Please send the exact amount to this address only.</b>\n` +
+    `⚠️ <b>Please complete your payment on time</b>`;
 
   const kb = new InlineKeyboard();
   if (result.paymentUrl) kb.url('🌐 Pay via Web', result.paymentUrl).row();
-  kb.text('✅ Check Payment', `deposit:check_crypto:${orderId}`).row()
+  kb.text('✅ PAID', `deposit:check_crypto:${orderId}`).row()
     .text('❌ Cancel', `deposit:cancel_txn:${orderId}`);
 
   if (result.address) {
     // Generate QR with crypto address
     const qrImageBuffer = await generateBrandedQR({
-      storeName: `${currency} (${network})`,
+      storeName: `${currency} (${nwDisplay})`,
       amount: result.payAmount,
       currency: result.payCurrency,
       refId: orderId,

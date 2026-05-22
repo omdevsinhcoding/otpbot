@@ -231,13 +231,15 @@ async function showCryptomusSettings(ctx) {
     `📊 <b>Status:</b> ${enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
     `🔑 <b>API Key:</b> ${apiKey ? '✅ Set' : '❌ Not set'}\n` +
     `🏪 <b>Merchant ID:</b> ${merchantId ? '✅ Set' : '❌ Not set'}\n` +
-    `⚙️ <b>Mode:</b> ${currentMode === 'inline' ? '🤖 Inline (QR in Bot)' : '🌐 Web (Cryptomus Page)'}\n`;
+    `⚙️ <b>Mode:</b> ${currentMode === 'inline' ? '🤖 Inline (QR in Bot)' : '🌐 Web (Cryptomus Page)'}\n` +
+    `🪙 <b>Currencies:</b> ${currDisplay}\n` +
+    `💰 <b>Min Amount:</b> ${minAmount ? '₹' + minAmount : 'Not set'}\n` +
+    `📈 <b>Max Amount:</b> ${maxAmount ? '₹' + maxAmount : '♾️ No Limit'}`;
 
-  if (currentMode === 'inline') {
-    text += `🪙 <b>Currencies:</b> ${currDisplay}\n`;
+  // Warning if API credentials missing
+  if (!apiKey || !merchantId) {
+    text += `\n\n⚠️ <i>Set API Key & Merchant ID first to load currencies!</i>`;
   }
-  text += `💰 <b>Min Amount:</b> ${minAmount ? '₹' + minAmount : 'Not set'}\n` +
-    `📈 <b>Max Amount:</b> ${maxAmount ? '₹' + maxAmount : 'No Limit'}`;
 
   const kb = new InlineKeyboard()
     .text(enabled ? '🔴 Disable' : '🟢 Enable', 'pay:cryptomus:toggle').row()
@@ -249,13 +251,13 @@ async function showCryptomusSettings(ctx) {
   kb.row();
   // Mode toggle
   kb.text(currentMode === 'inline' ? '🌐 Switch to Web Mode' : '🤖 Switch to Inline Mode', 'pay:cryptomus:toggle_mode').row();
-  // Currency selection only in inline mode
-  if (currentMode === 'inline' && apiKey && merchantId) kb.text('🪙 Select Currencies', 'pay:cryptomus:currencies').row();
+  // Currency selection — show in BOTH modes when API credentials are set
+  if (apiKey && merchantId) kb.text('🪙 Select Coins & Network', 'pay:cryptomus:currencies').row();
   kb.text('💰 Min Amount', 'pay:cryptomus:edit:cryptomus_min_amount');
   if (minAmount) kb.text('🗑 Clear', 'pay:cryptomus:clear:cryptomus_min_amount');
   kb.row()
     .text('📈 Max Amount', 'pay:cryptomus:edit:cryptomus_max_amount');
-  if (maxAmount) kb.text('🗑 Clear', 'pay:cryptomus:clear:cryptomus_max_amount');
+  if (maxAmount) kb.text('🚫 No Limit', 'pay:cryptomus:nolimit:cryptomus_max_amount');
   kb.row()
     .text('‹ Back', 'admin:payments');
 
