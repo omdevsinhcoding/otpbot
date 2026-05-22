@@ -104,18 +104,27 @@ export async function calculateBenefits(pool, userId, depositAmount, orderId = n
       }
     }
 
-    // ── Bonus pass: find highest-priority matching bonus/loyalty rule
+    // ── Bonus pass: find BEST (highest %) matching bonus/loyalty rule ──
+    // Check ALL matching rules and pick the one with highest percentage
     const bonusRules = rules.filter(r => r.rule_type === 'bonus' || r.rule_type === 'loyalty_bonus');
+    let bestBonus = null;
+    let bestPct = 0;
+
     for (const rule of bonusRules) {
-      // Use rule's custom period for loyalty rules
       const period = parseInt(rule.rolling_period_days) || 30;
       const rollingTotal = await getRolling(period);
       if (ruleMatches(rule, depositAmount, rollingTotal)) {
         const pct = parseFloat(rule.percentage);
-        result.bonusAmount = Math.round(depositAmount * pct / 100 * 100) / 100;
-        result.bonusRule = rule;
-        break;
+        if (pct > bestPct) {
+          bestPct = pct;
+          bestBonus = rule;
+        }
       }
+    }
+
+    if (bestBonus) {
+      result.bonusAmount = Math.round(depositAmount * bestPct / 100 * 100) / 100;
+      result.bonusRule = bestBonus;
     }
 
     // ── Calculate net ──────────────────────────────────────────
