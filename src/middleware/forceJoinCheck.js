@@ -2,8 +2,9 @@ import { InlineKeyboard } from 'grammy';
 import logger from '../utils/logger.js';
 
 /**
- * Check force-join requirements for ALL configured channels.
- * Returns true if passed (user joined all), false if blocked.
+ * Show force-join channel buttons on /start.
+ * Always shows ALL channel buttons regardless of join status.
+ * Returns true if no channels configured or force join disabled, false if blocked.
  */
 export async function checkForceJoin(ctx) {
   if (!ctx.from) return true;
@@ -24,7 +25,56 @@ export async function checkForceJoin(ctx) {
     const channels = await getActiveChannels(pool);
     if (!channels || channels.length === 0) return true;
 
-    // Check membership for EACH channel
+    // Always show ALL channel buttons — no membership check here
+    // Verification happens only when user clicks "✅ I Joined All"
+    const kb = new InlineKeyboard();
+    for (const ch of channels) {
+      const link = ch.invite_link || (ch.channel_username ? `https://t.me/${ch.channel_username}` : null);
+      if (link) {
+        kb.url(`📢 ${ch.channel_title || 'Join Channel'}`, link).row();
+      }
+    }
+    kb.text('✅ Joined', 'fjcheck:verify').style('success').row();
+
+    // Build clickable user mention
+    const firstName = ctx.from.first_name || 'User';
+    const userMention = `<a href="tg://user?id=${ctx.from.id}">${firstName.replace(/[<>&]/g, '')}</a>`;
+
+    let text = `👋 Hey! ${userMention}, Please Join Our Channel${channels.length > 1 ? 's' : ''} To Access The Bot\n\n`;
+    text += `<blockquote>`;
+    text += `You must join <b>${channels.length}</b> channel${channels.length > 1 ? 's' : ''} to continue.`;
+    text += `</blockquote>`;
+
+    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+    return false;
+  } catch (err) {
+    logger.error(`Force join check error: ${err.message}`);
+    return true; // Fail open
+  }
+}
+
+/**
+ * Verify force-join: checks if user actually joined ALL channels.
+ * Called only when user clicks the "✅ Joined" button.
+ * Returns true if all joined, false if some not joined.
+ */
+export async function verifyForceJoin(ctx) {
+  if (!ctx.from) return true;
+  const pool = ctx.dbPool;
+
+  try {
+    const { getSetting } = await import('../database/repositories/settingsRepo.js');
+    const enabled = await getSetting(pool, 'force_join_enabled');
+    if (!enabled) return true;
+
+    const { isAdmin } = await import('../database/repositories/adminRepo.js');
+    if (await isAdmin(pool, ctx.from.id)) return true;
+
+    const { getActiveChannels } = await import('../database/repositories/forceJoinRepo.js');
+    const channels = await getActiveChannels(pool);
+    if (!channels || channels.length === 0) return true;
+
+    // Now actually check membership for EACH channel
     const notJoined = [];
     for (const ch of channels) {
       try {
@@ -33,14 +83,13 @@ export async function checkForceJoin(ctx) {
           notJoined.push(ch);
         }
       } catch (err) {
-        // If we can't check (bot not admin etc), skip this channel
         logger.debug(`Cannot check channel ${ch.channel_id}: ${err.message}`);
       }
     }
 
     if (notJoined.length === 0) return true;
 
-    // Build join buttons for ALL not-joined channels
+    // User hasn't joined all — show which ones are missing
     const kb = new InlineKeyboard();
     for (const ch of notJoined) {
       const link = ch.invite_link || (ch.channel_username ? `https://t.me/${ch.channel_username}` : null);
@@ -48,27 +97,24 @@ export async function checkForceJoin(ctx) {
         kb.url(`📢 ${ch.channel_title || 'Join Channel'}`, link).row();
       }
     }
-    kb.text('✅ I Joined All', 'fjcheck:verify').row();
+    kb.text('✅ Joined', 'fjcheck:verify').style('success').row();
 
     const totalRequired = channels.length;
     const joinedCount = totalRequired - notJoined.length;
 
-    // Build clickable user mention
     const firstName = ctx.from.first_name || 'User';
     const userMention = `<a href="tg://user?id=${ctx.from.id}">${firstName.replace(/[<>&]/g, '')}</a>`;
 
-    let text = `👋 Hey! ${userMention}, Please Join Our Channel${notJoined.length > 1 ? 's' : ''} To Access The Bot\n\n`;
+    let text = `⚠️ ${userMention}, You haven't joined all channels yet!\n\n`;
     text += `<blockquote>`;
-    text += `You must join <b>${notJoined.length}</b> channel${notJoined.length > 1 ? 's' : ''} to continue.\n\n`;
-    if (totalRequired > 1) {
-      text += `Progress: ${joinedCount}/${totalRequired} joined`;
-    }
+    text += `Still need to join <b>${notJoined.length}</b> channel${notJoined.length > 1 ? 's' : ''}.\n\n`;
+    text += `Progress: ${joinedCount}/${totalRequired} joined`;
     text += `</blockquote>`;
 
-    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
     return false;
   } catch (err) {
-    logger.error(`Force join check error: ${err.message}`);
-    return true; // Fail open
+    logger.error(`Force join verify error: ${err.message}`);
+    return true;
   }
 }

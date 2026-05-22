@@ -1,6 +1,6 @@
 import { Composer, InlineKeyboard } from 'grammy';
 import crypto from 'crypto';
-import { checkForceJoin } from '../middleware/forceJoinCheck.js';
+import { checkForceJoin, verifyForceJoin } from '../middleware/forceJoinCheck.js';
 import * as userRepo from '../database/repositories/userRepo.js';
 import * as adminRepo from '../database/repositories/adminRepo.js';
 import * as welcomeRepo from '../database/repositories/welcomeRepo.js';
@@ -108,13 +108,13 @@ composer.command('start', async (ctx) => {
   try {
     const tcEnabled = await settingsRepo.getSetting(pool, 'tc_enabled');
     if (tcEnabled) {
-      const tcUrl = await settingsRepo.getSetting(pool, 'tc_url');
+      const tcButtons = await settingsRepo.getSetting(pool, 'tc_buttons') || [];
       const tcMessage = await settingsRepo.getSetting(pool, 'tc_message') ||
         "Dear Users,\nThere Are Some Terms & Conditions Given Please Read Carefully, Else If You Face Any Problem Related To Terms And Conditions So We Can't Help You...";
 
       const tcKb = new InlineKeyboard();
-      if (tcUrl) {
-        tcKb.webApp('📖 Read Full Terms And Conditions', tcUrl).row();
+      for (const btn of tcButtons) {
+        tcKb.url(btn.text, btn.url).row();
       }
       tcKb.text('✅ Accept', 'tc:accept').style('success');
       tcKb.text('❌ Decline', 'tc:decline').style('danger');
@@ -145,19 +145,18 @@ composer.callbackQuery('tc:accept', async (ctx) => {
 
 // ── T&C Decline callback ────────────────────────────────────────────
 composer.callbackQuery('tc:decline', async (ctx) => {
-  try { await ctx.answerCallbackQuery('⚠️ You must accept to use the bot.'); } catch {}
-  await ctx.editMessageText(
-    '❌ <b>Terms Declined</b>\n\n' +
-    '<blockquote>You must accept the Terms & Conditions to use this bot.\n\n' +
-    'Send /start to try again.</blockquote>',
-    { parse_mode: 'HTML' }
-  );
+  try {
+    await ctx.answerCallbackQuery({
+      text: 'You Must Accept Terms And Condition To Use This Bot ❌',
+      show_alert: true,
+    });
+  } catch {}
 });
 
 // ── Force-join verification callback ──────────────────────────────
 composer.callbackQuery('fjcheck:verify', async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
-  const passed = await checkForceJoin(ctx);
+  const passed = await verifyForceJoin(ctx);
   if (passed) {
     await ctx.editMessageText('✅ Verification passed! Send /start to continue.');
   }

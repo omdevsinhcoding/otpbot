@@ -6,13 +6,13 @@ import { escapeHtml, truncateText } from '../utils/formatters.js';
 import logger from '../utils/logger.js';
 
 const composer = new Composer();
-const states = new Map(); // chatId → { step }
+const states = new Map(); // chatId → { step, data }
 
 // ── T&C panel ───────────────────────────────────────────────────
 async function showTcPanel(ctx) {
   const pool = ctx.dbPool;
   const enabled = await settingsRepo.getSetting(pool, 'tc_enabled');
-  const url = await settingsRepo.getSetting(pool, 'tc_url');
+  const buttons = await settingsRepo.getSetting(pool, 'tc_buttons') || [];
   const message = await settingsRepo.getSetting(pool, 'tc_message');
 
   const statusEmoji = enabled ? '🟢' : '🔴';
@@ -21,15 +21,25 @@ async function showTcPanel(ctx) {
   let text = `📜 <b>TERMS & CONDITIONS</b>\n\n`;
   text += `<blockquote>`;
   text += `${statusEmoji} <b>Status:</b> ${enabled ? 'Active' : 'Inactive'}\n`;
-  text += `🔗 <b>URL:</b> ${url ? truncateText(url, 40) : '❌ Not set'}\n`;
+  text += `🔗 <b>Buttons:</b> ${buttons.length} configured\n`;
   text += `💬 <b>Message:</b> ${message ? '✅ Set' : '✅ Default'}`;
   text += `</blockquote>`;
 
+  if (buttons.length > 0) {
+    text += `\n\n<blockquote>📋 <b>BUTTONS</b>\n\n`;
+    buttons.forEach((btn, i) => {
+      text += `${i + 1}. ${escapeHtml(btn.text)} → ${truncateText(btn.url, 35)}\n`;
+    });
+    text += `</blockquote>`;
+  }
+
   const kb = new InlineKeyboard()
     .text(toggleLabel, 'tc:toggle').row()
-    .text('🔗 Set URL', 'tc:set_url').text('💬 Set Message', 'tc:set_msg').row()
-    .text('👁 Preview', 'tc:preview').row()
-    .text('◀ Back', 'admin:back');
+    .text('➕ Add Button', 'tc:add_btn').text('💬 Set Message', 'tc:set_msg').row();
+  if (buttons.length > 0) {
+    kb.text('🗑 Remove Button', 'tc:remove_list').text('👁 Preview', 'tc:preview').row();
+  }
+  kb.text('◀ Back', 'admin:back');
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
 }
@@ -50,20 +60,66 @@ composer.callbackQuery('tc:toggle', adminRequired, async (ctx) => {
   await showTcPanel(ctx);
 });
 
-// ── Set URL ─────────────────────────────────────────────────────
-composer.callbackQuery('tc:set_url', adminRequired, async (ctx) => {
+// ── Add Button ──────────────────────────────────────────────────
+composer.callbackQuery('tc:add_btn', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
-  states.set(ctx.chat.id, { step: 'set_url' });
+  states.set(ctx.chat.id, { step: 'add_btn' });
   await ctx.editMessageText(
-    '🔗 <b>Set T&C URL</b>\n\n' +
-    '<blockquote>' +
-    'Send the Terms & Conditions link.\n\n' +
-    '• Telegraph: <code>https://telegra.ph/your-article</code>\n' +
-    '• Any web URL: <code>https://example.com/terms</code>\n\n' +
-    '⚠️ This URL will open as a <b>Mini App</b> (WebView) inside Telegram.' +
-    '</blockquote>',
+    '➕ <b>Add T&C Button</b>\n\n' +
+    'Send the button in format:\n' +
+    '<code>Button Name | https://url</code>\n\n' +
+    '<i>Examples:</i>\n' +
+    '<code>📖 English Version | https://telegra.ph/Terms-EN</code>\n' +
+    '<code>📖 हिंदी Version | https://telegra.ph/Terms-HI</code>',
     { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('❌ Cancel', 'tc:cancel') }
   );
+});
+
+// ── Remove Button List ──────────────────────────────────────────
+composer.callbackQuery('tc:remove_list', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const buttons = await settingsRepo.getSetting(ctx.dbPool, 'tc_buttons') || [];
+
+  if (buttons.length === 0) {
+    await ctx.editMessageText('⚠️ No buttons to remove.', {
+      reply_markup: new InlineKeyboard().text('◀ Back', 'admin:tc')
+    });
+    return;
+  }
+
+  let text = '🗑 <b>Remove T&C Button</b>\n\nSelect a button to remove:\n\n';
+  const kb = new InlineKeyboard();
+  buttons.forEach((btn, i) => {
+    text += `${i + 1}. ${escapeHtml(btn.text)} → ${truncateText(btn.url, 35)}\n`;
+    kb.text(`🗑 #${i + 1} — ${truncateText(btn.text, 20)}`, `tc:remove:${i}`).row();
+  });
+  kb.text('◀ Back', 'admin:tc');
+
+  await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+});
+
+// ── Remove Button Confirm ───────────────────────────────────────
+composer.callbackQuery(/^tc:remove:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const idx = Number(ctx.callbackQuery.data.split(':')[2]);
+  const pool = ctx.dbPool;
+  const buttons = await settingsRepo.getSetting(pool, 'tc_buttons') || [];
+
+  if (idx < 0 || idx >= buttons.length) {
+    await ctx.editMessageText('⚠️ Button not found.', {
+      reply_markup: new InlineKeyboard().text('◀ Back', 'admin:tc')
+    });
+    return;
+  }
+
+  const removed = buttons.splice(idx, 1)[0];
+  await settingsRepo.setSetting(pool, 'tc_buttons', buttons, ctx.from.id);
+  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'remove_tc_button' });
+
+  await ctx.editMessageText(`✅ Button "${escapeHtml(removed.text)}" removed.`, {
+    parse_mode: 'HTML',
+    reply_markup: new InlineKeyboard().text('◀ Back', 'admin:tc')
+  });
 });
 
 // ── Set Message ─────────────────────────────────────────────────
@@ -82,13 +138,13 @@ composer.callbackQuery('tc:set_msg', adminRequired, async (ctx) => {
 composer.callbackQuery('tc:preview', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const pool = ctx.dbPool;
-  const url = await settingsRepo.getSetting(pool, 'tc_url');
+  const buttons = await settingsRepo.getSetting(pool, 'tc_buttons') || [];
   const message = await settingsRepo.getSetting(pool, 'tc_message') ||
     "Dear Users,\nThere Are Some Terms & Conditions Given Please Read Carefully, Else If You Face Any Problem Related To Terms And Conditions So We Can't Help You...";
 
   const kb = new InlineKeyboard();
-  if (url) {
-    kb.webApp('📖 Read Full Terms And Conditions', url).row();
+  for (const btn of buttons) {
+    kb.url(btn.text, btn.url).row();
   }
   kb.text('✅ Accept', 'tc:preview_noop').style('success');
   kb.text('❌ Decline', 'tc:preview_noop').style('danger');
@@ -96,7 +152,7 @@ composer.callbackQuery('tc:preview', adminRequired, async (ctx) => {
   await ctx.reply(message, { parse_mode: 'HTML', reply_markup: kb });
 });
 
-// Preview noop (just acknowledge)
+// Preview noop
 composer.callbackQuery('tc:preview_noop', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery('This is a preview — buttons are inactive.'); } catch {}
 });
@@ -112,24 +168,35 @@ composer.on('message:text', async (ctx, next) => {
     return;
   }
 
-  if (state.step === 'set_url') {
+  if (state.step === 'add_btn') {
     states.delete(ctx.chat.id);
-    const url = ctx.message.text.trim();
-
-    // Basic URL validation
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      await ctx.reply('⚠️ Invalid URL. Must start with <code>http://</code> or <code>https://</code>', {
+    const parts = ctx.message.text.split('|').map(s => s.trim());
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      await ctx.reply('⚠️ Invalid format. Use: <code>Button Name | https://url</code>', {
         parse_mode: 'HTML',
-        reply_markup: new InlineKeyboard().text('🔗 Try Again', 'tc:set_url').text('◀ Back', 'admin:tc')
+        reply_markup: new InlineKeyboard().text('➕ Try Again', 'tc:add_btn').text('◀ Back', 'admin:tc')
       });
       return;
     }
 
-    await settingsRepo.setSetting(ctx.dbPool, 'tc_url', url, ctx.from.id);
-    ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'set_tc_url' });
-    await ctx.reply(`✅ T&C URL set to:\n<code>${escapeHtml(url)}</code>`, {
+    const [btnText, btnUrl] = parts;
+    if (!btnUrl.startsWith('http://') && !btnUrl.startsWith('https://')) {
+      await ctx.reply('⚠️ Invalid URL. Must start with <code>http://</code> or <code>https://</code>', {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('➕ Try Again', 'tc:add_btn').text('◀ Back', 'admin:tc')
+      });
+      return;
+    }
+
+    const pool = ctx.dbPool;
+    const buttons = await settingsRepo.getSetting(pool, 'tc_buttons') || [];
+    buttons.push({ text: btnText, url: btnUrl });
+    await settingsRepo.setSetting(pool, 'tc_buttons', buttons, ctx.from.id);
+    ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED, { action: 'add_tc_button' });
+
+    await ctx.reply(`✅ Button "${escapeHtml(btnText)}" added!`, {
       parse_mode: 'HTML',
-      reply_markup: new InlineKeyboard().text('◀ Back', 'admin:tc')
+      reply_markup: new InlineKeyboard().text('➕ Add More', 'tc:add_btn').text('◀ Back', 'admin:tc')
     });
     return;
   }
