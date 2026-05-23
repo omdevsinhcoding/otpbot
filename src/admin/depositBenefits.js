@@ -79,9 +79,11 @@ async function showDashboard(ctx) {
   const onoff = enabled ? '🟢 ON' : '🔴 OFF';
   const toggleBtn = enabled ? '🔴 Turn OFF' : '🟢 Turn ON';
   const telegraphName = await settingsRepo.getSetting(pool, 'telegraph_author_name') || '';
+  const telegraphUrl = await settingsRepo.getSetting(pool, 'telegraph_rules_url') || '';
 
   let text = `💎 <b>Deposit Benefits</b>  ${onoff}\n`;
   if (telegraphName) text += `📝 Telegraph Name: <b>${escapeHtml(telegraphName)}</b>\n`;
+  text += telegraphUrl ? `🔗 Telegraph: ✅ Active\n` : `🔗 Telegraph: ⚠️ Not set\n`;
 
   if (rules.length === 0) {
     text += `\n<blockquote><b>What is this?</b>\n\n` +
@@ -106,6 +108,7 @@ async function showDashboard(ctx) {
     kb.text('🔮 Test', 'benefits:test').text('📊 Stats', 'benefits:stats').row();
   }
   kb.text('📝 Set Telegraph Name', 'benefits:set_author').row();
+  kb.text('🔄 Reset Telegraph', 'benefits:reset_telegraph').row();
   kb.text('◀ Back', 'admin:back');
   try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
   catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
@@ -116,6 +119,27 @@ composer.callbackQuery('benefits:toggle', adminRequired, async (ctx) => {
   const cur = await settingsRepo.getSetting(ctx.dbPool, 'deposit_benefits_enabled');
   await settingsRepo.setSetting(ctx.dbPool, 'deposit_benefits_enabled', !cur, ctx.from.id);
   await showDashboard(ctx);
+});
+
+// ── Reset Telegraph (force recreate) ──
+composer.callbackQuery('benefits:reset_telegraph', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const pool = ctx.dbPool;
+  try {
+    const { resetAndRecreate } = await import('../services/telegraphService.js');
+    const url = await resetAndRecreate(pool);
+    if (url) {
+      const kb = new InlineKeyboard().url('🔗 View Page', url).row().text('◀ Dashboard', 'admin:benefits');
+      try { await ctx.editMessageText(`✅ <b>Telegraph Reset!</b>\n\nNew page created successfully.`, { parse_mode: 'HTML', reply_markup: kb }); }
+      catch { await ctx.reply(`✅ Telegraph reset! New URL: ${url}`); }
+    } else {
+      try { await ctx.editMessageText(`⚠️ No active rules. Enable some rules first.`, { reply_markup: new InlineKeyboard().text('◀ Back', 'admin:benefits') }); }
+      catch {}
+    }
+  } catch (e) {
+    try { await ctx.editMessageText(`❌ Reset failed: <code>${e.message}</code>`, { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Back', 'admin:benefits') }); }
+    catch {}
+  }
 });
 
 // ── Set Telegraph Author Name ──
@@ -435,18 +459,8 @@ async function saveRule(ctx, pool, data) {
   // Auto-update Telegraph rules page
   try {
     const { updateRulesPage } = await import('../services/telegraphService.js');
-    const url = await updateRulesPage(pool);
-    if (url) {
-      logger.info(`[Benefits] Telegraph updated: ${url}`);
-      try { await ctx.reply(`📝 Telegraph updated ✅\n${url}`); } catch {}
-    } else {
-      logger.warn(`[Benefits] Telegraph returned null (no active rules?)`);
-      try { await ctx.reply(`⚠️ Telegraph update returned null — no active rules?`); } catch {}
-    }
-  } catch (e) {
-    logger.error(`[Benefits] Telegraph update failed: ${e.message}`);
-    try { await ctx.reply(`❌ Telegraph update FAILED:\n<code>${e.message}</code>`, { parse_mode: 'HTML' }); } catch {}
-  }
+    await updateRulesPage(pool);
+  } catch (e) { logger.error(`[Benefits] Telegraph update failed: ${e.message}`); }
 
   const msg = `✅ <b>Rule Created!</b>\n\n${ICONS[saved.rule_type]} ${describeRule(saved)}\n<i>${exampleCalc(saved)}</i>`;
   const kb = new InlineKeyboard().text('➕ Add Another', 'benefits:add').row().text('◀ Dashboard', 'admin:benefits');
