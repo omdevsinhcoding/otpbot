@@ -15,7 +15,7 @@ import { generateBrandedQR } from '../../services/qrImageService.js';
 import logger from '../../utils/logger.js';
 import {
   userStates, checkCooldowns, COOLDOWN_MS, activeChecks,
-  safeReply, buildSuccessMessage, applyBenefits,
+  safeReply, buildSuccessMessage, applyBenefits, processReferralOnDeposit,
   _coinEmoji, _networkLabel,
 } from './shared.js';
 
@@ -63,6 +63,7 @@ function startCryptoAutoCheck(api, pool, orderId, uuid, userId, chatId, msgId, a
         if (!updated) return;
         await walletRepo.addBalance(pool, userId, creditAmount);
         const { benefits, newBalance } = await applyBenefits(pool, userId, creditAmount, orderId);
+        await processReferralOnDeposit(pool, api, userId, creditAmount, orderId);
 
         try { await api.deleteMessage(chatId, msgId); } catch {}
         await api.sendMessage(chatId, buildSuccessMessage(creditAmount, newBalance, orderId, benefits),
@@ -536,6 +537,7 @@ composer.callbackQuery(/^deposit:check_crypto:CX-/, async (ctx) => {
       await walletRepo.addBalance(pool, ctx.from.id, creditAmount);
       try { await ctx.deleteMessage(); } catch { /* ignore */ }
       const { benefits, newBalance } = await applyBenefits(pool, ctx.from.id, creditAmount, orderId);
+      await processReferralOnDeposit(pool, ctx.api, ctx.from.id, creditAmount, orderId);
       await ctx.reply(buildSuccessMessage(creditAmount, newBalance, orderId, benefits),
         { parse_mode: 'HTML' }
       );
@@ -571,6 +573,7 @@ composer.callbackQuery(/^deposit:check_crypto:CRYPTO_/, async (ctx) => {
     await walletRepo.addBalance(pool, ctx.from.id, creditAmount);
     try { await ctx.deleteMessage(); } catch { /* ignore */ }
     const { benefits, newBalance } = await applyBenefits(pool, ctx.from.id, creditAmount, orderId);
+    await processReferralOnDeposit(pool, ctx.api, ctx.from.id, creditAmount, orderId);
     await ctx.reply(buildSuccessMessage(creditAmount, newBalance, orderId, benefits),
       { parse_mode: 'HTML' }
     );

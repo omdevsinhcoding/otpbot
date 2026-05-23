@@ -96,6 +96,12 @@ async function handleCryptomusWebhook(req, res) {
       await walletRepo.addBalance(_pool, txn.user_id, creditAmount);
       const newBalance = await walletRepo.getBalance(_pool, txn.user_id);
 
+      // Process referral commission (best-effort, non-blocking)
+      try {
+        const { processReferralReward } = await import('./services/referralService.js');
+        await processReferralReward(_pool, _bot.api, txn.user_id, creditAmount, orderId);
+      } catch { /* referral processing should never block webhook */ }
+
       // Notify user via Telegram
       try {
         if (txn.gateway_data?.qrMsgId) {

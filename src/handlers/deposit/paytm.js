@@ -13,7 +13,7 @@ import { generateBrandedQR } from '../../services/qrImageService.js';
 import logger from '../../utils/logger.js';
 import {
   userStates, checkCooldowns, COOLDOWN_MS, activeChecks,
-  safeReply, buildSuccessMessage, applyBenefits,
+  safeReply, buildSuccessMessage, applyBenefits, processReferralOnDeposit,
 } from './shared.js';
 
 const composer = new Composer();
@@ -277,6 +277,7 @@ async function _doPaytmCheck(ctx, pool, orderId) {
       await walletRepo.addBalance(pool, ctx.from.id, creditAmount);
       try { await ctx.api.deleteMessage(ctx.chat.id, verifyMsg.message_id); } catch { /* ignore */ }
       const { benefits, newBalance } = await applyBenefits(pool, ctx.from.id, creditAmount, orderId);
+      await processReferralOnDeposit(pool, ctx.api, ctx.from.id, creditAmount, orderId);
       await ctx.reply(buildSuccessMessage(creditAmount, newBalance, orderId, benefits),
         { parse_mode: 'HTML' }
       );

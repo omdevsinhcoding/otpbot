@@ -9,6 +9,7 @@ import { InlineKeyboard } from 'grammy';
 import * as walletRepo from '../../database/repositories/walletRepo.js';
 import * as depositBenefitsService from '../../services/depositBenefitsService.js';
 import { formatNumber } from '../../utils/formatters.js';
+import logger from '../../utils/logger.js';
 
 // ── Per-user state map ──────────────────────────────────────────
 export const userStates = new Map(); // chatId → { step, gateway, msgId }
@@ -129,5 +130,23 @@ export async function applyBenefits(pool, userId, depositAmount, orderId) {
     return { benefits, newBalance };
   } catch {
     return { benefits: null, newBalance: await walletRepo.getBalance(pool, userId) };
+  }
+}
+
+/**
+ * Process referral reward after a successful deposit.
+ * Best-effort — never blocks deposit success flow.
+ * @param {Pool} pool - Database pool
+ * @param {Api} botApi - Grammy bot.api for sending notifications
+ * @param {number} userId - User who made the deposit
+ * @param {number} depositAmount - Deposit amount
+ * @param {string} orderId - Order ID
+ */
+export async function processReferralOnDeposit(pool, botApi, userId, depositAmount, orderId) {
+  try {
+    const { processReferralReward } = await import('../../services/referralService.js');
+    await processReferralReward(pool, botApi, userId, depositAmount, orderId);
+  } catch (err) {
+    logger.debug(`[Referral] Reward processing failed (non-blocking): ${err.message}`);
   }
 }

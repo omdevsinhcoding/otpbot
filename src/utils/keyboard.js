@@ -52,7 +52,7 @@ export const ADMIN_PANEL_KEYBOARD = new InlineKeyboard()
   .text('🔗 Force Join', `${ADMIN_CB}forcejoin`).text('👑 Admins', `${ADMIN_CB}admins`).row()
   .text('💬 Welcome Msg', `${ADMIN_CB}welcome`).text('📜 T&C', `${ADMIN_CB}tc`).row()
   .text('💰 Payments', `${ADMIN_CB}payments`).text('💎 Benefits', `${ADMIN_CB}benefits`).row()
-  .text('⚙️ Settings', `${ADMIN_CB}settings`).row()
+  .text('🎁 Referral', `${ADMIN_CB}referral`).text('⚙️ Settings', `${ADMIN_CB}settings`).row()
   .text('🤖 Bot Stats', `${ADMIN_CB}botstats`).text('📋 Admin Logs', `${ADMIN_CB}logs`).row()
   .text('❌ Close', `${ADMIN_CB}close`);
 

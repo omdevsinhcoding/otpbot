@@ -11,6 +11,8 @@ export const SETTINGS_CB = "settings:";
 export const BOT_STATS_CB = "botstats:";
 export const MENU_CB = "menu:";
 export const FJ_CHECK_CB = "fjcheck:";
+export const REFERRAL_CB = "ref:";         // User-side referral callbacks
+export const REF_ADMIN_CB = "refadm:";     // Admin-side referral callbacks
 
 // ── Action types ─────────────────────────────────────────────────────
 export const ActionType = Object.freeze({
@@ -45,6 +47,11 @@ export const ActionType = Object.freeze({
   FINANCIAL_WITHDRAWAL: "financial_withdrawal",
   FINANCIAL_PROFIT: "financial_profit",
   FINANCIAL_LOSS: "financial_loss",
+
+  REFERRAL_REWARD: "referral_reward",
+  REFERRAL_TRANSFER: "referral_transfer",
+  REFERRAL_REVERSED: "referral_reversed",
+  REFERRAL_FRAUD: "referral_fraud",
 });
 
 // ── Permissions ──────────────────────────────────────────────────────

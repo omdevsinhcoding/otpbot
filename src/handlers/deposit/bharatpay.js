@@ -9,7 +9,7 @@ import * as walletRepo from '../../database/repositories/walletRepo.js';
 import * as transactionRepo from '../../database/repositories/transactionRepo.js';
 import * as bharatpayService from '../../services/bharatpayService.js';
 import { escapeHtml } from '../../utils/formatters.js';
-import { userStates, safeReply, buildSuccessMessage, applyBenefits } from './shared.js';
+import { userStates, safeReply, buildSuccessMessage, applyBenefits, processReferralOnDeposit } from './shared.js';
 
 const composer = new Composer();
 
@@ -94,6 +94,7 @@ export async function handleBharatpayUTR(ctx) {
     await walletRepo.addBalance(pool, ctx.from.id, result.amount);
 
     const { benefits, newBalance } = await applyBenefits(pool, ctx.from.id, result.amount, orderId);
+    await processReferralOnDeposit(pool, ctx.api, ctx.from.id, result.amount, orderId);
     await ctx.reply(buildSuccessMessage(result.amount, newBalance, orderId, benefits),
       { parse_mode: 'HTML' }
     );

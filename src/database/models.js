@@ -209,6 +209,61 @@ CREATE TABLE IF NOT EXISTS bonus_history (
 CREATE INDEX IF NOT EXISTS idx_bonus_history_user ON bonus_history(user_id);
 CREATE INDEX IF NOT EXISTS idx_bonus_history_order ON bonus_history(order_id);
 CREATE INDEX IF NOT EXISTS idx_bonus_history_created ON bonus_history(created_at);
+
+CREATE TABLE IF NOT EXISTS referral_wallets (
+    user_id           BIGINT PRIMARY KEY REFERENCES users(user_id),
+    balance           DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    total_earned      DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    total_transferred DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    is_frozen         BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS referral_rewards (
+    id              BIGSERIAL PRIMARY KEY,
+    referrer_id     BIGINT NOT NULL REFERENCES users(user_id),
+    referred_id     BIGINT NOT NULL REFERENCES users(user_id),
+    order_id        VARCHAR(100) NOT NULL,
+    deposit_amount  DECIMAL(12,2) NOT NULL,
+    commission_pct  DECIMAL(5,2) NOT NULL,
+    reward_amount   DECIMAL(12,2) NOT NULL,
+    status          VARCHAR(30) NOT NULL DEFAULT 'credited',
+    tag             VARCHAR(50) NOT NULL DEFAULT 'Referral Reward',
+    admin_note      TEXT,
+    created_by      BIGINT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ref_rewards_referrer ON referral_rewards(referrer_id);
+CREATE INDEX IF NOT EXISTS idx_ref_rewards_referred ON referral_rewards(referred_id);
+CREATE INDEX IF NOT EXISTS idx_ref_rewards_order ON referral_rewards(order_id);
+CREATE INDEX IF NOT EXISTS idx_ref_rewards_status ON referral_rewards(status);
+CREATE INDEX IF NOT EXISTS idx_ref_rewards_created ON referral_rewards(created_at);
+
+CREATE TABLE IF NOT EXISTS referral_transfers (
+    id              BIGSERIAL PRIMARY KEY,
+    user_id         BIGINT NOT NULL REFERENCES users(user_id),
+    amount          DECIMAL(12,2) NOT NULL,
+    tag             VARCHAR(50) NOT NULL DEFAULT 'Referral Transfer',
+    admin_note      TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ref_transfers_user ON referral_transfers(user_id);
+CREATE INDEX IF NOT EXISTS idx_ref_transfers_created ON referral_transfers(created_at);
+
+CREATE TABLE IF NOT EXISTS referral_fraud_flags (
+    id              BIGSERIAL PRIMARY KEY,
+    user_id         BIGINT NOT NULL REFERENCES users(user_id),
+    flag_type       VARCHAR(50) NOT NULL,
+    details         JSONB NOT NULL DEFAULT '{}',
+    is_resolved     BOOLEAN NOT NULL DEFAULT FALSE,
+    resolved_by     BIGINT,
+    resolved_at     TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ref_fraud_user ON referral_fraud_flags(user_id);
+CREATE INDEX IF NOT EXISTS idx_ref_fraud_type ON referral_fraud_flags(flag_type);
+CREATE INDEX IF NOT EXISTS idx_ref_fraud_resolved ON referral_fraud_flags(is_resolved);
 `;
 
 export const DEFAULT_SETTINGS = {
@@ -243,6 +298,15 @@ export const DEFAULT_SETTINGS = {
   tc_buttons: [],
   tc_message: "Dear Users,\nThere Are Some Terms & Conditions Given Please Read Carefully, Else If You Face Any Problem Related To Terms And Conditions So We Can't Help You...",
   deposit_benefits_enabled: false,
+  // Referral system settings
+  referral_enabled: false,
+  referral_commission_pct: 10,
+  referral_code_prefix: 'ERRORRO',
+  referral_min_transfer: 50,
+  referral_transfer_enabled: true,
+  referral_daily_transfer_limit: 5000,
+  referral_monthly_transfer_limit: 50000,
+  referral_terms: '📜 Referral Terms & Conditions\n\n🎁 Referral ka simple rule:\n• Aapko apne referred user ke successful deposit par commission milega\n• Sirf successful deposit count hoga\n\n💰 Bonus:\n• Jitna user deposit karega, utna commission calculated hoga\n• More activity = more earnings\n\n💳 Withdrawal:\n• Minimum withdrawal limit admin set karega\n• Limit se kam balance par transfer/withdrawal nahi hoga\n\n🚫 Rules:\n• Self-referral allowed nahi\n• Fake accounts se reward cancel ho sakta hai\n• Suspicious activity par account/reward hold ho sakta hai',
 };
 
 export async function initDb(pool) {
@@ -280,4 +344,42 @@ export async function initDb(pool) {
     [JSON.stringify('OTPBOT'), JSON.stringify('OTP Bot')]
   );
   logger.info(`Default settings seeded (${Object.keys(DEFAULT_SETTINGS).length} keys).`);
+
+  // ── Migration: Referral system ────────────────────────────────────
+  // Create unique index for referral_rewards (prevents double-payout per order)
+  try {
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ref_rewards_unique_order
+        ON referral_rewards(referrer_id, order_id) WHERE status = 'credited'
+    `);
+  } catch { /* index may already exist */ }
+
+  // Migrate old referral codes to new PREFIX-XXXXXXXX format
+  try {
+    const prefixRow = await pool.query(`SELECT value FROM bot_settings WHERE key = 'referral_code_prefix'`);
+    const prefix = prefixRow.rows[0]?.value || 'ERRORRO';
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    // Find users with old-format codes (not matching PREFIX-XXXXXXXX)
+    const { rows: oldUsers } = await pool.query(
+      `SELECT user_id, referral_code FROM users WHERE referral_code IS NOT NULL AND referral_code NOT LIKE $1`,
+      [`${prefix}-%`]
+    );
+    if (oldUsers.length > 0) {
+      logger.info(`[Referral] Migrating ${oldUsers.length} referral codes to ${prefix}-XXXXXXXX format...`);
+      for (const u of oldUsers) {
+        let newCode;
+        for (let attempt = 0; attempt < 10; attempt++) {
+          let suffix = '';
+          for (let i = 0; i < 8; i++) suffix += chars[Math.floor(Math.random() * chars.length)];
+          newCode = `${prefix}-${suffix}`;
+          const { rows: dup } = await pool.query('SELECT 1 FROM users WHERE referral_code = $1', [newCode]);
+          if (dup.length === 0) break;
+        }
+        if (newCode) {
+          await pool.query('UPDATE users SET referral_code = $1 WHERE user_id = $2', [newCode, u.user_id]);
+        }
+      }
+      logger.info(`[Referral] Migration complete.`);
+    }
+  } catch (e) { logger.debug(`[Referral] Code migration skipped: ${e.message}`); }
 }

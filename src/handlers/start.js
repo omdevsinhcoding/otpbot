@@ -76,23 +76,42 @@ composer.command('start', async (ctx) => {
   // ── Parse deep-link referral ────────────────────────────────────
   let referredBy = null;
   const payload = ctx.match;
-  if (payload && payload.startsWith('ref_')) {
-    const refCode = payload.slice(4);
-    try {
-      const { rows } = await pool.query(
-        'SELECT user_id FROM users WHERE referral_code = $1', [refCode]
-      );
-      if (rows.length > 0 && rows[0].user_id !== ctx.from.id) {
-        referredBy = rows[0].user_id;
+  if (payload) {
+    let refCode = null;
+    if (payload.startsWith('ref_')) {
+      // Legacy format: ref_<code>
+      refCode = payload.slice(4);
+    } else if (/^[A-Z0-9]+-[A-Z0-9]{8}$/.test(payload)) {
+      // New format: PREFIX-XXXXXXXX (the entire payload IS the code)
+      refCode = payload;
+    }
+    if (refCode) {
+      try {
+        const { rows } = await pool.query(
+          'SELECT user_id FROM users WHERE referral_code = $1', [refCode]
+        );
+        if (rows.length > 0 && rows[0].user_id !== ctx.from.id) {
+          referredBy = rows[0].user_id;
+        }
+      } catch (err) {
+        logger.debug(`Referral lookup failed: ${err.message}`);
       }
-    } catch (err) {
-      logger.debug(`Referral lookup failed: ${err.message}`);
     }
   }
 
   // ── Upsert user ────────────────────────────────────────────────
-  const referralCode = `${ctx.from.id.toString(36)}${crypto.randomBytes(3).toString('hex')}`;
+  // Generate new-format referral code for new users
   const existingUser = await userRepo.getUser(pool, ctx.from.id);
+  let referralCode = existingUser?.referral_code;
+  if (!referralCode) {
+    try {
+      const { generateUniqueCode } = await import('../database/repositories/referralRepo.js');
+      const prefix = await settingsRepo.getSetting(pool, 'referral_code_prefix') || 'ERRORRO';
+      referralCode = await generateUniqueCode(pool, prefix);
+    } catch {
+      referralCode = `${ctx.from.id.toString(36)}${crypto.randomBytes(3).toString('hex')}`;
+    }
+  }
 
   await userRepo.upsertUser(pool, {
     userId: ctx.from.id,
@@ -100,7 +119,7 @@ composer.command('start', async (ctx) => {
     fullName: [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' '),
     languageCode: ctx.from.language_code || null,
     isPremium: ctx.from.is_premium || false,
-    referralCode: existingUser?.referral_code || referralCode,
+    referralCode,
     referredBy,
   });
 
