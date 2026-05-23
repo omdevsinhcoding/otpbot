@@ -54,9 +54,35 @@ export function getToken(email) {
 }
 export function removeToken(email) {
   tokenStore.delete(email);
+  messagesCache.delete(email);
 }
 export function getStoreSize() {
   return tokenStore.size;
+}
+
+// ── Messages cache (avoids re-fetching when viewing single msg) ─
+const messagesCache = new Map();    // email → { messages, cachedAt }
+const MSG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [email, entry] of messagesCache) {
+    if (now - entry.cachedAt > MSG_CACHE_TTL) messagesCache.delete(email);
+  }
+}, 5 * 60 * 1000).unref();
+
+export function cacheMessages(email, messages) {
+  messagesCache.set(email, { messages, cachedAt: Date.now() });
+}
+export function getCachedMessages(email) {
+  const entry = messagesCache.get(email);
+  if (!entry || Date.now() - entry.cachedAt > MSG_CACHE_TTL) return null;
+  return entry.messages;
+}
+export function getCachedMessage(email, index) {
+  const msgs = getCachedMessages(email);
+  if (!msgs || index < 0 || index >= msgs.length) return null;
+  return msgs[index];
 }
 
 // ── Domain cache ─────────────────────────────────────────────────

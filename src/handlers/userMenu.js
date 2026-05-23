@@ -311,12 +311,11 @@ composer.hears(new RegExp(`^${escRe(BTN_ADMIN_PANEL)}$`), async (ctx) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-//  📧 TEMP MAIL — DOMAIN PICKER + INBOX + CALLBACKS
+//  📧 TEMP MAIL — DOMAIN PICKER → EMAIL CARD → INBOX LIST → MESSAGE
 // ═══════════════════════════════════════════════════════════════════
 
 /**
  * Step 1: Show domain picker (inline buttons).
- * Both BTN_BUY_MAIL and BTN_GET_EMAIL call this.
  */
 async function handleCreateTempMail(ctx) {
   try {
@@ -327,7 +326,6 @@ async function handleCreateTempMail(ctx) {
     }
 
     const kb = new InlineKeyboard();
-    // 2 domains per row
     for (let i = 0; i < domains.length; i += 2) {
       kb.text(`📧 @${domains[i]}`, `tm:dom:${domains[i]}`);
       if (domains[i + 1]) {
@@ -347,163 +345,83 @@ async function handleCreateTempMail(ctx) {
   }
 }
 
-// ── Domain selected → create email ──────────────────────────────
+// ── Step 2: Domain selected → create email card ─────────────────
 composer.callbackQuery(/^tm:dom:/, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
-  const domain = ctx.callbackQuery.data.replace('tm:dom:', '');
 
   try {
     const result = await tempMailService.createTempEmail(10, 10);
     if (!result.success) {
       try {
-        await ctx.editMessageText(
-          '⚠️ <b>Error</b>\n\nCould not generate email. Please try again.',
-          { parse_mode: 'HTML' }
-        );
+        await ctx.editMessageText('⚠️ <b>Error</b>\n\nCould not generate email. Please try again.', { parse_mode: 'HTML' });
       } catch { /* ignore */ }
       return;
     }
 
-    const text = buildEmailCardText(result.email);
-    const kb = buildEmailCardKeyboard(result.email, result.token);
+    const text = buildEmailCard(result.email);
+    const kb = buildEmailCardKb(result.email);
 
     try {
       await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
     } catch { /* ignore */ }
   } catch (err) {
     logger.error('Temp mail create error:', err);
-    try {
-      await ctx.editMessageText('⚠️ Something went wrong. Please try again.', { parse_mode: 'HTML' });
-    } catch { /* ignore */ }
+    try { await ctx.editMessageText('⚠️ Something went wrong.', { parse_mode: 'HTML' }); } catch {}
   }
 });
 
-// ── Helpers: decode HTML entities from API response ─────────────
+// ── Helpers ──────────────────────────────────────────────────────
 function decodeHtmlEntities(str) {
   if (!str) return '';
   return str
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ');
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&').replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ');
 }
 
-/**
- * Parse a "From" field like `"ChatGPT" <noreply@tm.openai.com>`
- * into a clean display: `ChatGPT (noreply@tm.openai.com)`
- */
 function parseFrom(raw) {
   if (!raw) return 'Unknown';
   const decoded = decodeHtmlEntities(raw);
-  // Pattern: "Name" <email> or Name <email>
   const match = decoded.match(/^"?([^"<]+)"?\s*<?([^>]+)>?$/);
   if (match) {
     const name = match[1].trim();
     const email = match[2].trim();
-    if (name && email && name !== email) {
-      return `${name} (${email})`;
-    }
+    if (name && email && name !== email) return `${name}`;
     return email || name;
   }
   return decoded;
 }
 
-/**
- * Clean up body text — strip excessive whitespace, decode entities,
- * and try to detect OTP/verification codes.
- */
-function formatBodyText(raw) {
-  if (!raw) return '';
-  let text = decodeHtmlEntities(raw);
-  // Collapse multiple blank lines into max 1
-  text = text.replace(/\n{3,}/g, '\n\n');
-  // Trim each line
-  text = text.split('\n').map(l => l.trim()).join('\n').trim();
-  return text;
-}
-
-/**
- * Try to extract OTP/verification code from body text.
- * Looks for standalone 4-8 digit numbers or common patterns.
- */
 function extractOTP(bodyText) {
   if (!bodyText) return null;
-  // Look for "code is 123456", "code: 123456", "verification code 123456", etc.
   const patterns = [
     /(?:verification|confirm|security|otp|auth)\s*(?:code|pin|number)[\s:]*(\d{4,8})/i,
     /(?:code|pin|otp)[\s:]+(\d{4,8})/i,
-    /\b(\d{6})\b/,  // Standalone 6-digit (most common OTP length)
+    /\b(\d{6})\b/,
   ];
-  for (const pattern of patterns) {
-    const match = bodyText.match(pattern);
-    if (match) return match[1];
+  for (const p of patterns) {
+    const m = bodyText.match(p);
+    if (m) return m[1];
   }
   return null;
 }
 
-/** Build the email card text (create state = no messages). */
-function buildEmailCardText(email, messages = []) {
-  let text = '╔══════════════════════════╗\n';
-  text += '   📧 <b>Temporary Email</b>\n';
-  text += '╚══════════════════════════╝\n\n';
-  text += `✉️ <b>Email:</b>\n<code>${escapeHtml(email)}</code>\n`;
-
-  if (messages.length === 0) {
-    text += '\n📭 <i>No messages yet.\nUse this email and tap Check Inbox.</i>';
-    return text;
-  }
-
-  text += `\n📬 <b>${messages.length} message${messages.length > 1 ? 's' : ''}</b>\n`;
-
-  const show = messages.slice(0, 5);
-  for (const [i, msg] of show.entries()) {
-    const from = parseFrom(msg.from);
-    const subject = decodeHtmlEntities(msg.subject || '(No Subject)');
-    const body = formatBodyText(msg.body_text);
-    const otp = extractOTP(body);
-
-    text += '\n┌─────────────────────────┐\n';
-    text += `  <b>📩 Message #${i + 1}</b>\n`;
-    text += '├─────────────────────────┤\n';
-    text += `  📤 <b>From:</b> ${escapeHtml(from)}\n`;
-    text += `  📝 <b>Subject:</b> ${escapeHtml(subject)}\n`;
-
-    if (otp) {
-      text += `\n  🔑 <b>Verification Code:</b>\n`;
-      text += `  <code> ${otp} </code>\n`;
-    }
-
-    if (body) {
-      // Show body preview (truncated)
-      const preview = body.substring(0, 200).trim();
-      text += `\n  📄 <b>Content:</b>\n`;
-      // Indent body lines
-      const lines = preview.split('\n').filter(l => l.trim());
-      for (const line of lines.slice(0, 6)) {
-        text += `  <i>${escapeHtml(line)}</i>\n`;
-      }
-      if (body.length > 200 || lines.length > 6) {
-        text += '  <i>…</i>\n';
-      }
-    }
-
-    text += '└─────────────────────────┘\n';
-  }
-
-  if (messages.length > 5) {
-    text += `\n<i>+ ${messages.length - 5} more — open in browser to see all.</i>\n`;
-  }
-
-  return text;
+// ── Screen 1: Email card (static, short) ────────────────────────
+function buildEmailCard(email) {
+  return (
+    '╔══════════════════════════╗\n' +
+    '   📧 <b>Temporary Email</b>\n' +
+    '╚══════════════════════════╝\n\n' +
+    `✉️ <b>Email:</b>\n<code>${escapeHtml(email)}</code>\n\n` +
+    '📭 <i>No messages yet.\nUse this email and tap Check Inbox.</i>'
+  );
 }
 
-/** Build the inline keyboard for the email card. */
-function buildEmailCardKeyboard(email, token) {
+function buildEmailCardKb(email) {
+  const token = tempMailService.getToken(email);
   const kb = new InlineKeyboard();
   if (token) {
-    kb.url('🌐 Open In Browser', `https://temp-mail.io/en/email/${email}/token/${token}?utm_source=telegram-bot`)
+    kb.url('🌐 Open In Browser', `https://temp-mail.io/en/email/${email}/token/${token}`)
       .row();
   }
   kb.text('📬 Check Inbox', `tm:chk:${email}`)
@@ -511,14 +429,113 @@ function buildEmailCardKeyboard(email, token) {
   return kb;
 }
 
-// ── 📬 Check Inbox — edits the SAME message, popup if empty ─────
+// ── Screen 2: Inbox list (compact subject buttons) ──────────────
+function buildInboxList(email, messages) {
+  let text = '╔══════════════════════════╗\n';
+  text += '   📬 <b>Inbox</b>\n';
+  text += '╚══════════════════════════╝\n\n';
+  text += `✉️ <code>${escapeHtml(email)}</code>\n`;
+  text += `📨 <b>${messages.length}</b> message${messages.length > 1 ? 's' : ''}\n\n`;
+  text += '<i>Tap a message to read it:</i>';
+  return text;
+}
+
+function buildInboxListKb(email, messages) {
+  const kb = new InlineKeyboard();
+
+  // Each message = 1 button row showing: "#N · From · Subject (truncated)"
+  const show = messages.slice(0, 10); // max 10 buttons
+  for (let i = 0; i < show.length; i++) {
+    const msg = show[i];
+    const from = parseFrom(msg.from);
+    const subject = decodeHtmlEntities(msg.subject || '(No Subject)');
+    // Truncate to fit button text (~40 chars)
+    const label = `#${i + 1} · ${from} · ${subject}`.substring(0, 45);
+    kb.text(label, `tm:msg:${email}:${i}`).row();
+  }
+
+  if (messages.length > 10) {
+    kb.text(`… +${messages.length - 10} more (open browser)`, `tm:noop`).row();
+  }
+
+  // Bottom actions
+  kb.text('🔄 Refresh', `tm:chk:${email}`)
+    .text('🗑 Delete', `tm:del:${email}`);
+  return kb;
+}
+
+// ── Screen 3: Single message detail ─────────────────────────────
+function buildMessageDetail(email, msg, index) {
+  const from = parseFrom(msg.from);
+  const fromEmail = (() => {
+    const decoded = decodeHtmlEntities(msg.from || '');
+    const m = decoded.match(/<([^>]+)>/);
+    return m ? m[1] : '';
+  })();
+  const subject = decodeHtmlEntities(msg.subject || '(No Subject)');
+  const bodyRaw = decodeHtmlEntities(msg.body_text || '');
+  const body = bodyRaw.replace(/\n{3,}/g, '\n\n').split('\n').map(l => l.trim()).join('\n').trim();
+  const otp = extractOTP(body);
+
+  let text = '┌─────────────────────────┐\n';
+  text += `  📩 <b>Message #${index + 1}</b>\n`;
+  text += '├─────────────────────────┤\n';
+  text += `  📤 <b>From:</b> ${escapeHtml(from)}\n`;
+  if (fromEmail) {
+    text += `  📧 <code>${escapeHtml(fromEmail)}</code>\n`;
+  }
+  text += `  📝 <b>Subject:</b>\n  ${escapeHtml(subject)}\n`;
+
+  if (otp) {
+    text += `\n  🔑 <b>Verification Code:</b>\n`;
+    text += `  ┌──────────────┐\n`;
+    text += `  │  <code> ${otp} </code>  │\n`;
+    text += `  └──────────────┘\n`;
+  }
+
+  if (body) {
+    text += `\n  📄 <b>Content:</b>\n`;
+    // Show up to 500 chars / 10 lines (single message can be longer)
+    const lines = body.split('\n').filter(l => l.trim());
+    for (const line of lines.slice(0, 10)) {
+      const trimmed = line.substring(0, 60);
+      text += `  <i>${escapeHtml(trimmed)}${line.length > 60 ? '…' : ''}</i>\n`;
+    }
+    if (lines.length > 10) {
+      text += '  <i>…</i>\n';
+    }
+  }
+
+  text += '└─────────────────────────┘';
+  return text;
+}
+
+function buildMessageDetailKb(email, index, totalMessages) {
+  const kb = new InlineKeyboard();
+
+  // Prev / Next navigation
+  if (index > 0) {
+    kb.text('◀️ Prev', `tm:msg:${email}:${index - 1}`);
+  }
+  kb.text('📋 Back to Inbox', `tm:chk:${email}`);
+  if (index < totalMessages - 1) {
+    kb.text('Next ▶️', `tm:msg:${email}:${index + 1}`);
+  }
+  kb.row();
+  kb.text('🗑 Delete Email', `tm:del:${email}`);
+  return kb;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CALLBACK HANDLERS
+// ═══════════════════════════════════════════════════════════════════
+
+// ── 📬 Check Inbox → shows inbox list or popup if empty ─────────
 composer.callbackQuery(/^tm:chk:/, async (ctx) => {
   const email = ctx.callbackQuery.data.replace('tm:chk:', '');
 
   if (tempMailService.isInboxRateLimited(ctx.from.id)) {
-    try {
-      await ctx.answerCallbackQuery({ text: '⏳ Please wait a moment before checking again.' });
-    } catch { /* ignore */ }
+    try { await ctx.answerCallbackQuery({ text: '⏳ Please wait a moment.' }); } catch {}
     return;
   }
 
@@ -526,60 +543,90 @@ composer.callbackQuery(/^tm:chk:/, async (ctx) => {
     const result = await tempMailService.checkInbox(email);
 
     if (!result.success) {
-      try {
-        await ctx.answerCallbackQuery({ text: `⚠️ ${result.error || 'Could not check inbox.'}`, show_alert: true });
-      } catch { /* ignore */ }
+      try { await ctx.answerCallbackQuery({ text: `⚠️ ${result.error}`, show_alert: true }); } catch {}
       return;
     }
 
     if (result.messages.length === 0) {
-      try {
-        await ctx.answerCallbackQuery({ text: '📭 No messages received yet.' });
-      } catch { /* ignore */ }
+      try { await ctx.answerCallbackQuery({ text: '📭 No messages received yet.' }); } catch {}
       return;
     }
 
-    // Mail found → edit the SAME message to show inbox
+    // Cache messages for single-message view
+    tempMailService.cacheMessages(email, result.messages);
+
     try { await ctx.answerCallbackQuery(); } catch {}
 
-    const updatedText = buildEmailCardText(email, result.messages);
-    const token = tempMailService.getToken(email);
-
-    const kb = new InlineKeyboard();
-    if (token) {
-      kb.url('🌐 Open In Browser', `https://temp-mail.io/en/email/${email}/token/${token}?utm_source=telegram-bot`)
-        .row();
-    }
-    kb.text('🔄 Refresh', `tm:chk:${email}`)
-      .text('🗑 Delete Email', `tm:del:${email}`);
+    const text = buildInboxList(email, result.messages);
+    const kb = buildInboxListKb(email, result.messages);
 
     try {
-      await ctx.editMessageText(updatedText, { parse_mode: 'HTML', reply_markup: kb });
-    } catch (editErr) {
-      if (!editErr.message?.includes('message is not modified')) {
-        logger.error('Temp mail edit error:', editErr);
-      }
+      await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+    } catch (e) {
+      if (!e.message?.includes('message is not modified')) logger.error('Inbox list edit error:', e);
     }
   } catch (err) {
     logger.error('Temp mail inbox error:', err);
-    try {
-      await ctx.answerCallbackQuery({ text: '⚠️ Something went wrong.', show_alert: true });
-    } catch { /* ignore */ }
+    try { await ctx.answerCallbackQuery({ text: '⚠️ Something went wrong.', show_alert: true }); } catch {}
   }
 });
 
-// ── 🗑 Delete Email — deletes email + removes the message ───────
+// ── 📩 View single message ──────────────────────────────────────
+composer.callbackQuery(/^tm:msg:/, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+
+  const parts = ctx.callbackQuery.data.replace('tm:msg:', '').split(':');
+  const email = parts[0];
+  const index = parseInt(parts[1], 10);
+
+  const msg = tempMailService.getCachedMessage(email, index);
+  if (!msg) {
+    // Cache expired — re-fetch inbox
+    try {
+      const result = await tempMailService.checkInbox(email);
+      if (result.success && result.messages.length > 0) {
+        tempMailService.cacheMessages(email, result.messages);
+        const freshMsg = result.messages[index];
+        if (freshMsg) {
+          const text = buildMessageDetail(email, freshMsg, index);
+          const kb = buildMessageDetailKb(email, index, result.messages.length);
+          try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); } catch {}
+          return;
+        }
+      }
+    } catch { /* ignore */ }
+    // Fallback: go back to inbox
+    try {
+      await ctx.editMessageText('⚠️ Message not found. Refreshing inbox...', { parse_mode: 'HTML' });
+    } catch {}
+    return;
+  }
+
+  const cachedMsgs = tempMailService.getCachedMessages(email);
+  const total = cachedMsgs ? cachedMsgs.length : index + 1;
+
+  const text = buildMessageDetail(email, msg, index);
+  const kb = buildMessageDetailKb(email, index, total);
+
+  try {
+    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+  } catch (e) {
+    if (!e.message?.includes('message is not modified')) logger.error('Msg detail edit error:', e);
+  }
+});
+
+// ── Noop (for "more messages" placeholder button) ───────────────
+composer.callbackQuery('tm:noop', async (ctx) => {
+  try { await ctx.answerCallbackQuery({ text: 'Open in browser to see all messages.' }); } catch {}
+});
+
+// ── 🗑 Delete Email ─────────────────────────────────────────────
 composer.callbackQuery(/^tm:del:/, async (ctx) => {
   const email = ctx.callbackQuery.data.replace('tm:del:', '');
 
-  try {
-    await tempMailService.deleteTempEmail(email);
-  } catch { /* ignore */ }
-
-  try { await ctx.deleteMessage(); } catch { /* ignore */ }
-  try {
-    await ctx.answerCallbackQuery({ text: '🗑 Email deleted.' });
-  } catch { /* ignore */ }
+  try { await tempMailService.deleteTempEmail(email); } catch {}
+  try { await ctx.deleteMessage(); } catch {}
+  try { await ctx.answerCallbackQuery({ text: '🗑 Email deleted.' }); } catch {}
 });
 
 // ═══════════════════════════════════════════════════════════════════
