@@ -227,7 +227,78 @@ composer.callbackQuery('tc:preview', adminRequired, async (ctx) => {
   kb.text('❌ Decline', 'tc:preview_noop');
   if (declineColor) kb.style(declineColor);
 
-  await ctx.reply(message, { parse_mode: 'HTML', reply_markup: kb });
+  const previewMsg = await ctx.reply(message, { parse_mode: 'HTML', reply_markup: kb });
+
+  // Send a control message so admin can delete the preview and go back
+  const controlKb = new InlineKeyboard()
+    .text('🗑 Delete Preview', `tc:del_preview:${previewMsg.message_id}`).row()
+    .text('◀ Back', 'admin:tc');
+  await ctx.reply('👆 <b>Preview shown above.</b>\nUse the buttons below to continue.', {
+    parse_mode: 'HTML',
+    reply_markup: controlKb
+  });
+});
+
+// Delete preview message
+composer.callbackQuery(/^tc:del_preview:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const previewMsgId = Number(ctx.callbackQuery.data.split(':')[2]);
+  try {
+    await ctx.api.deleteMessage(ctx.chat.id, previewMsgId);
+  } catch (err) {
+    logger.warn('Could not delete preview message:', err.message);
+  }
+  // Also delete the control message itself
+  try {
+    await ctx.deleteMessage();
+  } catch {}
+  // Show the T&C panel again as a new message
+  const pool = ctx.dbPool;
+  const enabled = await settingsRepo.getSetting(pool, 'tc_enabled');
+  const btns = await settingsRepo.getSetting(pool, 'tc_buttons') || [];
+  const msg = await settingsRepo.getSetting(pool, 'tc_message');
+  const rawAccept = await settingsRepo.getSetting(pool, 'tc_accept_color');
+  const rawDecline = await settingsRepo.getSetting(pool, 'tc_decline_color');
+  const acColor = rawAccept !== null && rawAccept !== undefined ? rawAccept : 'success';
+  const dcColor = rawDecline !== null && rawDecline !== undefined ? rawDecline : 'danger';
+  const acceptInfo = COLOR_OPTIONS.find(c => c.style === acColor) || COLOR_OPTIONS[0];
+  const declineInfo = COLOR_OPTIONS.find(c => c.style === dcColor) || COLOR_OPTIONS[2];
+
+  const statusEmoji = enabled ? '🟢' : '🔴';
+  const toggleLabel = enabled ? '🔴 Disable' : '🟢 Enable';
+  const tcAuthor = await settingsRepo.getSetting(pool, 'tc_telegraph_author') || '';
+
+  let text = `📜 <b>TERMS & CONDITIONS</b>\n\n`;
+  text += `<blockquote>`;
+  text += `${statusEmoji} <b>Status:</b> ${enabled ? 'Active' : 'Inactive'}\n`;
+  text += `🔗 <b>Buttons:</b> ${btns.length} configured\n`;
+  text += `💬 <b>Message:</b> ${msg ? '✅ Set' : '✅ Default'}\n`;
+  text += `✅ <b>Accept Btn:</b> ${acceptInfo.label}\n`;
+  text += `❌ <b>Decline Btn:</b> ${declineInfo.label}`;
+  if (tcAuthor) text += `\n📝 <b>Telegraph Name:</b> ${escapeHtml(tcAuthor)}`;
+  text += `</blockquote>`;
+
+  if (btns.length > 0) {
+    text += `\n\n<blockquote>📋 <b>BUTTONS</b>\n\n`;
+    btns.forEach((btn, i) => {
+      text += `${i + 1}. ${escapeHtml(btn.text)} → ${truncateText(btn.url, 35)}\n`;
+    });
+    text += `</blockquote>`;
+  }
+
+  const panelKb = new InlineKeyboard()
+    .text(toggleLabel, 'tc:toggle').row()
+    .text('➕ Add Button', 'tc:add_btn').text('💬 Set Message', 'tc:set_msg').row()
+    .text(`✅ Accept Color`, 'tc:accept_color').text(`❌ Decline Color`, 'tc:decline_color').row();
+  if (btns.length > 0) {
+    panelKb.text('✏️ Edit Button', 'tc:edit_list').text('🗑 Remove Button', 'tc:remove_list').row();
+    panelKb.text('👁 Preview', 'tc:preview').row();
+  }
+  panelKb.text('🌐 Generate Default T&C', 'tc:gen_default').row();
+  panelKb.text('📝 Set Telegraph Name', 'tc:set_author').row();
+  panelKb.text('◀ Back', 'admin:back');
+
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: panelKb });
 });
 
 // Preview noop
