@@ -378,8 +378,10 @@ composer.callbackQuery(/^tempmail:inbox:/, async (ctx) => {
   try {
     const result = await tempMailService.checkInbox(email);
     if (!result.success) {
+      logger.error(`Temp mail inbox failed for ${email}: ${result.error}`);
       await ctx.reply(
-        '⚠️ <b>Error</b>\n\nCould not check inbox. The email may have expired.',
+        '⚠️ <b>Error</b>\n\n' +
+        `Could not check inbox. ${escapeHtml(result.error || 'The email may have expired.')}`,
         { parse_mode: 'HTML' }
       );
       return;

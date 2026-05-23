@@ -3,6 +3,8 @@
  * and check inbox for received messages.
  */
 
+import logger from '../utils/logger.js';
+
 const API_BASE = 'https://api.internal.temp-mail.io/api/v3';
 
 /**
@@ -23,6 +25,8 @@ export async function createTempEmail(minNameLength = 10, maxNameLength = 10) {
     });
 
     if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      logger.error(`Temp mail create failed: ${res.status} ${body}`);
       return { success: false, error: `API returned ${res.status}` };
     }
 
@@ -37,24 +41,31 @@ export async function createTempEmail(minNameLength = 10, maxNameLength = 10) {
       token: data.token,
     };
   } catch (err) {
+    logger.error('Temp mail create error:', err);
     return { success: false, error: err.message };
   }
 }
 
 /**
  * Check inbox for a given email address.
+ * Uses the email directly in the URL path (no encoding of @).
  * @param {string} email - The temporary email address
  * @returns {Promise<{success: boolean, messages?: Array, error?: string}>}
  */
 export async function checkInbox(email) {
   try {
-    const res = await fetch(`${API_BASE}/email/${encodeURIComponent(email)}/messages`, {
+    const url = `${API_BASE}/email/${email}/messages`;
+    logger.info(`Checking temp mail inbox: ${url}`);
+
+    const res = await fetch(url, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
     });
 
     if (!res.ok) {
-      return { success: false, error: `API returned ${res.status}` };
+      const body = await res.text().catch(() => '');
+      logger.error(`Temp mail inbox check failed: ${res.status} ${body}`);
+      return { success: false, error: `API returned ${res.status}: ${body}` };
     }
 
     const data = await res.json();
@@ -63,6 +74,7 @@ export async function checkInbox(email) {
       messages: Array.isArray(data) ? data : [],
     };
   } catch (err) {
+    logger.error('Temp mail inbox error:', err);
     return { success: false, error: err.message };
   }
 }
@@ -75,7 +87,7 @@ export async function checkInbox(email) {
  */
 export async function deleteTempEmail(email, token) {
   try {
-    const res = await fetch(`${API_BASE}/email/${encodeURIComponent(email)}`, {
+    const res = await fetch(`${API_BASE}/email/${email}`, {
       method: 'DELETE',
       headers: {
         'Accept': 'application/json',
@@ -83,8 +95,14 @@ export async function deleteTempEmail(email, token) {
       },
     });
 
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      logger.error(`Temp mail delete failed: ${res.status} ${body}`);
+    }
+
     return { success: res.ok };
   } catch (err) {
+    logger.error('Temp mail delete error:', err);
     return { success: false, error: err.message };
   }
 }
