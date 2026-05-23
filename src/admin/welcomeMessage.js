@@ -100,10 +100,9 @@ composer.callbackQuery('welcome:preview', adminRequired, async (ctx) => {
     } else {
       previewMsg = await ctx.reply(previewText, { parse_mode: welcome.parse_mode || 'HTML', reply_markup: kb });
     }
-    // Send control message with delete/back buttons
+    // Send control message with back button
     const controlKb = new InlineKeyboard()
-      .text('🗑 Delete Preview', `welcome:del_preview:${previewMsg.message_id}`).row()
-      .text('◀ Back to Panel', `welcome:back_preview:${previewMsg.message_id}`);
+      .text('◀ Back', `welcome:back_preview:${previewMsg.message_id}`);
     await ctx.reply('👆 Preview shown above.', {
       reply_markup: controlKb
     });
@@ -114,16 +113,7 @@ composer.callbackQuery('welcome:preview', adminRequired, async (ctx) => {
   }
 });
 
-// Delete welcome preview and go back
-composer.callbackQuery(/^welcome:del_preview:\d+$/, adminRequired, async (ctx) => {
-  try { await ctx.answerCallbackQuery(); } catch {}
-  const previewMsgId = Number(ctx.callbackQuery.data.split(':')[2]);
-  try { await ctx.api.deleteMessage(ctx.chat.id, previewMsgId); } catch {}
-  try { await ctx.deleteMessage(); } catch {}
-  await sendWelcomePanelAsNewMessage(ctx);
-});
-
-// Back from welcome preview
+// Back from welcome preview — delete preview + control, re-show panel
 composer.callbackQuery(/^welcome:back_preview:\d+$/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const previewMsgId = Number(ctx.callbackQuery.data.split(':')[2]);

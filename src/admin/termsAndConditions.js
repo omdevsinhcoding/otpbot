@@ -233,37 +233,21 @@ composer.callbackQuery('tc:preview', adminRequired, async (ctx) => {
 
   const previewMsg = await ctx.reply(message, { parse_mode: 'HTML', reply_markup: kb });
 
-  // Send a control message so admin can delete the preview and go back
+  // Send a control message so admin can go back
   const controlKb = new InlineKeyboard()
-    .text('🗑 Delete Preview', `tc:del_preview:${previewMsg.message_id}`).row()
     .text('◀ Back', `tc:back_from_preview:${previewMsg.message_id}`);
-  await ctx.reply('👆 <b>Preview shown above.</b>\nUse the buttons below to continue.', {
+  await ctx.reply('👆 <b>Preview shown above.</b>', {
     parse_mode: 'HTML',
     reply_markup: controlKb
   });
 });
 
-// Delete preview message and go back to panel
-composer.callbackQuery(/^tc:del_preview:\d+$/, adminRequired, async (ctx) => {
-  try { await ctx.answerCallbackQuery(); } catch {}
-  const previewMsgId = Number(ctx.callbackQuery.data.split(':')[2]);
-  // Delete the preview message
-  try { await ctx.api.deleteMessage(ctx.chat.id, previewMsgId); } catch {}
-  // Delete the control message itself, then re-show panel
-  try { await ctx.deleteMessage(); } catch {}
-  // Send a fresh T&C panel
-  await sendTcPanelAsNewMessage(ctx);
-});
-
-// Back from preview (keep preview, go back to panel)
+// Back from preview — delete preview + control, re-show panel
 composer.callbackQuery(/^tc:back_from_preview:\d+$/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const previewMsgId = Number(ctx.callbackQuery.data.split(':')[2]);
-  // Delete the preview message
   try { await ctx.api.deleteMessage(ctx.chat.id, previewMsgId); } catch {}
-  // Delete the control message itself
   try { await ctx.deleteMessage(); } catch {}
-  // Send a fresh T&C panel
   await sendTcPanelAsNewMessage(ctx);
 });
 
