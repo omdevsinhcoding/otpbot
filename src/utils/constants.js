@@ -66,7 +66,7 @@ export const BTN_GET_OTP = "⭐ GET OTP";
 export const BTN_DEPOSIT = "💰 DEPOSIT";
 export const BTN_PROFILE = "👤 PROFILE";
 export const BTN_MORE = "🔥 MORE";
-export const BTN_SMS_CHECKER = "📩 SMS CHECKER";
+export const BTN_SMS_CHECKER = "📩 BUY MAIL";
 export const BTN_SUPPORT = "🎧 SUPPORT";
 export const BTN_REFER_EARN = "🎁 REFER & EARN";
 export const BTN_READYMADE = "💎 READYMADE ACCOUNT";
@@ -102,8 +102,7 @@ export const BTN_PAY_CRYPTO = "₿ Crypto";
 export const BTN_PAY_BACK = "◀️ Back to Admin";
 
 // ── Default welcome message (premium template) ──────────────────────
-export const DEFAULT_WELCOME_TEXT =
-`Hey {user}! 👋
+export const DEFAULT_WELCOME_TEXT = `Hey {user}! 👋
 
 <blockquote>Welcome to the bot! We're glad to have you here.
 
@@ -115,15 +114,36 @@ export const DEFAULT_WELCOME_TEXT =
 
 // ── All reply keyboard button labels (for filtering out button presses from text input) ──
 export const REPLY_KEYBOARD_BUTTONS = new Set([
-  BTN_GET_OTP, BTN_DEPOSIT, BTN_PROFILE, BTN_MORE, BTN_SMS_CHECKER,
-  BTN_SUPPORT, BTN_REFER_EARN, BTN_READYMADE,
-  BTN_GET_EMAIL, BTN_FAVORITE, BTN_PROMO_CODE, BTN_RETURN,
-  BTN_TOP_SERVICES, BTN_API, BTN_RESELLER,
+  BTN_GET_OTP,
+  BTN_DEPOSIT,
+  BTN_PROFILE,
+  BTN_MORE,
+  BTN_SMS_CHECKER,
+  BTN_SUPPORT,
+  BTN_REFER_EARN,
+  BTN_READYMADE,
+  BTN_GET_EMAIL,
+  BTN_FAVORITE,
+  BTN_PROMO_CODE,
+  BTN_RETURN,
+  BTN_TOP_SERVICES,
+  BTN_API,
+  BTN_RESELLER,
   BTN_ADMIN_PANEL,
-  BTN_ADM_BROADCAST, BTN_ADM_USERS, BTN_ADM_FORCEJOIN, BTN_ADM_ADMINS,
-  BTN_ADM_WELCOME, BTN_ADM_SETTINGS, BTN_ADM_PAYMENTS, BTN_ADM_BOTSTATS,
-  BTN_ADM_LOGS, BTN_ADM_BACK,
-  BTN_PAY_PAYTM, BTN_PAY_BHARATPAY, BTN_PAY_CRYPTO, BTN_PAY_BACK,
+  BTN_ADM_BROADCAST,
+  BTN_ADM_USERS,
+  BTN_ADM_FORCEJOIN,
+  BTN_ADM_ADMINS,
+  BTN_ADM_WELCOME,
+  BTN_ADM_SETTINGS,
+  BTN_ADM_PAYMENTS,
+  BTN_ADM_BOTSTATS,
+  BTN_ADM_LOGS,
+  BTN_ADM_BACK,
+  BTN_PAY_PAYTM,
+  BTN_PAY_BHARATPAY,
+  BTN_PAY_CRYPTO,
+  BTN_PAY_BACK,
 ]);
 
 /**
