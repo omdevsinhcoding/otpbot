@@ -18,7 +18,7 @@ import { adminStateGuard } from './utils/adminStates.js';
 
 // ── Handlers & Admin ────────────────────────────────────────────
 import startHandler from './handlers/start.js';
-import userMenuHandler from './handlers/userMenu.js';
+import userMenuHandler from './handlers/user/index.js';
 import idCommandHandler from './handlers/idCommand.js';
 import adminPanel from './admin/panel.js';
 import broadcastAdmin from './admin/broadcast.js';
@@ -32,7 +32,7 @@ import botStats from './admin/botStats.js';
 import paymentsAdmin from './admin/payments.js';
 import termsAdmin from './admin/termsAndConditions.js';
 import depositBenefitsAdmin from './admin/depositBenefits.js';
-import depositHandler from './handlers/deposit.js';
+import depositHandler from './handlers/deposit/index.js';
 
 async function main() {
   // 1. Database
