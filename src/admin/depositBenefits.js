@@ -62,6 +62,107 @@ function exampleCalc(r) {
   return `₹${s} deposit → ₹${b} bonus → Gets ₹${s + b}`;
 }
 
+// ── Conflict Detection Engine ─────────────────────────────────
+function detectConflicts(newRule, existingRules, state) {
+  const conflicts = [];
+  const newType = newRule.rule_type;
+  const newMin = parseFloat(newRule.min_deposit) || 0;
+  const newMax = parseFloat(newRule.max_deposit) || 0;
+  const newPct = parseFloat(newRule.percentage);
+
+  for (const ex of existingRules) {
+    const exType = ex.rule_type;
+    const exMin = parseFloat(ex.min_deposit) || 0;
+    const exMax = parseFloat(ex.max_deposit) || 0;
+    const exPct = parseFloat(ex.percentage);
+
+    // ── 1. Same-type duplicate (similar range) ──
+    if (exType === newType) {
+      let isDuplicate = false;
+      if (newType === 'tax') {
+        isDuplicate = Math.abs(exMax - newMax) < 10;
+      } else if (newType === 'bonus') {
+        isDuplicate = Math.abs(exMin - newMin) < 10;
+      } else {
+        isDuplicate = Math.abs(parseFloat(ex.rolling_30d_min) - (parseFloat(newRule.rolling_30d_min) || 0)) < 100;
+      }
+      if (isDuplicate) {
+        conflicts.push({
+          icon: '🔄', type: 'Duplicate Rule',
+          description: `Already exists: ${ICONS[exType]} ${describeRule(ex)}`,
+          example: `Both rules target the same deposit range.`,
+          editableId: ex.id,
+        });
+      }
+    }
+
+    // ── 2. Tax overlapping another Tax (nested ranges) ──
+    if (newType === 'tax' && exType === 'tax' && newMax !== exMax) {
+      // Check if ranges overlap: both cover 0..max
+      const overlap = Math.min(newMax || Infinity, exMax || Infinity);
+      if (overlap > 0) {
+        const sampleAmt = Math.min(overlap - 1, 50);
+        if (sampleAmt > 0) {
+          // Which tax wins depends on priority — first match wins
+          conflicts.push({
+            icon: '⚠️', type: 'Overlapping Tax Ranges',
+            description: `Existing: ${ICONS.tax} ${describeRule(ex)}\n` +
+              `Deposits below ₹${formatNumber(Math.min(newMax, exMax))} match BOTH tax rules.`,
+            example: `₹${sampleAmt} deposit → Only the FIRST matching tax (by priority) will apply.\n` +
+              `Higher priority rule wins. The other is ignored.`,
+            editableId: ex.id,
+          });
+        }
+      }
+    }
+
+    // ── 3. Cross-type: Tax + Bonus overlap = net loss ──
+    if ((newType === 'tax' && (exType === 'bonus' || exType === 'loyalty_bonus')) ||
+        ((newType === 'bonus' || newType === 'loyalty_bonus') && exType === 'tax')) {
+
+      const taxRule = newType === 'tax' ? newRule : ex;
+      const bonusRule = newType === 'tax' ? ex : newRule;
+      const taxMax = parseFloat(taxRule.max_deposit) || Infinity;
+      const bonusMin = parseFloat(bonusRule.min_deposit) || 0;
+      const taxPct = parseFloat(taxRule.percentage);
+      const bonusPct = parseFloat(bonusRule.percentage);
+
+      // Overlap exists when bonusMin < taxMax
+      // e.g., tax below ₹500 + bonus ₹100+ → overlap ₹100-₹499
+      if (bonusMin < taxMax && taxMax !== Infinity) {
+        const overlapStart = bonusMin;
+        const overlapEnd = taxMax - 1;
+
+        if (overlapStart <= overlapEnd) {
+          const sampleAmt = Math.round((overlapStart + overlapEnd) / 2);
+          const taxAmt = Math.round(sampleAmt * taxPct) / 100;
+          const bonusAmt = Math.round(sampleAmt * bonusPct) / 100;
+          const net = bonusAmt - taxAmt;
+          const netLabel = net >= 0
+            ? `+₹${net.toFixed(2)} net gain`
+            : `-₹${Math.abs(net).toFixed(2)} net loss`;
+
+          conflicts.push({
+            icon: net < 0 ? '🔴' : '🟡',
+            type: net < 0 ? 'Tax + Bonus = Net LOSS' : 'Tax + Bonus Overlap',
+            description: `${ICONS.tax} ${describeRule(newType === 'tax' ? newRule : ex)}\n` +
+              `${ICONS[bonusRule.rule_type]} ${describeRule(newType === 'tax' ? ex : newRule)}\n\n` +
+              `Deposits ₹${formatNumber(overlapStart)} – ₹${formatNumber(overlapEnd)} get BOTH tax AND bonus.`,
+            example: `₹${sampleAmt} deposit:\n` +
+              `  💸 ${taxPct}% tax = -₹${taxAmt.toFixed(2)}\n` +
+              `  🎁 ${bonusPct}% bonus = +₹${bonusAmt.toFixed(2)}\n` +
+              `  📊 Net: ${netLabel}\n` +
+              `  💰 User gets: ₹${(sampleAmt + net).toFixed(2)}`,
+            editableId: ex.id,
+          });
+        }
+      }
+    }
+  }
+
+  return conflicts;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 //  DASHBOARD
 // ═══════════════════════════════════════════════════════════════════
@@ -414,24 +515,41 @@ composer.callbackQuery('bwiz:save', adminRequired, async (ctx) => {
       min_deposit: min, max_deposit: 0, percentage: state.pct, rolling_30d_min: state.rolling, rolling_period_days: days };
   }
 
-  // Conflict check
+  // ── Comprehensive Conflict Detection ──────────────────────────
   const existing = await depositRulesRepo.getAllRules(pool);
-  const conflict = existing.find(e => {
-    if (e.rule_type !== ruleData.rule_type) return false;
-    if (state.type === 'tax') return Math.abs(parseFloat(e.max_deposit) - state.amount1) < 10;
-    if (state.type === 'bonus') return Math.abs(parseFloat(e.min_deposit) - state.amount1) < 10;
-    return Math.abs(parseFloat(e.rolling_30d_min) - (state.rolling || 0)) < 100;
-  });
+  const conflicts = detectConflicts(ruleData, existing, state);
 
-  if (conflict) {
+  if (conflicts.length > 0) {
     states.set(ctx.chat.id, { ...state, ruleData });
-    await ctx.editMessageText(
-      `⚠️ <b>Similar rule exists!</b>\n\n${ICONS[conflict.rule_type]} ${describeRule(conflict)}\n\n<i>Edit existing or create new?</i>`,
-      { parse_mode: 'HTML', reply_markup: new InlineKeyboard()
-        .text('✏️ Edit Existing', `benefits:edit:${conflict.id}`).row()
-        .text('✅ Create Anyway', 'bwiz:force').row()
-        .text('❌ Cancel', 'admin:benefits') }
-    );
+
+    let text = `⚠️ <b>Rule Conflict Detected!</b>\n\n`;
+    text += `<b>New Rule:</b> ${ICONS[ruleData.rule_type]} ${ruleData.title}\n\n`;
+
+    for (const c of conflicts) {
+      text += `━━━━━━━━━━━━━━━━━━━\n`;
+      text += `${c.icon} <b>${c.type}</b>\n`;
+      text += `${c.description}\n`;
+      if (c.example) text += `\n<blockquote>${c.example}</blockquote>\n`;
+      text += `\n`;
+    }
+
+    text += `\n<i>Choose what to do:</i>`;
+
+    const kb = new InlineKeyboard();
+    // Show edit button for EACH conflicting rule
+    const seen = new Set();
+    for (const c of conflicts) {
+      if (c.editableId && !seen.has(c.editableId)) {
+        seen.add(c.editableId);
+        const exRule = existing.find(r => r.id === c.editableId);
+        const label = exRule ? `✏️ Edit: ${describeRule(exRule).slice(0, 30)}` : `✏️ Edit Rule #${c.editableId}`;
+        kb.text(label, `benefits:edit:${c.editableId}`).row();
+      }
+    }
+    kb.text('✅ Create Anyway', 'bwiz:force').row();
+    kb.text('❌ Cancel', 'admin:benefits');
+
+    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
     return;
   }
 
