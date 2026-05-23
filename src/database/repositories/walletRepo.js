@@ -55,3 +55,38 @@ export async function deductBalance(pool, userId, amount) {
   if (!rows[0]) throw new Error('Insufficient balance');
   return rows[0];
 }
+
+/**
+ * Adjust balance for benefits (bonus/tax) WITHOUT touching total_deposit.
+ * Positive amount = bonus credit, negative amount = tax deduction.
+ * This prevents bonuses from inflating loyalty tier calculations.
+ */
+export async function adjustBalance(pool, userId, amount) {
+  if (amount === 0) return await getWallet(pool, userId);
+  await ensureWallet(pool, userId);
+
+  if (amount > 0) {
+    // Bonus — add to balance only
+    const { rows } = await pool.query(
+      `UPDATE user_wallets
+       SET balance = balance + $2,
+           updated_at = NOW()
+       WHERE user_id = $1
+       RETURNING *`,
+      [userId, amount]
+    );
+    return rows[0];
+  } else {
+    // Tax — deduct from balance (ensure sufficient funds)
+    const absAmount = Math.abs(amount);
+    const { rows } = await pool.query(
+      `UPDATE user_wallets
+       SET balance = GREATEST(balance - $2, 0),
+           updated_at = NOW()
+       WHERE user_id = $1
+       RETURNING *`,
+      [userId, absAmount]
+    );
+    return rows[0];
+  }
+}

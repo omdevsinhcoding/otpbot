@@ -9,7 +9,6 @@ import { InlineKeyboard } from 'grammy';
 import * as walletRepo from '../../database/repositories/walletRepo.js';
 import * as depositBenefitsService from '../../services/depositBenefitsService.js';
 import { formatNumber } from '../../utils/formatters.js';
-import logger from '../../utils/logger.js';
 
 // ── Per-user state map ──────────────────────────────────────────
 export const userStates = new Map(); // chatId → { step, gateway, msgId }
@@ -89,14 +88,13 @@ export async function applyBenefits(pool, userId, depositAmount, orderId) {
     const benefits = await depositBenefitsService.calculateBenefits(pool, userId, depositAmount, orderId);
     if (!benefits.active) return { benefits: null, newBalance: await walletRepo.getBalance(pool, userId) };
 
-    if (benefits.netAdjustment !== 0) {
-      await walletRepo.addBalance(pool, userId, benefits.netAdjustment);
-    }
+    // adjustBalance handles +bonus, -tax, and 0 in one call
+    // Does NOT touch total_deposit (prevents loyalty tier inflation)
+    await walletRepo.adjustBalance(pool, userId, benefits.netAdjustment);
 
     const newBalance = await walletRepo.getBalance(pool, userId);
     return { benefits, newBalance };
-  } catch (err) {
-    logger.error(`[Benefits] Apply error: ${err.message}`);
+  } catch {
     return { benefits: null, newBalance: await walletRepo.getBalance(pool, userId) };
   }
 }
