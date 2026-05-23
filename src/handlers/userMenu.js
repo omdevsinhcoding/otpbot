@@ -311,124 +311,251 @@ composer.hears(new RegExp(`^${escRe(BTN_ADMIN_PANEL)}$`), async (ctx) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-//  📧 TEMP MAIL — SHARED LOGIC + CALLBACK HANDLERS
+//  📧 TEMP MAIL — DOMAIN PICKER + INBOX + CALLBACKS
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * Shared handler: Create a temp email and send a single card message.
+ * Step 1: Show domain picker (inline buttons).
  * Both BTN_BUY_MAIL and BTN_GET_EMAIL call this.
  */
 async function handleCreateTempMail(ctx) {
   try {
-    const result = await tempMailService.createTempEmail(10, 10);
-    if (!result.success) {
-      await ctx.reply(
-        '⚠️ <b>Error</b>\n\nCould not generate email. Please try again.',
-        { parse_mode: 'HTML' }
-      );
+    const domains = await tempMailService.fetchDomains();
+    if (!domains.length) {
+      await ctx.reply('⚠️ <b>Error</b>\n\nNo domains available. Please try again later.', { parse_mode: 'HTML' });
       return;
     }
 
-    const emailCard = buildEmailCardText(result.email);
-    const kb = buildEmailCardKeyboard(result.email, result.token);
+    const kb = new InlineKeyboard();
+    // 2 domains per row
+    for (let i = 0; i < domains.length; i += 2) {
+      kb.text(`📧 @${domains[i]}`, `tm:dom:${domains[i]}`);
+      if (domains[i + 1]) {
+        kb.text(`📧 @${domains[i + 1]}`, `tm:dom:${domains[i + 1]}`);
+      }
+      kb.row();
+    }
 
-    await ctx.reply(emailCard, { parse_mode: 'HTML', reply_markup: kb });
+    await ctx.reply(
+      '📧 <b>Temporary Email</b>\n\n' +
+      'Select a domain to generate your email address:',
+      { parse_mode: 'HTML', reply_markup: kb }
+    );
   } catch (err) {
-    logger.error('Temp mail create error:', err);
+    logger.error('Temp mail domain list error:', err);
     await ctx.reply('⚠️ Something went wrong. Please try again.', { parse_mode: 'HTML' });
   }
 }
 
-/** Build the email card text (reused for create + inbox view). */
+// ── Domain selected → create email ──────────────────────────────
+composer.callbackQuery(/^tm:dom:/, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const domain = ctx.callbackQuery.data.replace('tm:dom:', '');
+
+  try {
+    const result = await tempMailService.createTempEmail(10, 10);
+    if (!result.success) {
+      try {
+        await ctx.editMessageText(
+          '⚠️ <b>Error</b>\n\nCould not generate email. Please try again.',
+          { parse_mode: 'HTML' }
+        );
+      } catch { /* ignore */ }
+      return;
+    }
+
+    const text = buildEmailCardText(result.email);
+    const kb = buildEmailCardKeyboard(result.email, result.token);
+
+    try {
+      await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+    } catch { /* ignore */ }
+  } catch (err) {
+    logger.error('Temp mail create error:', err);
+    try {
+      await ctx.editMessageText('⚠️ Something went wrong. Please try again.', { parse_mode: 'HTML' });
+    } catch { /* ignore */ }
+  }
+});
+
+// ── Helpers: decode HTML entities from API response ─────────────
+function decodeHtmlEntities(str) {
+  if (!str) return '';
+  return str
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ');
+}
+
+/**
+ * Parse a "From" field like `"ChatGPT" <noreply@tm.openai.com>`
+ * into a clean display: `ChatGPT (noreply@tm.openai.com)`
+ */
+function parseFrom(raw) {
+  if (!raw) return 'Unknown';
+  const decoded = decodeHtmlEntities(raw);
+  // Pattern: "Name" <email> or Name <email>
+  const match = decoded.match(/^"?([^"<]+)"?\s*<?([^>]+)>?$/);
+  if (match) {
+    const name = match[1].trim();
+    const email = match[2].trim();
+    if (name && email && name !== email) {
+      return `${name} (${email})`;
+    }
+    return email || name;
+  }
+  return decoded;
+}
+
+/**
+ * Clean up body text — strip excessive whitespace, decode entities,
+ * and try to detect OTP/verification codes.
+ */
+function formatBodyText(raw) {
+  if (!raw) return '';
+  let text = decodeHtmlEntities(raw);
+  // Collapse multiple blank lines into max 1
+  text = text.replace(/\n{3,}/g, '\n\n');
+  // Trim each line
+  text = text.split('\n').map(l => l.trim()).join('\n').trim();
+  return text;
+}
+
+/**
+ * Try to extract OTP/verification code from body text.
+ * Looks for standalone 4-8 digit numbers or common patterns.
+ */
+function extractOTP(bodyText) {
+  if (!bodyText) return null;
+  // Look for "code is 123456", "code: 123456", "verification code 123456", etc.
+  const patterns = [
+    /(?:verification|confirm|security|otp|auth)\s*(?:code|pin|number)[\s:]*(\d{4,8})/i,
+    /(?:code|pin|otp)[\s:]+(\d{4,8})/i,
+    /\b(\d{6})\b/,  // Standalone 6-digit (most common OTP length)
+  ];
+  for (const pattern of patterns) {
+    const match = bodyText.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+/** Build the email card text (create state = no messages). */
 function buildEmailCardText(email, messages = []) {
-  let text = '📧 <b>Temporary Email</b>\n\n';
-  text += `✉️ <b>Email:</b> <code>${escapeHtml(email)}</code>\n`;
+  let text = '╔══════════════════════════╗\n';
+  text += '   📧 <b>Temporary Email</b>\n';
+  text += '╚══════════════════════════╝\n\n';
+  text += `✉️ <b>Email:</b>\n<code>${escapeHtml(email)}</code>\n`;
 
   if (messages.length === 0) {
-    text += '\n<i>📭 No messages yet. Use this email and click Check Inbox.</i>';
-  } else {
-    text += `\n📬 <b>${messages.length} message${messages.length > 1 ? 's' : ''} received</b>\n`;
-    text += '━━━━━━━━━━━━━━━━━━━━━━\n';
-
-    const show = messages.slice(0, 5);
-    for (const [i, msg] of show.entries()) {
-      text += `\n<b>#${i + 1}</b>\n`;
-      text += `📤 <b>From:</b> ${escapeHtml(msg.from || 'Unknown')}\n`;
-      text += `📝 <b>Subject:</b> ${escapeHtml(msg.subject || '(No Subject)')}\n`;
-      if (msg.body_text) {
-        const preview = msg.body_text.substring(0, 150).trim();
-        text += `📄 <i>${escapeHtml(preview)}${msg.body_text.length > 150 ? '…' : ''}</i>\n`;
-      }
-      text += '━━━━━━━━━━━━━━━━━━━━━━\n';
-    }
-    if (messages.length > 5) {
-      text += `\n<i>… and ${messages.length - 5} more. Open in browser to see all.</i>\n`;
-    }
+    text += '\n📭 <i>No messages yet.\nUse this email and tap Check Inbox.</i>';
+    return text;
   }
+
+  text += `\n📬 <b>${messages.length} message${messages.length > 1 ? 's' : ''}</b>\n`;
+
+  const show = messages.slice(0, 5);
+  for (const [i, msg] of show.entries()) {
+    const from = parseFrom(msg.from);
+    const subject = decodeHtmlEntities(msg.subject || '(No Subject)');
+    const body = formatBodyText(msg.body_text);
+    const otp = extractOTP(body);
+
+    text += '\n┌─────────────────────────┐\n';
+    text += `  <b>📩 Message #${i + 1}</b>\n`;
+    text += '├─────────────────────────┤\n';
+    text += `  📤 <b>From:</b> ${escapeHtml(from)}\n`;
+    text += `  📝 <b>Subject:</b> ${escapeHtml(subject)}\n`;
+
+    if (otp) {
+      text += `\n  🔑 <b>Verification Code:</b>\n`;
+      text += `  <code> ${otp} </code>\n`;
+    }
+
+    if (body) {
+      // Show body preview (truncated)
+      const preview = body.substring(0, 200).trim();
+      text += `\n  📄 <b>Content:</b>\n`;
+      // Indent body lines
+      const lines = preview.split('\n').filter(l => l.trim());
+      for (const line of lines.slice(0, 6)) {
+        text += `  <i>${escapeHtml(line)}</i>\n`;
+      }
+      if (body.length > 200 || lines.length > 6) {
+        text += '  <i>…</i>\n';
+      }
+    }
+
+    text += '└─────────────────────────┘\n';
+  }
+
+  if (messages.length > 5) {
+    text += `\n<i>+ ${messages.length - 5} more — open in browser to see all.</i>\n`;
+  }
+
   return text;
 }
 
 /** Build the inline keyboard for the email card. */
 function buildEmailCardKeyboard(email, token) {
-  return new InlineKeyboard()
-    .url('🌐 Open In Browser', `https://temp-mail.io/en/email/${email}/token/${token}?utm_source=telegram-bot`)
-    .row()
-    .text('📬 Check Inbox', `tm:chk:${email}`)
-    .text('🗑 Delete Email', `tm:del:${email}:${token}`);
+  const kb = new InlineKeyboard();
+  if (token) {
+    kb.url('🌐 Open In Browser', `https://temp-mail.io/en/email/${email}/token/${token}?utm_source=telegram-bot`)
+      .row();
+  }
+  kb.text('📬 Check Inbox', `tm:chk:${email}`)
+    .text('🗑 Delete Email', `tm:del:${email}`);
+  return kb;
 }
 
 // ── 📬 Check Inbox — edits the SAME message, popup if empty ─────
 composer.callbackQuery(/^tm:chk:/, async (ctx) => {
   const email = ctx.callbackQuery.data.replace('tm:chk:', '');
 
+  if (tempMailService.isInboxRateLimited(ctx.from.id)) {
+    try {
+      await ctx.answerCallbackQuery({ text: '⏳ Please wait a moment before checking again.' });
+    } catch { /* ignore */ }
+    return;
+  }
+
   try {
     const result = await tempMailService.checkInbox(email);
 
     if (!result.success) {
-      // API error → show popup alert, don't send new message
       try {
-        await ctx.answerCallbackQuery({ text: '⚠️ Could not check inbox. Email may have expired.', show_alert: true });
+        await ctx.answerCallbackQuery({ text: `⚠️ ${result.error || 'Could not check inbox.'}`, show_alert: true });
       } catch { /* ignore */ }
       return;
     }
 
     if (result.messages.length === 0) {
-      // No mail → just a popup toast, no new message, no spam
       try {
-        await ctx.answerCallbackQuery({ text: '📭 No messages received yet. Try again later.', show_alert: false });
+        await ctx.answerCallbackQuery({ text: '📭 No messages received yet.' });
       } catch { /* ignore */ }
       return;
     }
 
     // Mail found → edit the SAME message to show inbox
     try { await ctx.answerCallbackQuery(); } catch {}
+
     const updatedText = buildEmailCardText(email, result.messages);
+    const token = tempMailService.getToken(email);
 
-    // Keep the same buttons but swap Check Inbox → Refresh
-    const currentData = ctx.callbackQuery.message?.reply_markup?.inline_keyboard;
-    // Extract token from the delete button callback data
-    let token = '';
-    if (currentData) {
-      for (const row of currentData) {
-        for (const btn of row) {
-          if (btn.callback_data?.startsWith('tm:del:')) {
-            const parts = btn.callback_data.replace('tm:del:', '').split(':');
-            token = parts.slice(1).join(':');
-          }
-        }
-      }
+    const kb = new InlineKeyboard();
+    if (token) {
+      kb.url('🌐 Open In Browser', `https://temp-mail.io/en/email/${email}/token/${token}?utm_source=telegram-bot`)
+        .row();
     }
-
-    const kb = new InlineKeyboard()
-      .url('🌐 Open In Browser', `https://temp-mail.io/en/email/${email}/token/${token}?utm_source=telegram-bot`)
-      .row()
-      .text('🔄 Refresh', `tm:chk:${email}`)
-      .text('🗑 Delete Email', `tm:del:${email}:${token}`);
+    kb.text('🔄 Refresh', `tm:chk:${email}`)
+      .text('🗑 Delete Email', `tm:del:${email}`);
 
     try {
       await ctx.editMessageText(updatedText, { parse_mode: 'HTML', reply_markup: kb });
     } catch (editErr) {
-      // editMessageText fails if text hasn't changed — ignore
       if (!editErr.message?.includes('message is not modified')) {
         logger.error('Temp mail edit error:', editErr);
       }
@@ -443,20 +570,15 @@ composer.callbackQuery(/^tm:chk:/, async (ctx) => {
 
 // ── 🗑 Delete Email — deletes email + removes the message ───────
 composer.callbackQuery(/^tm:del:/, async (ctx) => {
-  const parts = ctx.callbackQuery.data.replace('tm:del:', '').split(':');
-  const email = parts[0];
-  const token = parts.slice(1).join(':');
+  const email = ctx.callbackQuery.data.replace('tm:del:', '');
 
   try {
-    await tempMailService.deleteTempEmail(email, token);
-  } catch (err) {
-    logger.error('Temp mail delete API error:', err);
-  }
+    await tempMailService.deleteTempEmail(email);
+  } catch { /* ignore */ }
 
-  // Always delete the message — clean removal, no confirmation spam
   try { await ctx.deleteMessage(); } catch { /* ignore */ }
   try {
-    await ctx.answerCallbackQuery({ text: '🗑 Email deleted successfully.', show_alert: false });
+    await ctx.answerCallbackQuery({ text: '🗑 Email deleted.' });
   } catch { /* ignore */ }
 });
 
