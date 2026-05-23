@@ -2,7 +2,7 @@
  * 🎁 REFER & EARN — User-facing referral handler.
  *
  * Layout matching swift_otp style.
- * Buttons: Condition (Telegraph URL), Enter Referral Code, My Referrals, Back
+ * Buttons: Condition (Telegraph URL — English / Hinglish / Both), Enter Referral Code, My Referrals, Back
  */
 import { Composer, InlineKeyboard } from 'grammy';
 import { checkForceJoin } from '../../middleware/forceJoinCheck.js';
@@ -12,128 +12,10 @@ import { formatNumber, escapeHtml } from '../../utils/formatters.js';
 import * as userRepo from '../../database/repositories/userRepo.js';
 import * as referralRepo from '../../database/repositories/referralRepo.js';
 import * as settingsRepo from '../../database/repositories/settingsRepo.js';
-import * as walletRepo from '../../database/repositories/walletRepo.js';
-import logger from '../../utils/logger.js';
+import { ensureTelegraphPages } from '../../utils/telegraph.js';
 
 const composer = new Composer();
 const _states = new Map();
-
-// ═══════════════════════════════════════════════════════════════════
-//  TELEGRAPH T&C PAGE — Lazy creation + caching
-// ═══════════════════════════════════════════════════════════════════
-
-/** Build the T&C content as Telegraph Node array */
-function buildTCContent(commPct) {
-  return [
-    { tag: 'h3', children: ['🎁 Refer & Earn — Kaise Kaam Karta Hai?'] },
-    { tag: 'p', children: ['Bahut simple hai! Bas 3 steps follow karo:'] },
-    { tag: 'br' },
-    { tag: 'h4', children: ['Step 1: 📤 Apna Link Share Karo'] },
-    { tag: 'p', children: ['Bot me "🎁 Refer & Earn" open karo aur apna unique referral link copy karo. Friends, family ya social media pe share karo!'] },
-    { tag: 'br' },
-    { tag: 'h4', children: ['Step 2: 👥 Friend Bot Join Kare'] },
-    { tag: 'p', children: ['Jab koi apka link use karke bot start kare, wo apka referral ban jaata hai. Apko turant notification milega! 🔔'] },
-    { tag: 'br' },
-    { tag: 'h4', children: [
-      'Step 3: 💰 Har Deposit Pe Kamao (',
-      { tag: 'strong', children: [`${commPct}% Commission`] },
-      ')'
-    ]},
-    { tag: 'p', children: ['Jab apka referred friend successful deposit kare, apko commission milta hai! Bonus seedha apke wallet me aata hai.'] },
-    { tag: 'br' },
-    { tag: 'h4', children: ['💡 Example Samjho'] },
-    { tag: 'p', children: [
-      `• Friend ₹500 deposit kare → Apko ₹${(500 * commPct / 100).toFixed(0)} milega 🎉`,
-    ]},
-    { tag: 'p', children: [
-      `• Friend ₹1000 deposit kare → Apko ₹${(1000 * commPct / 100).toFixed(0)} milega 💰`,
-    ]},
-    { tag: 'p', children: [
-      `• Friend ₹2000 deposit kare → Apko ₹${(2000 * commPct / 100).toFixed(0)} milega 🤑`,
-    ]},
-    { tag: 'p', children: [
-      { tag: 'strong', children: ['Koi limit nahi! Jitna share karo utna kamao! 🔥'] }
-    ]},
-    { tag: 'br' },
-    { tag: 'hr' },
-    { tag: 'h3', children: ['💰 Earnings Kaha Jaata Hai?'] },
-    { tag: 'p', children: ['• Commission seedha apke wallet balance me add hota hai'] },
-    { tag: 'p', children: ['• Wallet balance se coupons, OTPs ya kuch bhi kharid sakte ho!'] },
-    { tag: 'p', children: ['• Koi extra step nahi — fully automatic! ✅'] },
-    { tag: 'br' },
-    { tag: 'hr' },
-    { tag: 'h3', children: ['🚫 Rules — Zaroor Follow Karo'] },
-    { tag: 'p', children: ['❌ Self-referral bilkul allowed NAHI hai'] },
-    { tag: 'p', children: ['❌ Fake ya duplicate accounts → Bonus cancel hoga'] },
-    { tag: 'p', children: ['❌ Suspicious activity → Account block hoga'] },
-    { tag: 'p', children: ['✅ Sirf SUCCESSFUL deposits count honge'] },
-    { tag: 'p', children: ['✅ Ek user ka ek hi referral code hota hai'] },
-    { tag: 'br' },
-    { tag: 'hr' },
-    { tag: 'h3', children: ['🔥 Abhi Start Karo!'] },
-    { tag: 'p', children: [
-      'Bot open karo → ',
-      { tag: 'strong', children: ['"🎁 Refer & Earn"'] },
-      ' tap karo → Link share karo → Earning shuru! 💰'
-    ]},
-    { tag: 'p', children: [
-      { tag: 'em', children: ['Jyada refer = Jyada earning. Simple! 😎'] }
-    ]},
-  ];
-}
-
-/**
- * Get or create the Telegraph T&C page URL.
- * Creates a new Telegraph account + page on first call, caches URL in settings.
- */
-async function getTelegraphUrl(pool) {
-  // Check cache first
-  let url = await settingsRepo.getSetting(pool, 'referral_terms_url');
-  if (url) return url;
-
-  try {
-    const commPct = parseFloat(await settingsRepo.getSetting(pool, 'referral_commission_pct')) || 10;
-
-    // 1. Create Telegraph account
-    const accRes = await fetch('https://api.telegra.ph/createAccount', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        short_name: 'ReferBot',
-        author_name: 'Refer & Earn'
-      })
-    });
-    const accData = await accRes.json();
-    if (!accData.ok) throw new Error('Telegraph account creation failed');
-    const token = accData.result.access_token;
-
-    // Save token for future page updates
-    await settingsRepo.setSetting(pool, 'telegraph_token', token);
-
-    // 2. Create the T&C page
-    const content = buildTCContent(commPct);
-    const pageRes = await fetch('https://api.telegra.ph/createPage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        access_token: token,
-        title: '🎁 Refer & Earn — Terms & Conditions',
-        content,
-        author_name: 'Refer & Earn Bot',
-        return_content: false,
-      })
-    });
-    const pageData = await pageRes.json();
-    if (!pageData.ok) throw new Error('Telegraph page creation failed');
-
-    url = pageData.result.url;
-    await settingsRepo.setSetting(pool, 'referral_terms_url', url);
-    return url;
-  } catch (err) {
-    logger.debug(`Telegraph page creation failed: ${err.message}`);
-    return null; // Fallback: no URL available
-  }
-}
 
 // ═══════════════════════════════════════════════════════════════════
 //  MAIN CARD — 🎁 Refer & Earn button
@@ -179,8 +61,9 @@ async function showReferralCard(ctx, edit = false) {
   const botInfo = await ctx.api.getMe();
   const refLink = `https://t.me/${botInfo.username}?start=${refCode}`;
 
-  // Get Telegraph URL for Condition button
-  const tcUrl = await getTelegraphUrl(pool);
+  // Get Telegraph URLs based on language setting
+  const pages = await ensureTelegraphPages(pool);
+  const langMode = await settingsRepo.getSetting(pool, 'telegraph_language') || 'english';
 
   const text =
     `🎁 <b>REFER & EARN</b>\n` +
@@ -192,10 +75,18 @@ async function showReferralCard(ctx, edit = false) {
     `👥 <b>Total Referrals:</b> ${formatNumber(totalRefs)}`;
 
   const kb = new InlineKeyboard();
-  // Condition button — URL button to Telegraph page
-  if (tcUrl) {
-    kb.url('📜 Condition', tcUrl).row();
+
+  // Condition buttons based on language setting
+  if (langMode === 'both') {
+    if (pages.en) kb.url('📜 Condition (English)', pages.en);
+    if (pages.hi) kb.url('📜 Condition (Hindi)', pages.hi);
+    kb.row();
+  } else if (langMode === 'hinglish' && pages.hi) {
+    kb.url('📜 Condition', pages.hi).row();
+  } else if (pages.en) {
+    kb.url('📜 Condition', pages.en).row();
   }
+
   kb.text('🔗 Enter Referral Code', 'ref:enter_code').row();
   kb.text('👥 My Referrals', 'ref:history:1').row();
   kb.text('◀ Back', 'ref:back');

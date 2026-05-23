@@ -31,15 +31,20 @@ composer.callbackQuery(/^usrmgmt:all:\d+$/, adminRequired, async (ctx) => {
     return;
   }
 
-  let text = `📋 <b>All Users</b> (${formatNumber(total)} total)\n\n`;
+  const totalPages = Math.max(1, Math.ceil(total / 10));
+
+  let text = `📋 <b>All Users</b> (${formatNumber(total)} total)\n`;
+  text += `<i>Page ${page} of ${totalPages} — Tap a user to view details</i>\n\n`;
+
   const kb = new InlineKeyboard();
   for (const u of users) {
     const name = escapeHtml(u.full_name || 'N/A');
-    text += `┃ <code>${u.user_id}</code> | ${name} ${u.username ? '| @' + escapeHtml(u.username) : ''}\n`;
-    kb.text(`👁 ${u.user_id}`, `usrmgmt:view:${u.user_id}`).row();
+    const uname = u.username ? ` @${escapeHtml(u.username)}` : '';
+    text += `┃ <code>${u.user_id}</code> | ${name}${uname}\n`;
+    const shortName = (u.full_name || 'N/A').slice(0, 20);
+    kb.text(`👁 ${shortName} (${u.user_id})`, `usrmgmt:view:${u.user_id}`).row();
   }
 
-  const totalPages = Math.max(1, Math.ceil(total / 10));
   if (page > 1) kb.text('◀️ Prev', `usrmgmt:all:${page - 1}`);
   kb.text(`${page}/${totalPages}`, 'noop');
   if (page < totalPages) kb.text('Next ▶️', `usrmgmt:all:${page + 1}`);
@@ -53,7 +58,7 @@ composer.callbackQuery('usrmgmt:search', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   searchStates.set(ctx.chat.id, 'searching');
   await ctx.editMessageText(
-    '🔍 <b>Search User</b>\n\nSend a <b>user ID</b> or <b>username</b> to search.',
+    '🔍 <b>Search User</b>\n\nSend a <b>user ID</b>, <b>name</b>, or <b>username</b> to search.',
     { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('❌ Cancel', 'usrmgmt:cancel_search') }
   );
 });
@@ -148,7 +153,13 @@ composer.on('message:text', async (ctx, next) => {
     const user = await userRepo.searchUserById(pool, Number(query));
     if (user) users = [user];
   } else {
-    users = await userRepo.searchUsersByUsername(pool, query.replace('@', ''));
+    // Search by username AND name
+    const cleanQuery = query.replace('@', '');
+    const { rows } = await pool.query(
+      `SELECT * FROM users WHERE LOWER(username) LIKE LOWER($1) OR LOWER(full_name) LIKE LOWER($1) ORDER BY full_name ASC LIMIT 10`,
+      [`%${cleanQuery}%`]
+    );
+    users = rows;
   }
 
   if (!users.length) {
@@ -161,8 +172,11 @@ composer.on('message:text', async (ctx, next) => {
   let text = '🔍 <b>Search Results</b>\n\n';
   const kb = new InlineKeyboard();
   for (const u of users) {
-    text += `┃ <code>${u.user_id}</code> | ${escapeHtml(u.full_name || 'N/A')}\n`;
-    kb.text(`👁 ${u.user_id}`, `usrmgmt:view:${u.user_id}`).row();
+    const name = escapeHtml(u.full_name || 'N/A');
+    const uname = u.username ? ` @${escapeHtml(u.username)}` : '';
+    text += `┃ <code>${u.user_id}</code> | ${name}${uname}\n`;
+    const shortName = (u.full_name || 'N/A').slice(0, 20);
+    kb.text(`👁 ${shortName} (${u.user_id})`, `usrmgmt:view:${u.user_id}`).row();
   }
 
   kb.row().text('🔍 Search Again', 'usrmgmt:search').text('‹ Back', 'admin:users');
