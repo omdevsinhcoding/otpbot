@@ -132,35 +132,8 @@ export async function calculateBenefits(pool, userId, depositAmount, orderId = n
     result.creditAmount = Math.round((depositAmount + result.netAdjustment) * 100) / 100;
     if (result.creditAmount < 0) result.creditAmount = 0;
 
-    // ── Record bonus history (atomic, server-side) ────────────
-    if (!dryRun) {
-      if (result.taxRule) {
-        await depositRulesRepo.recordBonus(pool, {
-          user_id: userId,
-          order_id: orderId,
-          rule_id: result.taxRule.id,
-          rule_title: result.taxRule.title,
-          rule_type: 'tax',
-          deposit_amount: depositAmount,
-          applied_pct: parseFloat(result.taxRule.percentage),
-          bonus_amount: -result.taxAmount,
-          rolling_30d: result.rolling30d,
-        });
-      }
-      if (result.bonusRule) {
-        await depositRulesRepo.recordBonus(pool, {
-          user_id: userId,
-          order_id: orderId,
-          rule_id: result.bonusRule.id,
-          rule_title: result.bonusRule.title,
-          rule_type: result.bonusRule.rule_type,
-          deposit_amount: depositAmount,
-          applied_pct: parseFloat(result.bonusRule.percentage),
-          bonus_amount: result.bonusAmount,
-          rolling_30d: result.rolling30d,
-        });
-      }
-    }
+    // NOTE: Recording to bonus_history is done in applyBenefits()
+    // AFTER wallet adjustment succeeds — prevents phantom records.
 
     // ── Build user message ────────────────────────────────────
     result.userMessage = buildUserMessage(result, rules, depositAmount);

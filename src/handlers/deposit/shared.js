@@ -89,8 +89,31 @@ export async function applyBenefits(pool, userId, depositAmount, orderId) {
     if (!benefits.active) return { benefits: null, newBalance: await walletRepo.getBalance(pool, userId) };
 
     // adjustBalance handles +bonus, -tax, and 0 in one call
-    // Does NOT touch total_deposit (prevents loyalty tier inflation)
     await walletRepo.adjustBalance(pool, userId, benefits.netAdjustment);
+
+    // Record to bonus_history ONLY after wallet adjustment succeeds
+    // This prevents phantom records (recorded but never applied)
+    try {
+      const depositRulesRepo = await import('../../database/repositories/depositRulesRepo.js');
+      if (benefits.taxRule) {
+        await depositRulesRepo.recordBonus(pool, {
+          user_id: userId, order_id: orderId,
+          rule_id: benefits.taxRule.id, rule_title: benefits.taxRule.title,
+          rule_type: 'tax', deposit_amount: depositAmount,
+          applied_pct: parseFloat(benefits.taxRule.percentage),
+          bonus_amount: -benefits.taxAmount, rolling_30d: benefits.rolling30d,
+        });
+      }
+      if (benefits.bonusRule) {
+        await depositRulesRepo.recordBonus(pool, {
+          user_id: userId, order_id: orderId,
+          rule_id: benefits.bonusRule.id, rule_title: benefits.bonusRule.title,
+          rule_type: benefits.bonusRule.rule_type, deposit_amount: depositAmount,
+          applied_pct: parseFloat(benefits.bonusRule.percentage),
+          bonus_amount: benefits.bonusAmount, rolling_30d: benefits.rolling30d,
+        });
+      }
+    } catch { /* recording failed but wallet is already adjusted — ok */ }
 
     const newBalance = await walletRepo.getBalance(pool, userId);
     return { benefits, newBalance };
