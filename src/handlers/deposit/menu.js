@@ -45,9 +45,12 @@ async function showDepositMenu(ctx) {
     `👇 <b>Select Payment Method</b>`;
 
   const benefitsInfo = await depositBenefitsService.getDepositInfoMessage(pool, ctx.from.id);
-  if (benefitsInfo) text += `\n${benefitsInfo}`;
+  if (benefitsInfo && benefitsInfo.text) text += `\n${benefitsInfo.text}`;
 
   const kb = new InlineKeyboard();
+  if (benefitsInfo && benefitsInfo.telegraphUrl) {
+    kb.url('📖 Read All Rules', benefitsInfo.telegraphUrl).row();
+  }
   if (paytmOn) kb.text(`💎 ${paytmDisplayName || 'UPI'}`, 'deposit:paytm');
   if (cryptomusOn) kb.text(`💎 ${cryptoDisplayName || 'CRYPTO'}`, 'deposit:cryptomus');
   kb.row();
