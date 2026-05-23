@@ -333,6 +333,7 @@ async function handleCreateTempMail(ctx) {
       }
       kb.row();
     }
+    kb.text('❌ Cancel', 'tm:cancel');
 
     await ctx.reply(
       '📧 <b>Temporary Email</b>\n\n' +
@@ -620,13 +621,45 @@ composer.callbackQuery('tm:noop', async (ctx) => {
   try { await ctx.answerCallbackQuery({ text: 'Open in browser to see all messages.' }); } catch {}
 });
 
-// ── 🗑 Delete Email ─────────────────────────────────────────────
+// ── 🗑 Delete Email → edit message back to domain picker ────────
 composer.callbackQuery(/^tm:del:/, async (ctx) => {
   const email = ctx.callbackQuery.data.replace('tm:del:', '');
 
   try { await tempMailService.deleteTempEmail(email); } catch {}
-  try { await ctx.deleteMessage(); } catch {}
   try { await ctx.answerCallbackQuery({ text: '🗑 Email deleted.' }); } catch {}
+
+  // Show domain picker again in the SAME message — flow continues
+  try {
+    const domains = await tempMailService.fetchDomains();
+    if (domains.length) {
+      const kb = new InlineKeyboard();
+      for (let i = 0; i < domains.length; i += 2) {
+        kb.text(`📧 @${domains[i]}`, `tm:dom:${domains[i]}`);
+        if (domains[i + 1]) {
+          kb.text(`📧 @${domains[i + 1]}`, `tm:dom:${domains[i + 1]}`);
+        }
+        kb.row();
+      }
+      kb.text('❌ Cancel', 'tm:cancel');
+
+      await ctx.editMessageText(
+        '🗑 <i>Previous email deleted.</i>\n\n' +
+        '📧 <b>Temporary Email</b>\n\n' +
+        'Select a domain to generate a new email:',
+        { parse_mode: 'HTML', reply_markup: kb }
+      );
+      return;
+    }
+  } catch { /* ignore */ }
+
+  // Fallback if domains fetch fails — just delete the message
+  try { await ctx.deleteMessage(); } catch {}
+});
+
+// ── ❌ Cancel — just delete the message ──────────────────────────
+composer.callbackQuery('tm:cancel', async (ctx) => {
+  try { await ctx.deleteMessage(); } catch {}
+  try { await ctx.answerCallbackQuery(); } catch {}
 });
 
 // ═══════════════════════════════════════════════════════════════════
