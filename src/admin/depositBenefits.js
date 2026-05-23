@@ -101,14 +101,12 @@ async function showDashboard(ctx) {
     }
   }
 
-  const kb = new InlineKeyboard().text(toggleBtn, 'benefits:toggle').row()
-    .text('➕ Add Rule', 'benefits:add').row();
+  const kb = new InlineKeyboard();
+  kb.text(toggleBtn, 'benefits:toggle').text('➕ Add Rule', 'benefits:add').row();
   if (rules.length > 0) {
-    kb.text('📋 Edit / Remove', 'benefits:manage').row();
-    kb.text('📊 Stats', 'benefits:stats').row();
+    kb.text('📋 Edit / Remove', 'benefits:manage').text('📊 Stats', 'benefits:stats').row();
   }
-  kb.text('📝 Set Telegraph Name', 'benefits:set_author').row();
-  kb.text('🔄 Reset Telegraph', 'benefits:reset_telegraph').text('🧹 Fix Old Data', 'benefits:fix_data').row();
+  kb.text('📝 Telegraph Name', 'benefits:set_author').text('🔄 Reset Telegraph', 'benefits:reset_telegraph').row();
   kb.text('◀ Back', 'admin:back');
   try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
   catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
@@ -142,76 +140,6 @@ composer.callbackQuery('benefits:reset_telegraph', adminRequired, async (ctx) =>
   }
 });
 
-// ── Fix Old Data (stamp credit_amount + reconcile with balance) ─
-composer.callbackQuery('benefits:fix_data', adminRequired, async (ctx) => {
-  try { await ctx.answerCallbackQuery('⏳ Fixing...'); } catch {}
-  const pool = ctx.dbPool;
-  try {
-    // 1. Stamp credit_amount = raw amount on transactions that don't have it
-    const { rowCount: stamped } = await pool.query(
-      `UPDATE transactions
-       SET gateway_data = jsonb_set(
-         COALESCE(gateway_data, '{}'), 
-         '{credit_amount}', 
-         to_jsonb(amount)
-       )
-       WHERE status = 'success'
-         AND (gateway_data->>'credit_amount') IS NULL`
-    );
-
-    // 2. Delete phantom bonus_history tax records
-    const { rowCount: deleted } = await pool.query(
-      `DELETE FROM bonus_history WHERE rule_type = 'tax'`
-    );
-
-    // 3. Sync total_deposit = balance (no purchases yet)
-    await pool.query(
-      `UPDATE user_wallets SET total_deposit = balance WHERE total_deposit > balance`
-    );
-
-    // 4. Reconcile: for each user, if SUM(credit_amount) > balance,
-    //    reduce the LATEST transaction's credit_amount by the excess
-    //    So that SUM(credit_amount) = balance exactly
-    const { rowCount: reconciled } = await pool.query(
-      `WITH user_excess AS (
-         SELECT w.user_id,
-           COALESCE(SUM((t.gateway_data->>'credit_amount')::numeric), 0) - w.balance AS excess
-         FROM user_wallets w
-         LEFT JOIN transactions t ON t.user_id = w.user_id AND t.status = 'success'
-         GROUP BY w.user_id, w.balance
-         HAVING COALESCE(SUM((t.gateway_data->>'credit_amount')::numeric), 0) > w.balance
-       ),
-       latest_tx AS (
-         SELECT DISTINCT ON (user_id) id, user_id
-         FROM transactions
-         WHERE status = 'success'
-         ORDER BY user_id, created_at DESC
-       )
-       UPDATE transactions t
-       SET gateway_data = jsonb_set(
-         gateway_data,
-         '{credit_amount}',
-         to_jsonb(GREATEST((gateway_data->>'credit_amount')::numeric - ue.excess, 0))
-       )
-       FROM user_excess ue, latest_tx lt
-       WHERE t.id = lt.id AND lt.user_id = ue.user_id`
-    );
-
-    const text = `✅ <b>Data Fixed!</b>\n\n` +
-      `📝 Stamped ${stamped} transactions\n` +
-      `🗑 Deleted ${deleted} phantom records\n` +
-      `🔄 Reconciled ${reconciled} users\n\n` +
-      `<i>Balance, Total Deposit, Last 30 Days — all consistent now.</i>`;
-
-    const kb = new InlineKeyboard().text('◀ Dashboard', 'admin:benefits');
-    try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
-    catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
-  } catch (e) {
-    try { await ctx.editMessageText(`❌ Fix failed: <code>${escapeHtml(e.message)}</code>`, {
-      parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Back', 'admin:benefits')
-    }); } catch {}
-  }
-});
 
 // ── Set Telegraph Author Name ──
 composer.callbackQuery('benefits:set_author', adminRequired, async (ctx) => {
@@ -716,34 +644,7 @@ composer.on('message:text', async (ctx, next) => {
     return;
   }
 
-  // ── Test simulator ──
-  if (state.step === 'test_user') {
-    const userId = parseInt(input);
-    if (isNaN(userId)) { await ctx.reply('⚠️ Send a user ID (number):'); return; }
-    state.userId = userId;
-    state.step = 'test_amount';
-    states.set(ctx.chat.id, state);
-    await ctx.reply('💰 Now send the <b>deposit amount</b>:', { parse_mode: 'HTML' });
-    return;
-  }
-  if (state.step === 'test_amount') {
-    const amount = parseFloat(input);
-    if (isNaN(amount) || amount <= 0) { await ctx.reply('⚠️ Send a positive amount:'); return; }
-    states.delete(ctx.chat.id);
-    const benefits = await depositBenefitsService.calculateBenefits(pool, state.userId, amount, null, true);
-    let text = `🔮 <b>Test Result</b>\n\n👤 User: <code>${state.userId}</code>\n💰 Deposit: ₹${amount.toFixed(2)}\n\n<blockquote>`;
-    if (!benefits.active) { text += `System is OFF\nUser gets: ₹${amount.toFixed(2)}`; }
-    else {
-      if (benefits.taxRule) text += `💸 Tax: ${parseFloat(benefits.taxRule.percentage)}% = -₹${benefits.taxAmount.toFixed(2)}\n`;
-      if (benefits.bonusRule) text += `🎁 Bonus: +${parseFloat(benefits.bonusRule.percentage)}% = +₹${benefits.bonusAmount.toFixed(2)}\n`;
-      if (!benefits.taxRule && !benefits.bonusRule) text += `No rules matched.\n`;
-      text += `\n<b>User gets: ₹${benefits.creditAmount.toFixed(2)}</b>`;
-    }
-    text += `</blockquote>`;
-    await ctx.reply(text, { parse_mode: 'HTML',
-      reply_markup: new InlineKeyboard().text('🔮 Test Again', 'benefits:test').text('◀ Dashboard', 'admin:benefits') });
-    return;
-  }
+
 
   return next();
 });
@@ -1019,14 +920,7 @@ async function autoTitle(pool, r) {
 //  TEST + STATS
 // ═══════════════════════════════════════════════════════════════════
 
-composer.callbackQuery('benefits:test', adminRequired, async (ctx) => {
-  try { await ctx.answerCallbackQuery(); } catch {}
-  states.set(ctx.chat.id, { step: 'test_user' });
-  try { await ctx.editMessageText(
-    `🔮 <b>Test Rules</b>\n\nSend a <b>User ID</b>:\n\n<i>Tests without giving real money.</i>`,
-    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Cancel', 'admin:benefits') }
-  ); } catch {}
-});
+
 
 composer.callbackQuery('benefits:stats', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
