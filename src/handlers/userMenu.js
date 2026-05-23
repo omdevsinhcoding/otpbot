@@ -442,7 +442,13 @@ function buildInboxList(email, messages) {
 }
 
 function buildInboxListKb(email, messages) {
+  const token = tempMailService.getToken(email);
   const kb = new InlineKeyboard();
+
+  // Browser link at top
+  if (token) {
+    kb.url('🌐 Open In Browser', `https://temp-mail.io/en/email/${email}/token/${token}`).row();
+  }
 
   // Each message = 1 button row showing: "#N · From · Subject (truncated)"
   const show = messages.slice(0, 10); // max 10 buttons
@@ -450,7 +456,6 @@ function buildInboxListKb(email, messages) {
     const msg = show[i];
     const from = parseFrom(msg.from);
     const subject = decodeHtmlEntities(msg.subject || '(No Subject)');
-    // Truncate to fit button text (~40 chars)
     const label = `#${i + 1} · ${from} · ${subject}`.substring(0, 45);
     kb.text(label, `tm:msg:${email}:${i}`).row();
   }
@@ -535,8 +540,9 @@ function buildMessageDetailKb(email, index, totalMessages) {
 composer.callbackQuery(/^tm:chk:/, async (ctx) => {
   const email = ctx.callbackQuery.data.replace('tm:chk:', '');
 
-  if (tempMailService.isInboxRateLimited(ctx.from.id)) {
-    try { await ctx.answerCallbackQuery({ text: '⏳ Please wait a moment.' }); } catch {}
+  const cooldown = tempMailService.isInboxRateLimited(ctx.from.id);
+  if (cooldown) {
+    try { await ctx.answerCallbackQuery({ text: `⏳ Please wait ${cooldown} second${cooldown > 1 ? 's' : ''}.` }); } catch {}
     return;
   }
 

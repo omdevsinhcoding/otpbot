@@ -38,11 +38,17 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000).unref();
 
+/**
+ * Check if user is rate-limited. Returns remaining seconds (0 = not limited).
+ */
 export function isInboxRateLimited(chatId) {
   const last = inboxCooldowns.get(chatId);
-  if (last && Date.now() - last < INBOX_COOLDOWN_MS) return true;
+  if (last) {
+    const remaining = INBOX_COOLDOWN_MS - (Date.now() - last);
+    if (remaining > 0) return Math.ceil(remaining / 1000);
+  }
   inboxCooldowns.set(chatId, Date.now());
-  return false;
+  return 0;
 }
 
 // ── Token helpers ────────────────────────────────────────────────
