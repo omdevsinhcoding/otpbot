@@ -174,30 +174,35 @@ export async function updateRulesPage(pool) {
       });
       const data = await res.json();
       if (!data.ok) {
-        logger.error(`[Telegraph] editPage failed: ${JSON.stringify(data)}`);
-        throw new Error(data.error || 'editPage failed');
+        logger.error(`[Telegraph] editPage failed: ${JSON.stringify(data)} — will create new page`);
+        // Clear stale path so we create a new page below
+        await settingsRepo.setSetting(pool, 'telegraph_rules_path', '');
+        // Fall through to create new page
+      } else {
+        page = data.result;
+        logger.info(`[Telegraph] Page edited successfully: ${page.path}`);
       }
-      page = data.result;
-      logger.info(`[Telegraph] Page edited successfully: ${page.path}`);
-    } else {
-      // Create new page
-      logger.info(`[Telegraph] Creating new page (${rules.length} rules)`);
-      const params = new URLSearchParams();
-      params.append('access_token', token);
-      params.append('title', title);
-      params.append('content', contentStr);
-      params.append('author_name', botName);
+    }
 
-      const res = await fetch(`${API}/createPage`, {
+    // Create new page (or fallback if edit failed)
+    if (!page) {
+      logger.info(`[Telegraph] Creating new page (${rules.length} rules)`);
+      const createParams = new URLSearchParams();
+      createParams.append('access_token', token);
+      createParams.append('title', title);
+      createParams.append('content', contentStr);
+      createParams.append('author_name', botName);
+
+      const createRes = await fetch(`${API}/createPage`, {
         method: 'POST',
-        body: params,
+        body: createParams,
       });
-      const data = await res.json();
-      if (!data.ok) {
-        logger.error(`[Telegraph] createPage failed: ${JSON.stringify(data)}`);
-        throw new Error(data.error || 'createPage failed');
+      const createData = await createRes.json();
+      if (!createData.ok) {
+        logger.error(`[Telegraph] createPage failed: ${JSON.stringify(createData)}`);
+        throw new Error(createData.error || 'createPage failed');
       }
-      page = data.result;
+      page = createData.result;
       await settingsRepo.setSetting(pool, 'telegraph_rules_path', page.path);
       logger.info(`[Telegraph] New page created: ${page.path}`);
     }

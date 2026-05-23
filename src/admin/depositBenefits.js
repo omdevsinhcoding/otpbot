@@ -436,9 +436,17 @@ async function saveRule(ctx, pool, data) {
   try {
     const { updateRulesPage } = await import('../services/telegraphService.js');
     const url = await updateRulesPage(pool);
-    if (url) logger.info(`[Benefits] Telegraph updated: ${url}`);
-    else logger.warn(`[Benefits] Telegraph returned null (no active rules?)`);
-  } catch (e) { logger.error(`[Benefits] Telegraph update failed: ${e.message}`); }
+    if (url) {
+      logger.info(`[Benefits] Telegraph updated: ${url}`);
+      try { await ctx.reply(`📝 Telegraph updated ✅\n${url}`); } catch {}
+    } else {
+      logger.warn(`[Benefits] Telegraph returned null (no active rules?)`);
+      try { await ctx.reply(`⚠️ Telegraph update returned null — no active rules?`); } catch {}
+    }
+  } catch (e) {
+    logger.error(`[Benefits] Telegraph update failed: ${e.message}`);
+    try { await ctx.reply(`❌ Telegraph update FAILED:\n<code>${e.message}</code>`, { parse_mode: 'HTML' }); } catch {}
+  }
 
   const msg = `✅ <b>Rule Created!</b>\n\n${ICONS[saved.rule_type]} ${describeRule(saved)}\n<i>${exampleCalc(saved)}</i>`;
   const kb = new InlineKeyboard().text('➕ Add Another', 'benefits:add').row().text('◀ Dashboard', 'admin:benefits');
