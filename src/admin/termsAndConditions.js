@@ -207,6 +207,10 @@ composer.callbackQuery('tc:set_msg', adminRequired, async (ctx) => {
 // ── Preview ─────────────────────────────────────────────────────
 composer.callbackQuery('tc:preview', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
+
+  // Delete the original panel message to avoid duplicate
+  try { await ctx.deleteMessage(); } catch {}
+
   const pool = ctx.dbPool;
   const buttons = await settingsRepo.getSetting(pool, 'tc_buttons') || [];
   const message = await settingsRepo.getSetting(pool, 'tc_message') ||
@@ -232,27 +236,39 @@ composer.callbackQuery('tc:preview', adminRequired, async (ctx) => {
   // Send a control message so admin can delete the preview and go back
   const controlKb = new InlineKeyboard()
     .text('🗑 Delete Preview', `tc:del_preview:${previewMsg.message_id}`).row()
-    .text('◀ Back', 'admin:tc');
+    .text('◀ Back', `tc:back_from_preview:${previewMsg.message_id}`);
   await ctx.reply('👆 <b>Preview shown above.</b>\nUse the buttons below to continue.', {
     parse_mode: 'HTML',
     reply_markup: controlKb
   });
 });
 
-// Delete preview message
+// Delete preview message and go back to panel
 composer.callbackQuery(/^tc:del_preview:\d+$/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const previewMsgId = Number(ctx.callbackQuery.data.split(':')[2]);
-  try {
-    await ctx.api.deleteMessage(ctx.chat.id, previewMsgId);
-  } catch (err) {
-    logger.warn('Could not delete preview message:', err.message);
-  }
-  // Also delete the control message itself
-  try {
-    await ctx.deleteMessage();
-  } catch {}
-  // Show the T&C panel again as a new message
+  // Delete the preview message
+  try { await ctx.api.deleteMessage(ctx.chat.id, previewMsgId); } catch {}
+  // Delete the control message itself, then re-show panel
+  try { await ctx.deleteMessage(); } catch {}
+  // Send a fresh T&C panel
+  await sendTcPanelAsNewMessage(ctx);
+});
+
+// Back from preview (keep preview, go back to panel)
+composer.callbackQuery(/^tc:back_from_preview:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const previewMsgId = Number(ctx.callbackQuery.data.split(':')[2]);
+  // Delete the preview message
+  try { await ctx.api.deleteMessage(ctx.chat.id, previewMsgId); } catch {}
+  // Delete the control message itself
+  try { await ctx.deleteMessage(); } catch {}
+  // Send a fresh T&C panel
+  await sendTcPanelAsNewMessage(ctx);
+});
+
+// Helper to send T&C panel as a new message (used after preview cleanup)
+async function sendTcPanelAsNewMessage(ctx) {
   const pool = ctx.dbPool;
   const enabled = await settingsRepo.getSetting(pool, 'tc_enabled');
   const btns = await settingsRepo.getSetting(pool, 'tc_buttons') || [];
@@ -263,7 +279,6 @@ composer.callbackQuery(/^tc:del_preview:\d+$/, adminRequired, async (ctx) => {
   const dcColor = rawDecline !== null && rawDecline !== undefined ? rawDecline : 'danger';
   const acceptInfo = COLOR_OPTIONS.find(c => c.style === acColor) || COLOR_OPTIONS[0];
   const declineInfo = COLOR_OPTIONS.find(c => c.style === dcColor) || COLOR_OPTIONS[2];
-
   const statusEmoji = enabled ? '🟢' : '🔴';
   const toggleLabel = enabled ? '🔴 Disable' : '🟢 Enable';
   const tcAuthor = await settingsRepo.getSetting(pool, 'tc_telegraph_author') || '';
@@ -299,7 +314,7 @@ composer.callbackQuery(/^tc:del_preview:\d+$/, adminRequired, async (ctx) => {
   panelKb.text('◀ Back', 'admin:back');
 
   await ctx.reply(text, { parse_mode: 'HTML', reply_markup: panelKb });
-});
+}
 
 // Preview noop
 composer.callbackQuery('tc:preview_noop', adminRequired, async (ctx) => {

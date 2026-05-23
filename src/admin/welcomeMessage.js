@@ -75,9 +75,13 @@ composer.callbackQuery('welcome:set', adminRequired, async (ctx) => {
 // ── Preview ─────────────────────────────────────────────────────
 composer.callbackQuery('welcome:preview', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
+
+  // Delete the original panel message to avoid duplicate
+  try { await ctx.deleteMessage(); } catch {}
+
   const welcome = await welcomeRepo.getWelcomeMessage(ctx.dbPool);
   if (!welcome) {
-    await ctx.editMessageText('⚠️ No welcome message set.', {
+    await ctx.reply('⚠️ No welcome message set.', {
       reply_markup: new InlineKeyboard().text('🔄 Reset Default', 'welcome:reset').text('‹ Back', 'admin:welcome')
     });
     return;
@@ -88,18 +92,20 @@ composer.callbackQuery('welcome:preview', adminRequired, async (ctx) => {
   const previewText = replaceWelcomePlaceholders(welcome.message_text, ctx.from);
 
   try {
+    let previewMsg;
     if (welcome.media_type === 'photo' && welcome.media_file_id) {
-      await ctx.replyWithPhoto(welcome.media_file_id, { caption: previewText, parse_mode: welcome.parse_mode || 'HTML', reply_markup: kb });
+      previewMsg = await ctx.replyWithPhoto(welcome.media_file_id, { caption: previewText, parse_mode: welcome.parse_mode || 'HTML', reply_markup: kb });
     } else if (welcome.media_type === 'video' && welcome.media_file_id) {
-      await ctx.replyWithVideo(welcome.media_file_id, { caption: previewText, parse_mode: welcome.parse_mode || 'HTML', reply_markup: kb });
+      previewMsg = await ctx.replyWithVideo(welcome.media_file_id, { caption: previewText, parse_mode: welcome.parse_mode || 'HTML', reply_markup: kb });
     } else {
-      await ctx.reply(previewText, { parse_mode: welcome.parse_mode || 'HTML', reply_markup: kb });
+      previewMsg = await ctx.reply(previewText, { parse_mode: welcome.parse_mode || 'HTML', reply_markup: kb });
     }
-    // Always send back button after preview so admin can navigate back
+    // Send control message with delete/back buttons
+    const controlKb = new InlineKeyboard()
+      .text('🗑 Delete Preview', `welcome:del_preview:${previewMsg.message_id}`).row()
+      .text('◀ Back to Panel', `welcome:back_preview:${previewMsg.message_id}`);
     await ctx.reply('👆 Preview shown above.', {
-      reply_markup: new InlineKeyboard()
-        .text('📝 Edit Message', 'welcome:set').text('🔘 Manage Buttons', 'welcome:buttons').row()
-        .text('◀ Back to Panel', 'admin:welcome')
+      reply_markup: controlKb
     });
   } catch (err) {
     await ctx.reply(`⚠️ Preview failed: ${err.message}`, {
@@ -107,6 +113,46 @@ composer.callbackQuery('welcome:preview', adminRequired, async (ctx) => {
     });
   }
 });
+
+// Delete welcome preview and go back
+composer.callbackQuery(/^welcome:del_preview:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const previewMsgId = Number(ctx.callbackQuery.data.split(':')[2]);
+  try { await ctx.api.deleteMessage(ctx.chat.id, previewMsgId); } catch {}
+  try { await ctx.deleteMessage(); } catch {}
+  await sendWelcomePanelAsNewMessage(ctx);
+});
+
+// Back from welcome preview
+composer.callbackQuery(/^welcome:back_preview:\d+$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const previewMsgId = Number(ctx.callbackQuery.data.split(':')[2]);
+  try { await ctx.api.deleteMessage(ctx.chat.id, previewMsgId); } catch {}
+  try { await ctx.deleteMessage(); } catch {}
+  await sendWelcomePanelAsNewMessage(ctx);
+});
+
+// Helper to send welcome panel as a new message
+async function sendWelcomePanelAsNewMessage(ctx) {
+  const pool = ctx.dbPool;
+  const welcomeEnabled = await settingsRepo.getSetting(pool, 'welcome_enabled');
+  const welcome = await welcomeRepo.getWelcomeMessage(pool);
+  const status = welcomeEnabled ? '✅ Enabled' : '❌ Disabled';
+  const text =
+    `💬 <b>Welcome Message</b>\n\n` +
+    `Status: <b>${status}</b>\n` +
+    `Message: ${welcome ? '✅ Set' : '❌ Not set'}`;
+  const kb = new InlineKeyboard()
+    .text('📝 Set Message', 'welcome:set').text('👁 Preview', 'welcome:preview').row()
+    .text(welcomeEnabled ? '🔴 Disable' : '🟢 Enable', 'welcome:toggle').row()
+    .text('🔘 Manage Buttons', 'welcome:buttons').row();
+  const isCustomized = welcome && welcome.message_text && welcome.message_text.trim() !== DEFAULT_WELCOME_TEXT.trim();
+  if (isCustomized) {
+    kb.text('🔄 Reset Default', 'welcome:reset').row();
+  }
+  kb.text('‹ Back', 'admin:back');
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+}
 
 // ── Reset to default ────────────────────────────────────────────
 composer.callbackQuery('welcome:reset', adminRequired, async (ctx) => {
