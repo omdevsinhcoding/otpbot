@@ -62,6 +62,9 @@ async function main() {
   // 3. Bot instance
   const bot = createBot(pool, tracker);
 
+  // 3b. Connect logger to bot — errors will be sent to admin Telegram
+  logger.setBotApi(bot.api);
+
   // 4. Global error handler
   setupErrorHandler(bot);
 

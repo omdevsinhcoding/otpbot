@@ -242,11 +242,12 @@ export async function deleteTempEmail(email, token = null) {
 
     removeToken(email);
 
-    if (!res.ok && res.status !== 404) {
+    // 400 = token expired, 404 = email already gone — both expected, don't log
+    if (!res.ok && res.status >= 500) {
       logger.error(`[TempMail] Delete ${res.status} for ${email.split('@')[0]}@***`);
     }
 
-    return { success: res.ok || res.status === 404 };
+    return { success: res.ok || res.status === 400 || res.status === 404 };
   } catch (err) {
     removeToken(email);
     logger.error('[TempMail] Delete error:', err.message);
