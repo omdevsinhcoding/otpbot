@@ -70,44 +70,67 @@ composer.hears(new RegExp(`^${escRe(BTN_PROFILE)}$`), async (ctx) => {
 //  PROFILE CALLBACK HANDLERS
 // ═══════════════════════════════════════════════════════════════════
 
-composer.callbackQuery('profile:deposit_history', async (ctx) => {
+composer.callbackQuery(/^profile:deposit_history(?::(\d+))?$/, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const pool = ctx.dbPool;
-  const { rows } = await pool.query(
-    `SELECT order_id, gateway, amount, status, gateway_data, created_at FROM transactions
-     WHERE user_id = $1 AND status = 'success' ORDER BY created_at DESC LIMIT 10`, [ctx.from.id]
-  );
+  const page = parseInt(ctx.match?.[1] || '1');
+  const perPage = 8;
+
+  // Read admin-configured history limit (0 = show all)
+  const historyLimit = parseInt(await settingsRepo.getSetting(pool, 'deposit_history_limit')) || 0;
 
   // Get total stats
   const { rows: statsRows } = await pool.query(
-    `SELECT COUNT(*) as count, COALESCE(SUM(amount), 0) as total FROM transactions
+    `SELECT COUNT(*)::int as count, COALESCE(SUM(amount), 0) as total FROM transactions
      WHERE user_id = $1 AND status = 'success'`, [ctx.from.id]
   );
   const totalCount = parseInt(statsRows[0]?.count || 0);
   const totalAmount = parseFloat(statsRows[0]?.total || 0);
 
-  if (rows.length === 0) {
-    await ctx.reply(
+  // Apply admin limit: cap visible transactions
+  const visibleCount = historyLimit > 0 ? Math.min(totalCount, historyLimit) : totalCount;
+  const totalPages = Math.max(1, Math.ceil(visibleCount / perPage));
+  const safePage = Math.min(page, totalPages);
+  const offset = (safePage - 1) * perPage;
+  const fetchLimit = historyLimit > 0 ? Math.min(perPage, historyLimit - offset) : perPage;
+
+  if (totalCount === 0) {
+    const emptyText =
       `┌─────────────────────────┐\n` +
       `│   📭  <b>No Deposits Yet</b>       │\n` +
       `└─────────────────────────┘\n\n` +
       `You haven't made any deposits.\n` +
-      `Tap 💰 <b>DEPOSIT</b> to get started!`,
-      { parse_mode: 'HTML' }
-    );
+      `Tap 💰 <b>DEPOSIT</b> to get started!`;
+    try { await ctx.editMessageText(emptyText, { parse_mode: 'HTML' }); }
+    catch { await ctx.reply(emptyText, { parse_mode: 'HTML' }); }
     return;
   }
 
+  if (fetchLimit <= 0) {
+    // Page beyond limit — go to last valid page
+    return ctx.editMessageText('⚠️ No more transactions.', {
+      parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard().text('◀ Back', `profile:deposit_history:${totalPages}`)
+    }).catch(() => {});
+  }
+
+  const { rows } = await pool.query(
+    `SELECT order_id, gateway, amount, status, gateway_data, created_at FROM transactions
+     WHERE user_id = $1 AND status = 'success' ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+    [ctx.from.id, fetchLimit, offset]
+  );
+
   // Fetch gateway display names
-  const [paytmName, bharatpayName] = await Promise.all([
+  const [paytmName, bharatpayName, cryptomusName] = await Promise.all([
     settingsRepo.getSetting(pool, 'paytm_display_name'),
     settingsRepo.getSetting(pool, 'bharatpay_display_name'),
+    settingsRepo.getSetting(pool, 'cryptomus_display_name'),
   ]);
 
   const gwName = (g) => {
     if (g === 'paytm') return paytmName || 'Automatic Gateway';
-    if (g === 'bharatpay') return bharatpayName || 'Manual Gateway';
-    if (g === 'cryptomus') return 'Crypto';
+    if (g === 'bharatpay') return bharatpayName || 'Pay via UTR / Transaction ID based Gateway';
+    if (g === 'cryptomus') return cryptomusName || 'Crypto';
     return g;
   };
   const gwIcon = (g) => g === 'paytm' ? '⚡' : g === 'bharatpay' ? '🏦' : g === 'cryptomus' ? '🪙' : '💳';
@@ -133,14 +156,15 @@ composer.callbackQuery('profile:deposit_history', async (ctx) => {
   text += `┌─── 📊 <b>Summary</b> ─────────┐\n`;
   text += `│  💰 Total: <b>₹${totalAmount.toFixed(2)}</b>\n`;
   text += `│  📦 Transactions: <b>${totalCount}</b>\n`;
-  text += `│  📄 Showing: <b>${rows.length}</b> latest\n`;
+  text += `│  📄 Page: <b>${safePage}</b> of <b>${totalPages}</b>\n`;
   text += `└───────────────────────┘\n`;
 
+  const startNum = offset;
   rows.forEach((r, i) => {
     const ref = r.gateway_data?.txnRef || r.gateway_data?.paytm_utr || '—';
     const utr = r.gateway_data?.paytm_utr || r.gateway_data?.utr || '';
 
-    text += `\n┌─ <b>#${i + 1}</b> ─────────────────┐\n`;
+    text += `\n┌─ <b>#${startNum + i + 1}</b> ─────────────────┐\n`;
     text += `│  ✅ <b>₹${parseFloat(r.amount).toFixed(2)}</b>\n`;
     text += `│\n`;
     text += `│  ${gwIcon(r.gateway)} <b>Via:</b> ${gwName(r.gateway)}\n`;
@@ -155,10 +179,15 @@ composer.callbackQuery('profile:deposit_history', async (ctx) => {
 
   text += `\n\n<i>💡 Tap any code to copy it</i>`;
 
-  await ctx.reply(text, {
-    parse_mode: 'HTML',
-    reply_markup: new InlineKeyboard().text('✖ Close', 'profile:close_history')
-  });
+  // Build pagination buttons
+  const kb = new InlineKeyboard();
+  if (safePage > 1) kb.text('◀ Prev', `profile:deposit_history:${safePage - 1}`);
+  kb.text(`📄 ${safePage}/${totalPages}`, 'noop');
+  if (safePage < totalPages) kb.text('Next ▶', `profile:deposit_history:${safePage + 1}`);
+  kb.row().text('✖ Close', 'profile:close_history');
+
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
 });
 
 composer.callbackQuery('profile:otp_history', async (ctx) => {
