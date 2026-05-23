@@ -160,35 +160,7 @@ composer.hears(new RegExp(`^${escRe(BTN_MORE)}$`), async (ctx) => {
 // ── 📩 BUY MAIL (Temp Mail on main menu) ────────────────────────
 composer.hears(new RegExp(`^${escRe(BTN_BUY_MAIL)}$`), async (ctx) => {
   if (!await checkForceJoin(ctx)) return;
-
-  try {
-    const result = await tempMailService.createTempEmail(10, 10);
-    if (!result.success) {
-      await ctx.reply(
-        '⚠️ <b>Error</b>\n\nCould not generate a temporary email. Please try again later.',
-        { parse_mode: 'HTML', reply_markup: await menuFor(ctx) }
-      );
-      return;
-    }
-
-    const kb = new InlineKeyboard()
-      .url('🌐 View Inbox In Browser', `https://temp-mail.io/en/email/${encodeURIComponent(result.email)}/token/${result.token}?utm_source=telegram-bot`)
-      .row()
-      .text('📬 Check Inbox', `tempmail:inbox:${result.email}`)
-      .text('🗑 Delete', `tempmail:del:${result.email}:${result.token}`);
-
-    await ctx.reply(
-      '📩 <b>Your Temporary Email Address</b>\n\n' +
-      `✉️ <b>Email:</b>\n<code>${escapeHtml(result.email)}</code>`,
-      { parse_mode: 'HTML', reply_markup: kb }
-    );
-  } catch (err) {
-    logger.error('Temp mail error:', err);
-    await ctx.reply(
-      '⚠️ <b>Error</b>\n\nSomething went wrong. Please try again.',
-      { parse_mode: 'HTML', reply_markup: await menuFor(ctx) }
-    );
-  }
+  await handleCreateTempMail(ctx);
 });
 
 // ── 🛡 SUPPORT ──────────────────────────────────────────────────
@@ -254,35 +226,7 @@ composer.hears(new RegExp(`^${escRe(BTN_RETURN)}$`), async (ctx) => {
 
 // ── 📧 TEMP MAIL (More section) ─────────────────────────────────
 composer.hears(new RegExp(`^${escRe(BTN_GET_EMAIL)}$`), async (ctx) => {
-
-  try {
-    const result = await tempMailService.createTempEmail(10, 10);
-    if (!result.success) {
-      await ctx.reply(
-        '⚠️ <b>Error</b>\n\nCould not generate a temporary email. Please try again later.',
-        { parse_mode: 'HTML', reply_markup: MORE_MENU_KEYBOARD }
-      );
-      return;
-    }
-
-    const kb = new InlineKeyboard()
-      .url('🌐 View Inbox In Browser', `https://temp-mail.io/en/email/${encodeURIComponent(result.email)}/token/${result.token}?utm_source=telegram-bot`)
-      .row()
-      .text('📬 Check Inbox', `tempmail:inbox:${result.email}`)
-      .text('🗑 Delete', `tempmail:del:${result.email}:${result.token}`);
-
-    await ctx.reply(
-      '📧 <b>Your Temporary Email Address</b>\n\n' +
-      `✉️ <b>Email:</b>\n<code>${escapeHtml(result.email)}</code>`,
-      { parse_mode: 'HTML', reply_markup: kb }
-    );
-  } catch (err) {
-    logger.error('Temp mail error:', err);
-    await ctx.reply(
-      '⚠️ <b>Error</b>\n\nSomething went wrong. Please try again.',
-      { parse_mode: 'HTML', reply_markup: MORE_MENU_KEYBOARD }
-    );
-  }
+  await handleCreateTempMail(ctx);
 });
 
 // ── 😊 Favorite ─────────────────────────────────────────────────
@@ -367,86 +311,153 @@ composer.hears(new RegExp(`^${escRe(BTN_ADMIN_PANEL)}$`), async (ctx) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-//  📧 TEMP MAIL CALLBACK HANDLERS
+//  📧 TEMP MAIL — SHARED LOGIC + CALLBACK HANDLERS
 // ═══════════════════════════════════════════════════════════════════
 
-// ── 📬 Check Inbox ──────────────────────────────────────────────
-composer.callbackQuery(/^tempmail:inbox:/, async (ctx) => {
-  try { await ctx.answerCallbackQuery(); } catch {}
-  const email = ctx.callbackQuery.data.replace('tempmail:inbox:', '');
-
+/**
+ * Shared handler: Create a temp email and send a single card message.
+ * Both BTN_BUY_MAIL and BTN_GET_EMAIL call this.
+ */
+async function handleCreateTempMail(ctx) {
   try {
-    const result = await tempMailService.checkInbox(email);
+    const result = await tempMailService.createTempEmail(10, 10);
     if (!result.success) {
-      logger.error(`Temp mail inbox failed for ${email}: ${result.error}`);
       await ctx.reply(
-        '⚠️ <b>Error</b>\n\n' +
-        `Could not check inbox. ${escapeHtml(result.error || 'The email may have expired.')}`,
+        '⚠️ <b>Error</b>\n\nCould not generate email. Please try again.',
         { parse_mode: 'HTML' }
       );
       return;
     }
 
-    if (result.messages.length === 0) {
-      await ctx.reply(
-        '📭 <b>Inbox Empty</b>\n\n' +
-        `✉️ <b>Email:</b> <code>${escapeHtml(email)}</code>\n\n` +
-        '<i>No messages received yet. Try again later.</i>',
-        { parse_mode: 'HTML',
-          reply_markup: new InlineKeyboard()
-            .text('🔄 Refresh', `tempmail:inbox:${email}`)
-        }
-      );
-      return;
-    }
+    const emailCard = buildEmailCardText(result.email);
+    const kb = buildEmailCardKeyboard(result.email, result.token);
 
-    // Show up to 5 most recent messages
-    const msgs = result.messages.slice(0, 5);
-    let text = `📬 <b>Inbox</b> (${result.messages.length} message${result.messages.length > 1 ? 's' : ''})\n\n`;
-    text += `✉️ <b>Email:</b> <code>${escapeHtml(email)}</code>\n`;
-    text += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    await ctx.reply(emailCard, { parse_mode: 'HTML', reply_markup: kb });
+  } catch (err) {
+    logger.error('Temp mail create error:', err);
+    await ctx.reply('⚠️ Something went wrong. Please try again.', { parse_mode: 'HTML' });
+  }
+}
 
-    for (const [i, msg] of msgs.entries()) {
+/** Build the email card text (reused for create + inbox view). */
+function buildEmailCardText(email, messages = []) {
+  let text = '📧 <b>Temporary Email</b>\n\n';
+  text += `✉️ <b>Email:</b> <code>${escapeHtml(email)}</code>\n`;
+
+  if (messages.length === 0) {
+    text += '\n<i>📭 No messages yet. Use this email and click Check Inbox.</i>';
+  } else {
+    text += `\n📬 <b>${messages.length} message${messages.length > 1 ? 's' : ''} received</b>\n`;
+    text += '━━━━━━━━━━━━━━━━━━━━━━\n';
+
+    const show = messages.slice(0, 5);
+    for (const [i, msg] of show.entries()) {
       text += `\n<b>#${i + 1}</b>\n`;
       text += `📤 <b>From:</b> ${escapeHtml(msg.from || 'Unknown')}\n`;
       text += `📝 <b>Subject:</b> ${escapeHtml(msg.subject || '(No Subject)')}\n`;
       if (msg.body_text) {
-        const preview = msg.body_text.substring(0, 200).trim();
-        text += `📄 <b>Preview:</b>\n<i>${escapeHtml(preview)}${msg.body_text.length > 200 ? '...' : ''}</i>\n`;
+        const preview = msg.body_text.substring(0, 150).trim();
+        text += `📄 <i>${escapeHtml(preview)}${msg.body_text.length > 150 ? '…' : ''}</i>\n`;
       }
-      text += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+      text += '━━━━━━━━━━━━━━━━━━━━━━\n';
+    }
+    if (messages.length > 5) {
+      text += `\n<i>… and ${messages.length - 5} more. Open in browser to see all.</i>\n`;
+    }
+  }
+  return text;
+}
+
+/** Build the inline keyboard for the email card. */
+function buildEmailCardKeyboard(email, token) {
+  return new InlineKeyboard()
+    .url('🌐 Open In Browser', `https://temp-mail.io/en/email/${email}/token/${token}?utm_source=telegram-bot`)
+    .row()
+    .text('📬 Check Inbox', `tm:chk:${email}`)
+    .text('🗑 Delete Email', `tm:del:${email}:${token}`);
+}
+
+// ── 📬 Check Inbox — edits the SAME message, popup if empty ─────
+composer.callbackQuery(/^tm:chk:/, async (ctx) => {
+  const email = ctx.callbackQuery.data.replace('tm:chk:', '');
+
+  try {
+    const result = await tempMailService.checkInbox(email);
+
+    if (!result.success) {
+      // API error → show popup alert, don't send new message
+      try {
+        await ctx.answerCallbackQuery({ text: '⚠️ Could not check inbox. Email may have expired.', show_alert: true });
+      } catch { /* ignore */ }
+      return;
     }
 
-    await ctx.reply(text, {
-      parse_mode: 'HTML',
-      reply_markup: new InlineKeyboard()
-        .text('🔄 Refresh', `tempmail:inbox:${email}`)
-    });
+    if (result.messages.length === 0) {
+      // No mail → just a popup toast, no new message, no spam
+      try {
+        await ctx.answerCallbackQuery({ text: '📭 No messages received yet. Try again later.', show_alert: false });
+      } catch { /* ignore */ }
+      return;
+    }
+
+    // Mail found → edit the SAME message to show inbox
+    try { await ctx.answerCallbackQuery(); } catch {}
+    const updatedText = buildEmailCardText(email, result.messages);
+
+    // Keep the same buttons but swap Check Inbox → Refresh
+    const currentData = ctx.callbackQuery.message?.reply_markup?.inline_keyboard;
+    // Extract token from the delete button callback data
+    let token = '';
+    if (currentData) {
+      for (const row of currentData) {
+        for (const btn of row) {
+          if (btn.callback_data?.startsWith('tm:del:')) {
+            const parts = btn.callback_data.replace('tm:del:', '').split(':');
+            token = parts.slice(1).join(':');
+          }
+        }
+      }
+    }
+
+    const kb = new InlineKeyboard()
+      .url('🌐 Open In Browser', `https://temp-mail.io/en/email/${email}/token/${token}?utm_source=telegram-bot`)
+      .row()
+      .text('🔄 Refresh', `tm:chk:${email}`)
+      .text('🗑 Delete Email', `tm:del:${email}:${token}`);
+
+    try {
+      await ctx.editMessageText(updatedText, { parse_mode: 'HTML', reply_markup: kb });
+    } catch (editErr) {
+      // editMessageText fails if text hasn't changed — ignore
+      if (!editErr.message?.includes('message is not modified')) {
+        logger.error('Temp mail edit error:', editErr);
+      }
+    }
   } catch (err) {
     logger.error('Temp mail inbox error:', err);
-    await ctx.reply('⚠️ Something went wrong checking inbox.', { parse_mode: 'HTML' });
+    try {
+      await ctx.answerCallbackQuery({ text: '⚠️ Something went wrong.', show_alert: true });
+    } catch { /* ignore */ }
   }
 });
 
-// ── 🗑 Delete Temp Email ────────────────────────────────────────
-composer.callbackQuery(/^tempmail:del:/, async (ctx) => {
-  try { await ctx.answerCallbackQuery(); } catch {}
-  const parts = ctx.callbackQuery.data.replace('tempmail:del:', '').split(':');
+// ── 🗑 Delete Email — deletes email + removes the message ───────
+composer.callbackQuery(/^tm:del:/, async (ctx) => {
+  const parts = ctx.callbackQuery.data.replace('tm:del:', '').split(':');
   const email = parts[0];
   const token = parts.slice(1).join(':');
 
   try {
     await tempMailService.deleteTempEmail(email, token);
-    try { await ctx.deleteMessage(); } catch { /* ignore */ }
-    await ctx.reply(
-      '🗑 <b>Email Deleted</b>\n\n' +
-      `<code>${escapeHtml(email)}</code> has been deleted.`,
-      { parse_mode: 'HTML' }
-    );
   } catch (err) {
-    logger.error('Temp mail delete error:', err);
-    await ctx.reply('⚠️ Could not delete email.', { parse_mode: 'HTML' });
+    logger.error('Temp mail delete API error:', err);
   }
+
+  // Always delete the message — clean removal, no confirmation spam
+  try { await ctx.deleteMessage(); } catch { /* ignore */ }
+  try {
+    await ctx.answerCallbackQuery({ text: '🗑 Email deleted successfully.', show_alert: false });
+  } catch { /* ignore */ }
 });
 
 // ═══════════════════════════════════════════════════════════════════
