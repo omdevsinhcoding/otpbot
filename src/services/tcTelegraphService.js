@@ -1,13 +1,18 @@
 /**
- * T&C Telegraph Service — auto-generate Terms & Conditions pages
+ * T&C Telegraph Service — Professional Terms & Conditions Pages
+ *
+ * Enterprise-grade legal terms (Microsoft / Twitter / Stripe level).
+ * Key: Admin never liable. Users at own risk. All OTP use is user's responsibility.
+ * ALWAYS creates new page (editPage unreliable).
  */
 import logger from '../utils/logger.js';
 import * as settingsRepo from '../database/repositories/settingsRepo.js';
 
 const API = 'https://api.telegra.ph';
 
-/** Get or create Telegraph account token (reuses same token as deposit benefits) */
-async function getToken(pool) {
+// ── Telegraph Account ────────────────────────────────────────────
+
+async function getOrCreateToken(pool) {
   let token = await settingsRepo.getSetting(pool, 'telegraph_token');
   if (token) return token;
 
@@ -23,269 +28,415 @@ async function getToken(pool) {
   return token;
 }
 
-/** Build English T&C content */
+// ── English T&C (Enterprise-Grade) ──────────────────────────────
+
 function buildEnglishContent(botName) {
   const n = [];
-
-  n.push({ tag: 'p', children: [
-    `Using the ${botName} bot means that you accept ✅ these rules and terms. Please read them carefully.`
-  ]});
-  n.push({ tag: 'hr' });
-
-  // 1. Introduction
-  n.push({ tag: 'h3', children: ['🔹 1. Introduction'] });
-  n.push({ tag: 'p', children: [`👉 ${botName} is a virtual number provider bot that offers you the following services:`] });
-  n.push({ tag: 'ul', children: [
-    { tag: 'li', children: ['🔢 Virtual / temporary numbers (For OTP/verification)'] },
-    { tag: 'li', children: ['📧 Tempmail OTPs'] },
-    { tag: 'li', children: ['👤 Readymade accounts'] },
-    { tag: 'li', children: ['🤝 Reseller services'] },
-    { tag: 'li', children: ['💸 Balance transfer system'] },
-    { tag: 'li', children: ['🎁 Promo codes via channel'] },
-    { tag: 'li', children: ['💬 WhatsApp/Telegram numbers (rare availability)'] },
-    { tag: 'li', children: ['🆘 Best support'] },
-  ]});
-  n.push({ tag: 'hr' });
-
-  // 2. Purchase / Delivery / Refund
-  n.push({ tag: 'h3', children: ['🔹 2. Purchase / Delivery / Refund Policy ⚠️'] });
-  n.push({ tag: 'ul', children: [
-    { tag: 'li', children: ['🚫 No refund will be provided after the OTP/account has been delivered.'] },
-    { tag: 'li', children: ['🔄 Number/account availability is automatic — if it is currently unavailable, you will need to retry manually. Once available, the system will automatically add it.'] },
-    { tag: 'li', children: ['📧 Refund claims will not be accepted after the TempMail OTP has been delivered.'] },
-    { tag: 'li', children: ['✅ Readymade accounts are provided at the buyer\'s own risk.'] },
-    { tag: 'li', children: ['⏳ Virtual numbers are temporary and may expire at any time — the bot is NOT responsible for expired numbers or missed OTPs.'] },
-    { tag: 'li', children: [{ tag: 'strong', children: ['🚫 All purchases are final. No chargebacks, disputes, or payment reversals will be entertained.'] }] },
-  ]});
-  n.push({ tag: 'hr' });
-
-  // 3. Deposit / Wallet
-  n.push({ tag: 'h3', children: ['🔹 3. Deposit / Wallet 💳'] });
-  n.push({ tag: 'ul', children: [
-    { tag: 'li', children: ['💳 Once a deposit is made, withdrawal is NOT available (unless explicitly mentioned). Please deposit only the amount you actually need.'] },
-    { tag: 'li', children: ['🔄 Balance transfer between users is available (if enabled by admin). Admin is NOT responsible for wrong transfers — verify recipient before sending.'] },
-    { tag: 'li', children: ['⚠️ All payment disputes must be raised within 24 hours with valid proof (screenshot, transaction ID, etc.)'] },
-    { tag: 'li', children: [{ tag: 'strong', children: ['🚫 Deposits made through unofficial channels or to wrong addresses will NOT be honored or refunded.'] }] },
-    { tag: 'li', children: ['💰 Bonus/cashback offers (if any) are subject to change without notice and may have conditions attached.'] },
-  ]});
-  n.push({ tag: 'hr' });
-
-  // 4. Account & Security
-  n.push({ tag: 'h3', children: ['🔹 4. Account & Security 🔐'] });
-  n.push({ tag: 'ul', children: [
-    { tag: 'li', children: ['👤 One account per user. Creating multiple accounts will result in permanent ban without refund.'] },
-    { tag: 'li', children: ['🔒 Sharing your account credentials or access with others is strictly prohibited.'] },
-    { tag: 'li', children: ['⚖️ Admin reserves the right to ban, suspend, or restrict any account without prior notice if suspicious activity is detected.'] },
-    { tag: 'li', children: ['🛡️ Users are responsible for keeping their Telegram account secure. We are not liable for unauthorized access.'] },
-    { tag: 'li', children: ['📱 If your Telegram account is compromised, contact admin immediately. We are NOT responsible for losses due to compromised accounts.'] },
-  ]});
-  n.push({ tag: 'hr' });
-
-  // 5. Usage Rules
-  n.push({ tag: 'h3', children: ['🔹 5. Usage Rules 📋'] });
-  n.push({ tag: 'ul', children: [
-    { tag: 'li', children: ['📌 The bot is for personal and educational use only.'] },
-    { tag: 'li', children: [{ tag: 'strong', children: ['🚫 Using bot services for illegal activities, fraud, scamming, phishing, harassment, or any unlawful purpose is STRICTLY PROHIBITED.'] }] },
-    { tag: 'li', children: ['⚠️ Users are FULLY responsible for how they use the numbers, accounts, and services purchased through this bot.'] },
-    { tag: 'li', children: [{ tag: 'strong', children: ['🛡️ The bot owner/admin is NOT liable for any misuse, illegal activity, or consequences arising from user actions.'] }] },
-    { tag: 'li', children: ['🤖 Spamming bot commands, flooding, or abusing the system will result in immediate and permanent ban.'] },
-    { tag: 'li', children: ['📢 Attempting to exploit bugs, vulnerabilities, or payment system flaws will result in ban and possible legal action.'] },
-  ]});
-  n.push({ tag: 'hr' });
-
-  // 6. Service Availability
-  n.push({ tag: 'h3', children: ['🔹 6. Service Availability ⏱'] });
-  n.push({ tag: 'ul', children: [
-    { tag: 'li', children: ['📡 Services are provided "as-is" with no uptime guarantee.'] },
-    { tag: 'li', children: ['🔧 The bot may go offline for maintenance, updates, or technical issues without prior notice.'] },
-    { tag: 'li', children: ['📞 Number availability depends on third-party providers — there is no guarantee of specific numbers, countries, or services.'] },
-    { tag: 'li', children: ['💲 Prices may change without notice based on provider costs and market conditions.'] },
-    { tag: 'li', children: ['⏰ Service delays due to high demand or provider issues are not grounds for refund.'] },
-  ]});
-  n.push({ tag: 'hr' });
-
-  // 7. Privacy & Data
-  n.push({ tag: 'h3', children: ['🔹 7. Privacy & Data 🔒'] });
-  n.push({ tag: 'ul', children: [
-    { tag: 'li', children: ['📊 The bot stores minimal user data (Telegram ID, username, balance, transaction history) for operational purposes only.'] },
-    { tag: 'li', children: ['🔐 User data is NOT shared with any third parties.'] },
-    { tag: 'li', children: ['👁️ Admin may access transaction logs for dispute resolution and fraud prevention.'] },
-    { tag: 'li', children: ['📱 The bot does NOT store OTPs, messages, or any content received on virtual numbers.'] },
-    { tag: 'li', children: ['🗑️ Users can request account deletion by contacting admin. All balance will be forfeited upon deletion.'] },
-  ]});
-  n.push({ tag: 'hr' });
-
-  // 8. Liability Disclaimer
-  n.push({ tag: 'h3', children: ['🔹 8. Liability Disclaimer ⚖️'] });
-  n.push({ tag: 'blockquote', children: [
-    { tag: 'strong', children: ['⚠️ IMPORTANT — READ CAREFULLY:'] }
-  ]});
-  n.push({ tag: 'ul', children: [
-    { tag: 'li', children: [{ tag: 'strong', children: [`🛡️ ${botName} and its administrators are NOT responsible for any loss, damage, legal consequences, or any other issues arising from the use of this service.`] }] },
-    { tag: 'li', children: [{ tag: 'strong', children: ['⚠️ Users use this service entirely at their OWN RISK. You are solely responsible for your actions.'] }] },
-    { tag: 'li', children: ['🚫 Admin is NOT liable for any third-party service failures, number expiry, OTP delays, or account issues.'] },
-    { tag: 'li', children: ['📜 No warranties, guarantees, or representations — express or implied — are provided regarding the reliability, accuracy, or availability of services.'] },
-    { tag: 'li', children: [{ tag: 'strong', children: ['🔒 By using this bot, you acknowledge and agree that you are solely responsible for all your activities and any consequences thereof.'] }] },
-    { tag: 'li', children: ['⚖️ Any legal dispute shall be resolved under the applicable laws of the admin\'s jurisdiction. Users waive any right to class action.'] },
-  ]});
-  n.push({ tag: 'hr' });
-
-  // 9. Changes to Terms
-  n.push({ tag: 'h3', children: ['🔹 9. Changes to Terms 📝'] });
-  n.push({ tag: 'ul', children: [
-    { tag: 'li', children: ['📋 Admin reserves the right to update, modify, or change these terms at any time without prior notice.'] },
-    { tag: 'li', children: ['✅ Continued use of the bot after changes = automatic acceptance of the updated terms.'] },
-    { tag: 'li', children: ['🔔 It is the user\'s responsibility to check back regularly for updates.'] },
-  ]});
-  n.push({ tag: 'hr' });
-
-  // Footer
   const today = new Date().toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  // Header
+  n.push({ tag: 'p', children: [
+    { tag: 'strong', children: [`TERMS OF SERVICE — ${botName.toUpperCase()}`] }
+  ]});
+  n.push({ tag: 'p', children: [
+    { tag: 'em', children: [`Effective Date: ${today} | Last Revised: ${today}`] }
+  ]});
+  n.push({ tag: 'p', children: [
+    `PLEASE READ THESE TERMS OF SERVICE ("TERMS") CAREFULLY. BY ACCESSING OR USING ${botName.toUpperCase()} (THE "SERVICE"), YOU ACKNOWLEDGE THAT YOU HAVE READ, UNDERSTOOD, AND AGREE TO BE BOUND BY THESE TERMS. IF YOU DO NOT AGREE, DO NOT USE THIS SERVICE.`
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §1 Definitions
+  n.push({ tag: 'h4', children: ['§1. DEFINITIONS & SCOPE OF SERVICE'] });
+  n.push({ tag: 'p', children: [`${botName} ("the Bot", "the Service", "we", "us") is an automated Telegram-based platform that provides the following digital services:`] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: ['Virtual/temporary phone numbers for one-time password (OTP) verification'] },
+    { tag: 'li', children: ['Temporary email (TempMail) addresses for email-based OTP verification'] },
+    { tag: 'li', children: ['Pre-configured (readymade) digital accounts'] },
+    { tag: 'li', children: ['Reseller access and API integration services'] },
+    { tag: 'li', children: ['Digital wallet system with deposit, balance management, and transfer capabilities'] },
+    { tag: 'li', children: ['Promotional codes and referral reward programs'] },
+  ]});
+  n.push({ tag: 'p', children: [
+    '"User", "you", "your" refers to any individual, entity, or automated system accessing or interacting with the Service through any means.'
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §2 Eligibility
+  n.push({ tag: 'h4', children: ['§2. ELIGIBILITY & ACCEPTANCE'] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: ['You must be at least 18 years of age or the legal age of majority in your jurisdiction to use this Service.'] },
+    { tag: 'li', children: ['By using the Service, you represent and warrant that you have the legal capacity to enter into a binding agreement.'] },
+    { tag: 'li', children: ['Your continued use of the Service after any modification to these Terms constitutes your binding acceptance of such modifications.'] },
+    { tag: 'li', children: ['One natural person or entity may maintain only ONE (1) account. Creation of multiple accounts is a violation and grounds for immediate termination.'] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['You explicitly acknowledge that the Service is provided for legitimate verification purposes ONLY. Any use for illegal, fraudulent, or malicious purposes is STRICTLY PROHIBITED.'] }] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §3 Nature of Service
+  n.push({ tag: 'h4', children: ['§3. NATURE OF SERVICE & NO GUARANTEE'] });
+  n.push({ tag: 'p', children: [{ tag: 'strong', children: ['IMPORTANT DISCLOSURE:'] }] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: ['The Service acts solely as an intermediary platform connecting users with third-party virtual number and email providers. We do NOT own, operate, or control any telecommunications infrastructure.'] },
+    { tag: 'li', children: ['Virtual numbers are TEMPORARY and may expire, become unavailable, or be recycled at any time without prior notice.'] },
+    { tag: 'li', children: ['OTP delivery depends entirely on third-party services (SMS gateways, carrier networks, target platforms). We do NOT guarantee OTP delivery, delivery speed, or successful verification.'] },
+    { tag: 'li', children: ['TempMail addresses are disposable. Emails received may be deleted or become inaccessible at any time.'] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['THE SERVICE IS PROVIDED ON AN "AS IS" AND "AS AVAILABLE" BASIS WITHOUT ANY WARRANTIES OF ANY KIND, WHETHER EXPRESS, IMPLIED, OR STATUTORY, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.'] }] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §4 Financial Terms
+  n.push({ tag: 'h4', children: ['§4. FINANCIAL TERMS, DEPOSITS & REFUND POLICY'] });
+  n.push({ tag: 'p', children: [{ tag: 'strong', children: ['4.1 Deposits & Wallet'] }] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: ['All deposits are FINAL and NON-REFUNDABLE. Once funds are credited to your wallet, they cannot be withdrawn, reversed, or converted back to fiat currency.'] },
+    { tag: 'li', children: ['Deposits made through unofficial channels, wrong payment addresses, or incorrect UTR/transaction IDs will NOT be credited or refunded.'] },
+    { tag: 'li', children: ['Tax deductions, bonus credits, and loyalty rewards are applied automatically and may change without prior notice.'] },
+    { tag: 'li', children: ['Cryptocurrency deposits are subject to network confirmations and exchange rate fluctuations.'] },
+  ]});
+  n.push({ tag: 'p', children: [{ tag: 'strong', children: ['4.2 Purchases & Refunds'] }] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: [{ tag: 'strong', children: ['ALL PURCHASES ARE FINAL. No refunds, chargebacks, payment reversals, or credit disputes will be entertained under ANY circumstances.'] }] },
+    { tag: 'li', children: ['Once an OTP has been delivered, the transaction is COMPLETE regardless of whether the OTP was successfully used on the target platform.'] },
+    { tag: 'li', children: ['Once a TempMail OTP or email has been received, the transaction is FINAL.'] },
+    { tag: 'li', children: ['Readymade accounts are sold "as is" with NO warranty. Buyer assumes ALL risk.'] },
+    { tag: 'li', children: ['Service credits, promotional bonuses, and referral rewards have no cash value and cannot be redeemed for real currency.'] },
+  ]});
+  n.push({ tag: 'p', children: [{ tag: 'strong', children: ['4.3 Balance Transfers'] }] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: ['Peer-to-peer balance transfers are the sole responsibility of the sending user.'] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['The Service administrator is NOT responsible for transfers sent to incorrect users. ALL transfers are IRREVERSIBLE.'] }] },
+  ]});
+  n.push({ tag: 'p', children: [{ tag: 'strong', children: ['4.4 Payment Disputes'] }] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: ['Disputes must be raised within twenty-four (24) hours with valid evidence (screenshot, transaction ID, bank statement).'] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['Initiating chargebacks or payment reversals without contacting support will result in IMMEDIATE PERMANENT account termination with forfeiture of ALL remaining balance.'] }] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §5 Prohibited Activities
+  n.push({ tag: 'h4', children: ['§5. PROHIBITED ACTIVITIES & ACCEPTABLE USE'] });
+  n.push({ tag: 'p', children: ['You agree NOT to use the Service for any of the following:'] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: [{ tag: 'strong', children: ['Any illegal, unlawful, or criminal activity under any applicable jurisdiction'] }] },
+    { tag: 'li', children: ['Fraud, identity theft, impersonation, phishing, social engineering, or financial crimes'] },
+    { tag: 'li', children: ['Creating accounts on platforms in violation of their Terms of Service'] },
+    { tag: 'li', children: ['Harassment, stalking, bullying, threats, or intimidation'] },
+    { tag: 'li', children: ['Distribution of malware, spyware, ransomware, or malicious software'] },
+    { tag: 'li', children: ['Spamming, mass messaging, unsolicited commercial communications'] },
+    { tag: 'li', children: ['Circumventing security measures, exploiting bugs, vulnerabilities, or payment system flaws'] },
+    { tag: 'li', children: ['Money laundering, terrorist financing, sanctions evasion, or AML violations'] },
+    { tag: 'li', children: ['Child exploitation or abuse material (CSAM)'] },
+    { tag: 'li', children: ['Reverse engineering, decompiling, or extracting source code of the Service'] },
+    { tag: 'li', children: ['Automated scraping, data mining, or systematic data extraction'] },
+    { tag: 'li', children: ['Reselling or redistributing the Service without explicit authorization'] },
+  ]});
+  n.push({ tag: 'p', children: [{ tag: 'strong', children: ['Violation will result in IMMEDIATE account termination, forfeiture of ALL balance, and may be reported to law enforcement authorities.'] }] });
+  n.push({ tag: 'hr' });
+
+  // §6 User Responsibility (CRITICAL)
+  n.push({ tag: 'h4', children: ['§6. USER RESPONSIBILITY & ASSUMPTION OF RISK'] });
   n.push({ tag: 'blockquote', children: [
-    { tag: 'em', children: [
-      `By using ${botName}, you confirm that you have read, understood, and agreed to ALL the above terms and conditions. You use this service entirely at your own risk. Last updated: ${today}`
+    { tag: 'strong', children: ['⚠️ CRITICAL — READ THIS SECTION CAREFULLY:'] }
+  ]});
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: [{ tag: 'strong', children: ['YOU USE THIS SERVICE ENTIRELY AT YOUR OWN RISK. You are solely and exclusively responsible for ALL activities conducted through your account and ALL consequences arising therefrom.'] }] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['The Service administrator, owner, operator, and any associated individuals or entities ("the Provider") shall NOT be held responsible, liable, or accountable for ANY actions taken by users, including but not limited to illegal activities, fraud, misuse, or any unlawful conduct.'] }] },
+    { tag: 'li', children: ['You understand that virtual numbers may have been previously used by others and may be reused in the future.'] },
+    { tag: 'li', children: ['You are responsible for ensuring your use complies with ALL applicable laws and regulations in your jurisdiction.'] },
+    { tag: 'li', children: ['The Provider has NO control over, NO knowledge of, and NO responsibility for how you use the numbers, emails, accounts, or resources obtained through this Service.'] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['The Provider does NOT endorse, encourage, facilitate, or condone ANY illegal activity. The Service is designed ONLY for legitimate verification and testing purposes.'] }] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §7 Limitation of Liability
+  n.push({ tag: 'h4', children: ['§7. LIMITATION OF LIABILITY & DISCLAIMER'] });
+  n.push({ tag: 'blockquote', children: [
+    { tag: 'strong', children: ['⚖️ LEGAL DISCLAIMER — BINDING AGREEMENT:'] }
+  ]});
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: [{ tag: 'strong', children: [`TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, ${botName.toUpperCase()}, ITS OWNER, ADMINISTRATOR, OPERATORS, AFFILIATES, EMPLOYEES, AGENTS, AND SERVICE PROVIDERS SHALL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, PUNITIVE, OR EXEMPLARY DAMAGES, INCLUDING BUT NOT LIMITED TO DAMAGES FOR LOSS OF PROFITS, REVENUE, DATA, GOODWILL, OR OTHER INTANGIBLE LOSSES.`] }] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['THE PROVIDER SHALL NOT BE LIABLE FOR: (a) unauthorized access to or alteration of your data; (b) third-party conduct or content; (c) loss or damage from use or inability to use the Service; (d) OTP delivery failures, delays, or interceptions; (e) account suspensions or restrictions on third-party platforms resulting from virtual numbers obtained through this Service.'] }] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['THE PROVIDER IS NOT A PARTY TO ANY TRANSACTION OR INTERACTION BETWEEN YOU AND ANY THIRD-PARTY PLATFORM OR INDIVIDUAL.'] }] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['IN NO EVENT SHALL TOTAL LIABILITY EXCEED THE AMOUNT PAID BY YOU IN THE THIRTY (30) DAYS PRECEDING THE CLAIM, OR TEN US DOLLARS ($10.00), WHICHEVER IS LESS.'] }] },
+    { tag: 'li', children: ['These limitations apply regardless of legal theory — contract, tort, strict liability, warranty, or otherwise.'] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §8 Indemnification
+  n.push({ tag: 'h4', children: ['§8. INDEMNIFICATION'] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: [{ tag: 'strong', children: ['You agree to INDEMNIFY, DEFEND, and HOLD HARMLESS the Provider from and against any claims, demands, damages, losses, liabilities, costs, and expenses (including attorneys\' fees) arising from: (a) your use of the Service; (b) violation of these Terms; (c) violation of any law; (d) violation of third-party rights; (e) any content or data you submit.'] }] },
+    { tag: 'li', children: ['This indemnification obligation survives termination of your account and these Terms.'] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §9 Account
+  n.push({ tag: 'h4', children: ['§9. ACCOUNT SECURITY & TERMINATION'] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: ['You are solely responsible for maintaining the security of your Telegram account.'] },
+    { tag: 'li', children: ['The Provider reserves the right to suspend or terminate ANY account at any time, for any reason, with or without notice.'] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['Upon termination, ALL remaining balance is FORFEITED. No refund or compensation will be provided.'] }] },
+    { tag: 'li', children: ['The Provider may cooperate with law enforcement and comply with legal requests, subpoenas, or court orders regarding user information.'] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §10 Privacy
+  n.push({ tag: 'h4', children: ['§10. PRIVACY & DATA HANDLING'] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: ['The Service collects minimal operational data: Telegram user ID, username, display name, wallet balance, transaction history, and usage logs.'] },
+    { tag: 'li', children: ['Data is used exclusively for operations, fraud prevention, dispute resolution, and compliance.'] },
+    { tag: 'li', children: ['Data is NOT sold or shared with third parties except when required by law enforcement.'] },
+    { tag: 'li', children: ['The Service does NOT store OTPs, SMS messages, or emails received on virtual numbers or TempMail addresses.'] },
+    { tag: 'li', children: ['Transaction logs may be retained for compliance and audit purposes.'] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §11 IP
+  n.push({ tag: 'h4', children: ['§11. INTELLECTUAL PROPERTY'] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: [`All content, branding, source code, and materials associated with ${botName} are the intellectual property of the Provider.`] },
+    { tag: 'li', children: ['You may not copy, reproduce, distribute, modify, reverse engineer, or exploit any part of the Service without written consent.'] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §12 Service Changes
+  n.push({ tag: 'h4', children: ['§12. SERVICE MODIFICATIONS & AVAILABILITY'] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: ['The Provider may modify, suspend, or discontinue any part of the Service at any time without notice.'] },
+    { tag: 'li', children: ['Prices and fees are subject to change without notice.'] },
+    { tag: 'li', children: ['Maintenance or technical issues may cause service interruptions. These are NOT grounds for refund.'] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §13 Governing Law
+  n.push({ tag: 'h4', children: ['§13. GOVERNING LAW & DISPUTE RESOLUTION'] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: ['These Terms are governed by the laws of the jurisdiction in which the Provider operates.'] },
+    { tag: 'li', children: ['Disputes shall first be resolved through informal negotiation, then binding arbitration.'] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['YOU WAIVE ANY RIGHT TO PARTICIPATE IN A CLASS ACTION LAWSUIT OR CLASS-WIDE ARBITRATION.'] }] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §14 Severability
+  n.push({ tag: 'h4', children: ['§14. SEVERABILITY & ENTIRE AGREEMENT'] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: ['If any provision is found invalid, the remaining provisions continue in full force.'] },
+    { tag: 'li', children: ['These Terms constitute the entire agreement and supersede all prior agreements.'] },
+    { tag: 'li', children: ['Failure to enforce any provision does not constitute a waiver.'] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §15 Amendments
+  n.push({ tag: 'h4', children: ['§15. AMENDMENTS & UPDATES'] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: ['The Provider may update these Terms at any time without prior notice.'] },
+    { tag: 'li', children: ['Changes are indicated by updating the "Last Revised" date.'] },
+    { tag: 'li', children: ['Continued use after changes = acceptance of revised Terms.'] },
+    { tag: 'li', children: ['It is YOUR responsibility to review these Terms periodically.'] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // Final
+  n.push({ tag: 'blockquote', children: [
+    { tag: 'strong', children: ['ACKNOWLEDGMENT & AGREEMENT'] }
+  ]});
+  n.push({ tag: 'p', children: [
+    { tag: 'strong', children: [
+      `BY USING ${botName.toUpperCase()}, YOU ACKNOWLEDGE THAT: (1) You have read and understood ALL the above terms; (2) You agree to be legally bound by these Terms; (3) You use this Service entirely at YOUR OWN RISK; (4) The Provider is NOT responsible for your actions or their consequences; (5) You will comply with all applicable laws; (6) All purchases and deposits are FINAL and NON-REFUNDABLE.`
     ]}
+  ]});
+  n.push({ tag: 'p', children: [
+    { tag: 'em', children: [`© ${new Date().getFullYear()} ${botName}. All Rights Reserved. Last updated: ${today}.`] }
   ]});
 
   return n;
 }
 
-/** Build Hinglish T&C content */
+// ── Hinglish T&C (Enterprise-Grade) ─────────────────────────────
+
 function buildHinglishContent(botName) {
   const n = [];
+  const today = new Date().toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' });
 
   n.push({ tag: 'p', children: [
-    `${botName} bot ka use karne ka matlab hai ki aap in rules ko accept ✅ karte ho. Kripya dhyan se padhe.`
+    { tag: 'strong', children: [`TERMS OF SERVICE — ${botName.toUpperCase()}`] }
+  ]});
+  n.push({ tag: 'p', children: [
+    { tag: 'em', children: [`Effective Date: ${today} | Last Revised: ${today}`] }
+  ]});
+  n.push({ tag: 'p', children: [
+    `${botName.toUpperCase()} ("SERVICE") KA USE KARNE SE PEHLE YE TERMS DHYAN SE PADHE. SERVICE USE KARNE KA MATLAB HAI KI AAP IN SABHI TERMS KO ACCEPT KARTE HAIN. AGAR AGREE NAHI HAIN TO SERVICE USE NA KARE.`
   ]});
   n.push({ tag: 'hr' });
 
-  // 1. Introduction
-  n.push({ tag: 'h3', children: ['🔹 1. Introduction / परिचय'] });
-  n.push({ tag: 'p', children: [`👉 ${botName} ek virtual number provider bot hai jo aapko ye services deta hai:`] });
+  // §1
+  n.push({ tag: 'h4', children: ['§1. SERVICE KA SCOPE'] });
+  n.push({ tag: 'p', children: [`${botName} ek Telegram-based automated platform hai jo ye digital services provide karta hai:`] });
   n.push({ tag: 'ul', children: [
-    { tag: 'li', children: ['🔢 Virtual / temporary numbers (OTP/verification ke liye)'] },
-    { tag: 'li', children: ['📧 Tempmail OTPs'] },
-    { tag: 'li', children: ['👤 Readymade accounts'] },
-    { tag: 'li', children: ['🤝 Reseller services'] },
-    { tag: 'li', children: ['💸 Balance transfer system'] },
-    { tag: 'li', children: ['🎁 Promo codes via channel'] },
-    { tag: 'li', children: ['💬 WhatsApp/Telegram numbers (rare availability)'] },
-    { tag: 'li', children: ['🆘 Accha support'] },
+    { tag: 'li', children: ['Virtual/temporary phone numbers (OTP verification ke liye)'] },
+    { tag: 'li', children: ['Temporary email (TempMail) addresses (email OTP ke liye)'] },
+    { tag: 'li', children: ['Readymade digital accounts'] },
+    { tag: 'li', children: ['Reseller access aur API integration'] },
+    { tag: 'li', children: ['Digital wallet system — deposit, balance, transfer'] },
+    { tag: 'li', children: ['Promo codes aur referral reward programs'] },
   ]});
   n.push({ tag: 'hr' });
 
-  // 2. Purchase / Delivery / Refund
-  n.push({ tag: 'h3', children: ['🔹 2. Purchase / Delivery / Refund Policy ⚠️'] });
+  // §2
+  n.push({ tag: 'h4', children: ['§2. ELIGIBILITY'] });
   n.push({ tag: 'ul', children: [
-    { tag: 'li', children: ['🚫 OTP / account deliver hone ke baad refund nahi milega.'] },
-    { tag: 'li', children: ['🔄 Number/account availability automatic hai — agar unavailable hai to aapko khud retry karna hoga; jab available hoga to system auto add karega.'] },
-    { tag: 'li', children: ['📧 Tempmail OTP deliver hone ke baad refund claim accept nahi hoga.'] },
-    { tag: 'li', children: ['✅ Readymade accounts buyer ke risk par diye jaate hain.'] },
-    { tag: 'li', children: ['⏳ Virtual numbers temporary hain aur kabhi bhi expire ho sakte hain — bot expired numbers ya missed OTPs ke liye responsible NAHI hai.'] },
-    { tag: 'li', children: [{ tag: 'strong', children: ['🚫 Sabhi purchases final hain. Koi chargeback, dispute, ya payment reversal accept nahi hoga.'] }] },
+    { tag: 'li', children: ['Aapki age kam se kam 18 saal honi chahiye.'] },
+    { tag: 'li', children: ['Ek user = ek account. Multiple accounts = permanent ban bina refund ke.'] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['Service SIRF legitimate verification purposes ke liye hai. Illegal use STRICTLY PROHIBITED hai.'] }] },
   ]});
   n.push({ tag: 'hr' });
 
-  // 3. Deposit / Wallet
-  n.push({ tag: 'h3', children: ['🔹 3. Deposit / Wallet 💳'] });
+  // §3
+  n.push({ tag: 'h4', children: ['§3. SERVICE KI NATURE & GUARANTEE'] });
+  n.push({ tag: 'p', children: [{ tag: 'strong', children: ['ZAROORI DISCLOSURE:'] }] });
   n.push({ tag: 'ul', children: [
-    { tag: 'li', children: ['💳 Ek baar deposit hone ke baad, withdrawal available NAHI hai (jab tak explicitly mention na ho). Sirf utna hi deposit kare jitna aapko chahiye.'] },
-    { tag: 'li', children: ['🔄 Users ke beech balance transfer available hai (agar admin ne enable kiya ho). Galat transfer ke liye admin responsible NAHI hai — bhejne se pehle verify kare.'] },
-    { tag: 'li', children: ['⚠️ Payment disputes 24 ghante ke andar valid proof ke saath raise karne honge (screenshot, transaction ID, etc.)'] },
-    { tag: 'li', children: [{ tag: 'strong', children: ['🚫 Unofficial channels ya galat address par ki gayi deposits ko honor ya refund NAHI kiya jayega.'] }] },
-    { tag: 'li', children: ['💰 Bonus/cashback offers (agar koi ho) bina notice ke change ho sakte hain aur unme conditions lag sakti hain.'] },
+    { tag: 'li', children: ['Hum sirf ek intermediary platform hain. Virtual numbers third-party providers se aate hain. Hum koi telecom infrastructure own ya operate NAHI karte.'] },
+    { tag: 'li', children: ['Virtual numbers TEMPORARY hain — kabhi bhi expire, unavailable, ya recycle ho sakte hain BINA notice ke.'] },
+    { tag: 'li', children: ['OTP delivery third-party services par depend karti hai. Hum delivery, speed, ya verification ki KOI GUARANTEE NAHI dete.'] },
+    { tag: 'li', children: ['TempMail addresses disposable hain. Emails kabhi bhi delete ya inaccessible ho sakti hain.'] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['SERVICE "AS IS" AUR "AS AVAILABLE" BASIS PAR HAI, BINA KISI WARRANTY KE.'] }] },
   ]});
   n.push({ tag: 'hr' });
 
-  // 4. Account & Security
-  n.push({ tag: 'h3', children: ['🔹 4. Account & Security 🔐'] });
+  // §4
+  n.push({ tag: 'h4', children: ['§4. FINANCIAL TERMS & REFUND POLICY'] });
+  n.push({ tag: 'p', children: [{ tag: 'strong', children: ['4.1 Deposits'] }] });
   n.push({ tag: 'ul', children: [
-    { tag: 'li', children: ['👤 Ek user = ek account. Multiple accounts banane par permanent ban bina refund ke.'] },
-    { tag: 'li', children: ['🔒 Apna account kisi ke saath share karna bilkul mana hai.'] },
-    { tag: 'li', children: ['⚖️ Admin ko kisi bhi account ko bina notice ke ban, suspend, ya restrict karne ka pura adhikar hai.'] },
-    { tag: 'li', children: ['🛡️ Apna Telegram account secure rakhna user ki zimmedari hai. Unauthorized access ke liye hum liable nahi hain.'] },
-    { tag: 'li', children: ['📱 Agar aapka Telegram account compromise ho jaye to turant admin se contact kare. Compromised accounts ke karan hone wale loss ke liye hum responsible NAHI hain.'] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['SABHI DEPOSITS FINAL AUR NON-REFUNDABLE HAIN. Wallet me credit hone ke baad wapas nahi milega.'] }] },
+    { tag: 'li', children: ['Unofficial channels, galat address, ya galat UTR se ki gayi deposits credit ya refund NAHI hongi.'] },
+    { tag: 'li', children: ['Tax, bonus, aur loyalty rewards automatically apply hote hain aur bina notice ke change ho sakte hain.'] },
   ]});
-  n.push({ tag: 'hr' });
-
-  // 5. Usage Rules
-  n.push({ tag: 'h3', children: ['🔹 5. Usage Rules 📋'] });
+  n.push({ tag: 'p', children: [{ tag: 'strong', children: ['4.2 Purchases'] }] });
   n.push({ tag: 'ul', children: [
-    { tag: 'li', children: ['📌 Bot sirf personal aur educational use ke liye hai.'] },
-    { tag: 'li', children: [{ tag: 'strong', children: ['🚫 Bot services ka illegal activities, fraud, scamming, phishing, harassment, ya kisi bhi unlawful purpose ke liye use karna BILKUL MANA hai.'] }] },
-    { tag: 'li', children: ['⚠️ Users PURI TARAH se responsible hain ki wo kharide gaye numbers, accounts aur services ka kaise use karte hain.'] },
-    { tag: 'li', children: [{ tag: 'strong', children: ['🛡️ Bot owner/admin kisi bhi misuse, illegal activity, ya users ke actions se hone wale consequences ke liye LIABLE NAHI hai.'] }] },
-    { tag: 'li', children: ['🤖 Bot commands spam karna, flood karna, ya system abuse karna = immediate permanent ban.'] },
-    { tag: 'li', children: ['📢 Bugs, vulnerabilities, ya payment system ki kamzoriyo ka exploit karne ki koshish par ban aur possible legal action hoga.'] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['SABHI PURCHASES FINAL HAIN. Koi refund, chargeback, ya payment reversal accept nahi hoga.'] }] },
+    { tag: 'li', children: ['OTP deliver hone ke baad transaction COMPLETE hai — chahe target platform par use hua ho ya nahi.'] },
+    { tag: 'li', children: ['Readymade accounts "as is" bechte hain — koi warranty nahi. Buyer ka risk.'] },
   ]});
-  n.push({ tag: 'hr' });
-
-  // 6. Service Availability
-  n.push({ tag: 'h3', children: ['🔹 6. Service Availability ⏱'] });
+  n.push({ tag: 'p', children: [{ tag: 'strong', children: ['4.3 Balance Transfer'] }] });
   n.push({ tag: 'ul', children: [
-    { tag: 'li', children: ['📡 Services "as-is" basis par provide ki jaati hain, uptime ki koi guarantee nahi hai.'] },
-    { tag: 'li', children: ['🔧 Bot maintenance, updates, ya technical issues ke liye bina notice ke offline ho sakta hai.'] },
-    { tag: 'li', children: ['📞 Number availability third-party providers par depend karti hai — kisi specific number, country, ya service ki guarantee nahi hai.'] },
-    { tag: 'li', children: ['💲 Provider costs aur market conditions ke basis par prices bina notice ke change ho sakti hain.'] },
-    { tag: 'li', children: ['⏰ High demand ya provider issues ke karan service delays refund ka reason nahi hai.'] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['Galat user ko bheja gaya balance WAPAS NAHI AAYEGA. Transfer se pehle verify karo. Admin RESPONSIBLE NAHI hai.'] }] },
   ]});
-  n.push({ tag: 'hr' });
-
-  // 7. Privacy & Data
-  n.push({ tag: 'h3', children: ['🔹 7. Privacy & Data 🔒'] });
+  n.push({ tag: 'p', children: [{ tag: 'strong', children: ['4.4 Payment Disputes'] }] });
   n.push({ tag: 'ul', children: [
-    { tag: 'li', children: ['📊 Bot minimal user data store karta hai (Telegram ID, username, balance, transaction history) sirf operational purposes ke liye.'] },
-    { tag: 'li', children: ['🔐 User data kisi bhi third party ke saath share NAHI kiya jaata.'] },
-    { tag: 'li', children: ['👁️ Admin dispute resolution aur fraud prevention ke liye transaction logs access kar sakta hai.'] },
-    { tag: 'li', children: ['📱 Bot virtual numbers par aane wale OTPs, messages, ya koi content store NAHI karta.'] },
-    { tag: 'li', children: ['🗑️ Users admin se contact karke account deletion request kar sakte hain. Deletion par saara balance forfeit ho jayega.'] },
+    { tag: 'li', children: ['Disputes 24 ghante ke andar valid proof ke saath raise kare.'] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['Support se contact kiye bina chargeback = IMMEDIATE PERMANENT BAN + balance forfeiture.'] }] },
   ]});
   n.push({ tag: 'hr' });
 
-  // 8. Liability Disclaimer
-  n.push({ tag: 'h3', children: ['🔹 8. Liability Disclaimer / Jimmedari ⚖️'] });
+  // §5
+  n.push({ tag: 'h4', children: ['§5. PROHIBITED ACTIVITIES'] });
+  n.push({ tag: 'p', children: ['Aap Service ka use IN CHEEZON ke liye NAHI kar sakte:'] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: [{ tag: 'strong', children: ['Koi bhi illegal, unlawful, ya criminal activity'] }] },
+    { tag: 'li', children: ['Fraud, identity theft, phishing, social engineering, financial crimes'] },
+    { tag: 'li', children: ['Kisi platform ke Terms of Service ka violation'] },
+    { tag: 'li', children: ['Harassment, stalking, threats, intimidation'] },
+    { tag: 'li', children: ['Malware, spyware, ransomware distribution'] },
+    { tag: 'li', children: ['Spamming, mass messaging, automated abuse'] },
+    { tag: 'li', children: ['Security bypass, bug exploit, payment system flaws ka misuse'] },
+    { tag: 'li', children: ['Money laundering, terrorist financing, sanctions evasion'] },
+    { tag: 'li', children: ['Reverse engineering ya source code extract karna'] },
+  ]});
+  n.push({ tag: 'p', children: [{ tag: 'strong', children: ['VIOLATION = IMMEDIATE BAN + BALANCE FORFEITURE + law enforcement reporting.'] }] });
+  n.push({ tag: 'hr' });
+
+  // §6
+  n.push({ tag: 'h4', children: ['§6. USER RESPONSIBILITY & RISK'] });
   n.push({ tag: 'blockquote', children: [
-    { tag: 'strong', children: ['⚠️ ZAROORI HAI — DHYAN SE PADHE:'] }
+    { tag: 'strong', children: ['⚠️ SABSE ZAROORI — DHYAN SE PADHO:'] }
   ]});
   n.push({ tag: 'ul', children: [
-    { tag: 'li', children: [{ tag: 'strong', children: [`🛡️ ${botName} aur uske administrators is service ke use se hone wale kisi bhi loss, damage, legal consequences, ya kisi aur issues ke liye RESPONSIBLE NAHI hain.`] }] },
-    { tag: 'li', children: [{ tag: 'strong', children: ['⚠️ Users is service ko puri tarah se APNE RISK par use karte hain. Aap apne actions ke liye khud jimmedar hain.'] }] },
-    { tag: 'li', children: ['🚫 Admin kisi bhi third-party service failures, number expiry, OTP delays, ya account issues ke liye LIABLE NAHI hai.'] },
-    { tag: 'li', children: ['📜 Services ki reliability, accuracy, ya availability ke baare me koi warranties, guarantees, ya representations — express ya implied — nahi di jaati hain.'] },
-    { tag: 'li', children: [{ tag: 'strong', children: ['🔒 Is bot ka use karke, aap ye accept karte hain ki aap apni sabhi activities aur unke consequences ke liye KHUD jimmedar hain.'] }] },
-    { tag: 'li', children: ['⚖️ Koi bhi legal dispute admin ke jurisdiction ke applicable laws ke andar resolve hoga.'] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['AAP IS SERVICE KO PURI TARAH SE APNE RISK PAR USE KARTE HAIN. Aap apne account ki SABHI activities aur unke consequences ke liye AKELE ZIMMEDAR HAIN.'] }] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['Service ka administrator, owner, operator, aur koi bhi associated person ("Provider") users ke KISI BHI action ke liye RESPONSIBLE, LIABLE, YA ACCOUNTABLE NAHI HAI — chahe illegal ho, fraud ho, misuse ho, ya koi bhi unlawful conduct ho.'] }] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['Provider ko users ke actions par KOI CONTROL NAHI hai, KOI KNOWLEDGE NAHI hai, aur KOI RESPONSIBILITY NAHI hai.'] }] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['Provider kisi bhi illegal activity ko ENDORSE, ENCOURAGE, FACILITATE, ya CONDONE NAHI karta. Service SIRF legitimate verification ke liye designed hai.'] }] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['Agar aap service ka galat use karte hain to iske liye SIRF AAP zimmedar hain. Provider par koi bhi legal action, arrest, ya penalty APPLICABLE NAHI hai kyunki Provider ne koi illegal service provide NAHI ki hai.'] }] },
   ]});
   n.push({ tag: 'hr' });
 
-  // 9. Changes to Terms
-  n.push({ tag: 'h3', children: ['🔹 9. Changes to Terms 📝'] });
-  n.push({ tag: 'ul', children: [
-    { tag: 'li', children: ['📋 Admin ko in terms ko bina prior notice ke kabhi bhi update, modify, ya change karne ka pura adhikar hai.'] },
-    { tag: 'li', children: ['✅ Changes ke baad bot ka continued use = updated terms ki automatic acceptance.'] },
-    { tag: 'li', children: ['🔔 Updates ke liye regularly check karna user ki zimmedari hai.'] },
-  ]});
-  n.push({ tag: 'hr' });
-
-  // Footer
-  const today = new Date().toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' });
+  // §7
+  n.push({ tag: 'h4', children: ['§7. LIABILITY LIMITATION'] });
   n.push({ tag: 'blockquote', children: [
-    { tag: 'em', children: [
-      `${botName} ka use karke, aap confirm karte hain ki aapne upar likhe sabhi terms aur conditions ko padh liya hai, samajh liya hai, aur agree karte hain. Aap is service ko apne risk par use karte hain. Last updated: ${today}`
+    { tag: 'strong', children: ['⚖️ LEGAL DISCLAIMER — BINDING AGREEMENT:'] }
+  ]});
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: [{ tag: 'strong', children: [`APPLICABLE LAW KE MAXIMUM EXTENT TAK, ${botName.toUpperCase()}, USKA OWNER, ADMINISTRATOR, OPERATORS, AFFILIATES, AUR SERVICE PROVIDERS KISI BHI DIRECT, INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, PUNITIVE, YA EXEMPLARY DAMAGES KE LIYE LIABLE NAHI HONGE.`] }] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['PROVIDER LIABLE NAHI HAI: (a) unauthorized access ya data alteration; (b) third-party conduct; (c) Service use se hone wale loss; (d) OTP delivery failures ya delays; (e) third-party platforms par account bans ya restrictions.'] }] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['KISI BHI CASE ME PROVIDER KI TOTAL LIABILITY LAST 30 DAYS KE PAID AMOUNT SE ZYADA NAHI HOGI, YA $10.00, JO BHI KAM HO.'] }] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §8
+  n.push({ tag: 'h4', children: ['§8. INDEMNIFICATION'] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: [{ tag: 'strong', children: ['Aap Provider ko INDEMNIFY, DEFEND, aur HOLD HARMLESS rakhne ke liye agree karte hain — sabhi claims, damages, losses, aur expenses se — jo aapke Service use, Terms violation, ya law violation se arise ho.'] }] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §9
+  n.push({ tag: 'h4', children: ['§9. ACCOUNT & TERMINATION'] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: ['Apne Telegram account ki security AAPKI zimmedari hai.'] },
+    { tag: 'li', children: ['Provider KISI BHI account ko, KABHI BHI, KISI BHI reason se, BINA notice ke terminate kar sakta hai.'] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['Termination par SAARA balance FORFEIT ho jayega. Koi refund ya compensation nahi.'] }] },
+    { tag: 'li', children: ['Provider law enforcement ke saath cooperate kar sakta hai aur legal requests comply kar sakta hai.'] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §10
+  n.push({ tag: 'h4', children: ['§10. PRIVACY & DATA'] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: ['Minimal data store hota hai: Telegram ID, username, balance, transaction history.'] },
+    { tag: 'li', children: ['Data sirf operations, fraud prevention, aur compliance ke liye.'] },
+    { tag: 'li', children: ['OTPs, SMS, ya emails ka content STORE NAHI hota.'] },
+    { tag: 'li', children: ['Data third parties ko share NAHI hota (law enforcement ke alawa).'] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §11
+  n.push({ tag: 'h4', children: ['§11. GOVERNING LAW'] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: ['Ye Terms Provider ke jurisdiction ke applicable laws ke under governed honge.'] },
+    { tag: 'li', children: [{ tag: 'strong', children: ['AAP CLASS ACTION LAWSUIT YA CLASS-WIDE ARBITRATION KA RIGHT WAIVE KARTE HAIN.'] }] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // §12
+  n.push({ tag: 'h4', children: ['§12. AMENDMENTS'] });
+  n.push({ tag: 'ul', children: [
+    { tag: 'li', children: ['Provider in Terms ko kabhi bhi bina notice ke update kar sakta hai.'] },
+    { tag: 'li', children: ['Changes ke baad Service ka use = updated Terms ki acceptance.'] },
+    { tag: 'li', children: ['Regularly check karna AAPKI zimmedari hai.'] },
+  ]});
+  n.push({ tag: 'hr' });
+
+  // Final
+  n.push({ tag: 'blockquote', children: [
+    { tag: 'strong', children: ['ACKNOWLEDGMENT'] }
+  ]});
+  n.push({ tag: 'p', children: [
+    { tag: 'strong', children: [
+      `${botName.toUpperCase()} USE KARKE AAP CONFIRM KARTE HAIN KI: (1) Sabhi terms padh aur samajh liye hain; (2) In Terms se legally bound hain; (3) Service APNE RISK par use karte hain; (4) Provider aapke actions ke liye RESPONSIBLE NAHI hai; (5) Sabhi applicable laws follow karenge; (6) SABHI purchases aur deposits FINAL aur NON-REFUNDABLE hain.`
     ]}
+  ]});
+  n.push({ tag: 'p', children: [
+    { tag: 'em', children: [`© ${new Date().getFullYear()} ${botName}. All Rights Reserved. Last updated: ${today}.`] }
   ]});
 
   return n;
 }
 
-/**
- * Generate a default T&C page on Telegraph.
- * @param {object} pool - DB pool
- * @param {'en'|'hi'} language - Language version
- * @returns {string|null} - Telegraph URL
- */
+// ── Public: Generate T&C Page (always new) ───────────────────────
+
 export async function generateDefaultTcPage(pool, language = 'en') {
   try {
-    const token = await getToken(pool);
+    let token = await getOrCreateToken(pool);
     const customName = await settingsRepo.getSetting(pool, 'tc_telegraph_author');
     const botName = customName || await settingsRepo.getSetting(pool, 'bot_name') || 'OTPBOT';
 
@@ -293,41 +444,57 @@ export async function generateDefaultTcPage(pool, language = 'en') {
     const content = isHi ? buildHinglishContent(botName) : buildEnglishContent(botName);
     const title = `⚡ ${botName} — Terms & Conditions${isHi ? ' (Hinglish)' : ''}`;
 
-    const pathKey = isHi ? 'tc_telegraph_hi_path' : 'tc_telegraph_en_path';
     const urlKey = isHi ? 'tc_telegraph_hi_url' : 'tc_telegraph_en_url';
-
-    const existingPath = await settingsRepo.getSetting(pool, pathKey);
+    const pathKey = isHi ? 'tc_telegraph_hi_path' : 'tc_telegraph_en_path';
     const contentStr = JSON.stringify(content);
 
-    let page;
-    if (existingPath) {
-      const params = new URLSearchParams();
-      params.append('access_token', token);
-      params.append('title', title);
-      params.append('content', contentStr);
-      params.append('author_name', botName);
-      const res = await fetch(`${API}/editPage/${existingPath}`, { method: 'POST', body: params });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error || 'editPage failed');
-      page = data.result;
-    } else {
-      const params = new URLSearchParams();
-      params.append('access_token', token);
-      params.append('title', title);
-      params.append('content', contentStr);
-      params.append('author_name', botName);
-      const res = await fetch(`${API}/createPage`, { method: 'POST', body: params });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error || 'createPage failed');
-      page = data.result;
-      await settingsRepo.setSetting(pool, pathKey, page.path);
+    // Always create new page (editPage is unreliable)
+    const params = new URLSearchParams();
+    params.append('access_token', token);
+    params.append('title', title);
+    params.append('content', contentStr);
+    params.append('author_name', botName);
+
+    const res = await fetch(`${API}/createPage`, { method: 'POST', body: params });
+    const data = await res.json();
+
+    if (!data.ok) {
+      // Token might be invalid, create fresh account and retry
+      await settingsRepo.setSetting(pool, 'telegraph_token', '');
+      token = await getOrCreateToken(pool);
+
+      const retryParams = new URLSearchParams();
+      retryParams.append('access_token', token);
+      retryParams.append('title', title);
+      retryParams.append('content', contentStr);
+      retryParams.append('author_name', botName);
+
+      const retryRes = await fetch(`${API}/createPage`, { method: 'POST', body: retryParams });
+      const retryData = await retryRes.json();
+      if (!retryData.ok) throw new Error(retryData.error || 'createPage retry failed');
+
+      const url = `https://telegra.ph/${retryData.result.path}`;
+      await settingsRepo.setSetting(pool, pathKey, retryData.result.path);
+      await settingsRepo.setSetting(pool, urlKey, url);
+      return url;
     }
 
-    const url = `https://telegra.ph/${page.path}`;
+    const url = `https://telegra.ph/${data.result.path}`;
+    await settingsRepo.setSetting(pool, pathKey, data.result.path);
     await settingsRepo.setSetting(pool, urlKey, url);
     return url;
   } catch (err) {
     logger.error(`[TC Telegraph] Error generating ${language} page: ${err.message}`);
     return null;
   }
+}
+
+// ── Public: Force Reset ──────────────────────────────────────────
+
+export async function resetTcTelegraph(pool, language = 'en') {
+  const isHi = language === 'hi';
+  await settingsRepo.setSetting(pool, isHi ? 'tc_telegraph_hi_path' : 'tc_telegraph_en_path', '');
+  await settingsRepo.setSetting(pool, isHi ? 'tc_telegraph_hi_url' : 'tc_telegraph_en_url', '');
+  await settingsRepo.setSetting(pool, 'telegraph_token', '');
+  return await generateDefaultTcPage(pool, language);
 }

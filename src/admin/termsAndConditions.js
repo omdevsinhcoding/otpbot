@@ -62,7 +62,7 @@ async function showTcPanel(ctx) {
     kb.text('👁 Preview', 'tc:preview').row();
   }
   kb.text('🌐 Generate Default T&C', 'tc:gen_default').row();
-  kb.text('📝 Set Telegraph Name', 'tc:set_author').row();
+  kb.text('📝 Set Telegraph Name', 'tc:set_author').text('🔄 Reset Telegraph', 'tc:reset_telegraph').row();
   kb.text('◀ Back', 'admin:back');
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
@@ -294,7 +294,7 @@ async function sendTcPanelAsNewMessage(ctx) {
     panelKb.text('👁 Preview', 'tc:preview').row();
   }
   panelKb.text('🌐 Generate Default T&C', 'tc:gen_default').row();
-  panelKb.text('📝 Set Telegraph Name', 'tc:set_author').row();
+  panelKb.text('📝 Set Telegraph Name', 'tc:set_author').text('🔄 Reset Telegraph', 'tc:reset_telegraph').row();
   panelKb.text('◀ Back', 'admin:back');
 
   await ctx.reply(text, { parse_mode: 'HTML', reply_markup: panelKb });
@@ -524,6 +524,34 @@ composer.callbackQuery('tc:auto_add_btn', adminRequired, async (ctx) => {
     `✅ Button "${escapeHtml(btnText)}" added!\n\n<i>Link: ${url}</i>`,
     { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Back', 'admin:tc') }
   );
+});
+
+// ── Reset T&C Telegraph ─────────────────────────────────────────
+composer.callbackQuery('tc:reset_telegraph', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery('⏳ Resetting...'); } catch {}
+  const pool = ctx.dbPool;
+  try {
+    const { resetTcTelegraph } = await import('../services/tcTelegraphService.js');
+    const enUrl = await resetTcTelegraph(pool, 'en');
+    const hiUrl = await resetTcTelegraph(pool, 'hi');
+
+    let text = `✅ <b>T&C Telegraph Reset!</b>\n\n`;
+    if (enUrl) text += `🇬🇧 English: ${enUrl}\n`;
+    if (hiUrl) text += `🇮🇳 Hinglish: ${hiUrl}\n`;
+    if (!enUrl && !hiUrl) text += `⚠️ Failed to generate pages.`;
+
+    const kb = new InlineKeyboard();
+    if (enUrl) kb.url('🇬🇧 View English', enUrl).row();
+    if (hiUrl) kb.url('🇮🇳 View Hinglish', hiUrl).row();
+    kb.text('◀ Back', 'admin:tc');
+
+    try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
+    catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
+  } catch (e) {
+    try { await ctx.editMessageText(`❌ Reset failed: <code>${escapeHtml(e.message)}</code>`, {
+      parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Back', 'admin:tc')
+    }); } catch {}
+  }
 });
 
 // ── Accept button color picker ──────────────────────────────────

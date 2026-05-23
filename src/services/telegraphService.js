@@ -1,8 +1,10 @@
 /**
  * Telegraph Service — auto-generate beautiful rule pages
  *
- * Strategy: edit existing page → verify it worked → if not, reset & create new.
- * This handles the case where stored token doesn't own the page.
+ * STRATEGY: Always create a NEW page on every update.
+ * Telegraph editPage is unreliable (returns ok:true without actually saving).
+ * Pages are free, so creating new ones costs nothing.
+ * The stored URL is always updated, so users always see the latest.
  */
 import logger from '../utils/logger.js';
 import * as settingsRepo from '../database/repositories/settingsRepo.js';
@@ -12,8 +14,10 @@ const API = 'https://api.telegra.ph';
 
 // ── Telegraph Account ────────────────────────────────────────────
 
-/** Create a fresh Telegraph account, store token in DB */
-async function createFreshAccount(pool) {
+async function getOrCreateToken(pool) {
+  let token = await settingsRepo.getSetting(pool, 'telegraph_token');
+  if (token) return token;
+
   const botName = await settingsRepo.getSetting(pool, 'bot_name') || 'OTPBOT';
   const params = new URLSearchParams();
   params.append('short_name', botName);
@@ -21,16 +25,9 @@ async function createFreshAccount(pool) {
   const res = await fetch(`${API}/createAccount`, { method: 'POST', body: params });
   const data = await res.json();
   if (!data.ok) throw new Error(data.error || 'createAccount failed');
-  const token = data.result.access_token;
+  token = data.result.access_token;
   await settingsRepo.setSetting(pool, 'telegraph_token', token);
   return token;
-}
-
-/** Get existing token or create new account */
-async function getToken(pool) {
-  const token = await settingsRepo.getSetting(pool, 'telegraph_token');
-  if (token) return token;
-  return createFreshAccount(pool);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -39,11 +36,9 @@ function fmt(n) {
   return Number(n).toLocaleString('en-IN');
 }
 
-/** Build Telegraph content nodes from rules */
 function buildContent(rules, botName) {
   const nodes = [];
 
-  // Header
   nodes.push({ tag: 'h4', children: [`💎 Extra Deposit Benefits`] });
   nodes.push({ tag: 'p', children: [{ tag: 'em', children: ['Deposit more, earn more! Here are all the benefits you get when you deposit.'] }] });
   nodes.push({ tag: 'hr' });
@@ -68,7 +63,7 @@ function buildContent(rules, botName) {
     nodes.push({ tag: 'hr' });
   }
 
-  // Simple bonus rules
+  // Bonus rules
   const bonusRules = rules.filter(r => r.rule_type === 'bonus');
   if (bonusRules.length > 0) {
     nodes.push({ tag: 'h4', children: ['🎁 Instant Bonus'] });
@@ -141,56 +136,11 @@ function buildContent(rules, botName) {
   return nodes;
 }
 
-// ── Core: Create a new Telegraph page ────────────────────────────
-
-async function createNewPage(pool, token, title, contentStr, botName) {
-  const params = new URLSearchParams();
-  params.append('access_token', token);
-  params.append('title', title);
-  params.append('content', contentStr);
-  params.append('author_name', botName);
-
-  const res = await fetch(`${API}/createPage`, { method: 'POST', body: params });
-  const data = await res.json();
-  if (!data.ok) throw new Error(`createPage: ${data.error || 'unknown error'}`);
-
-  const page = data.result;
-  await settingsRepo.setSetting(pool, 'telegraph_rules_path', page.path);
-  const url = `https://telegra.ph/${page.path}`;
-  await settingsRepo.setSetting(pool, 'telegraph_rules_url', url);
-  return url;
-}
-
-// ── Core: Edit existing Telegraph page ───────────────────────────
-
-async function editExistingPage(token, path, title, contentStr, botName) {
-  const params = new URLSearchParams();
-  params.append('access_token', token);
-  params.append('title', title);
-  params.append('content', contentStr);
-  params.append('author_name', botName);
-  params.append('return_content', 'true');  // Get content back to verify
-
-  const res = await fetch(`${API}/editPage/${path}`, { method: 'POST', body: params });
-  const data = await res.json();
-  if (!data.ok) return { success: false, error: data.error || 'editPage failed' };
-
-  // Verify the edit actually applied by checking returned content
-  const returnedContent = JSON.stringify(data.result.content || []);
-  const sentContent = contentStr;
-  // Simple length check — if content is drastically different, edit didn't apply
-  if (Math.abs(returnedContent.length - sentContent.length) > sentContent.length * 0.5) {
-    return { success: false, error: 'Content mismatch after edit — token may not own this page' };
-  }
-
-  return { success: true, path: data.result.path };
-}
-
-// ── Public: Update rules page (edit or create) ───────────────────
+// ── Core: Always create a FRESH page ─────────────────────────────
 
 /**
- * Create or update Telegraph page with current rules.
- * Auto-heals if stored token doesn't own the page.
+ * Create or update Telegraph page with current deposit rules.
+ * ALWAYS creates a new page (editPage is unreliable).
  * @returns {string|null} page URL or null
  */
 export async function updateRulesPage(pool) {
@@ -198,54 +148,62 @@ export async function updateRulesPage(pool) {
     const rules = await depositRulesRepo.getActiveRules(pool);
     if (rules.length === 0) return null;
 
-    let token = await getToken(pool);
+    const token = await getOrCreateToken(pool);
     const customName = await settingsRepo.getSetting(pool, 'telegraph_author_name');
     const botName = customName || await settingsRepo.getSetting(pool, 'bot_name') || 'OTPBOT';
     const content = buildContent(rules, botName);
     const title = `💎 ${botName} — Deposit Benefits`;
     const contentStr = JSON.stringify(content);
 
-    const existingPath = await settingsRepo.getSetting(pool, 'telegraph_rules_path');
+    // Always create a new page — editPage is unreliable
+    const params = new URLSearchParams();
+    params.append('access_token', token);
+    params.append('title', title);
+    params.append('content', contentStr);
+    params.append('author_name', botName);
 
-    // Try editing existing page
-    if (existingPath) {
-      const result = await editExistingPage(token, existingPath, title, contentStr, botName);
-      if (result.success) {
-        const url = `https://telegra.ph/${result.path}`;
-        await settingsRepo.setSetting(pool, 'telegraph_rules_url', url);
-        return url;
-      }
+    const res = await fetch(`${API}/createPage`, { method: 'POST', body: params });
+    const data = await res.json();
 
-      // Edit failed — reset and create fresh
-      logger.warn(`[Telegraph] Edit failed (${result.error}), resetting and creating new page`);
-      await settingsRepo.setSetting(pool, 'telegraph_rules_path', '');
-      await settingsRepo.setSetting(pool, 'telegraph_rules_url', '');
+    if (!data.ok) {
+      // Token might be invalid, create fresh account and retry
+      logger.warn(`[Telegraph] createPage failed (${data.error}), resetting token`);
       await settingsRepo.setSetting(pool, 'telegraph_token', '');
-      token = await createFreshAccount(pool);
+      const newToken = await getOrCreateToken(pool);
+
+      const retryParams = new URLSearchParams();
+      retryParams.append('access_token', newToken);
+      retryParams.append('title', title);
+      retryParams.append('content', contentStr);
+      retryParams.append('author_name', botName);
+
+      const retryRes = await fetch(`${API}/createPage`, { method: 'POST', body: retryParams });
+      const retryData = await retryRes.json();
+      if (!retryData.ok) throw new Error(retryData.error || 'createPage retry failed');
+
+      const url = `https://telegra.ph/${retryData.result.path}`;
+      await settingsRepo.setSetting(pool, 'telegraph_rules_path', retryData.result.path);
+      await settingsRepo.setSetting(pool, 'telegraph_rules_url', url);
+      return url;
     }
 
-    // Create new page
-    return await createNewPage(pool, token, title, contentStr, botName);
+    const url = `https://telegra.ph/${data.result.path}`;
+    await settingsRepo.setSetting(pool, 'telegraph_rules_path', data.result.path);
+    await settingsRepo.setSetting(pool, 'telegraph_rules_url', url);
+    return url;
   } catch (err) {
     logger.error(`[Telegraph] Update failed: ${err.message}`);
     return null;
   }
 }
 
-// ── Public: Force reset everything ───────────────────────────────
-
 /**
- * Force reset Telegraph — delete stored token/path/url, create fresh.
- * Use when telegraph is stuck or not updating.
- * @returns {string|null} new page URL
+ * Force reset — clear all stored state and recreate.
  */
 export async function resetAndRecreate(pool) {
-  // Clear all stored Telegraph state
   await settingsRepo.setSetting(pool, 'telegraph_token', '');
   await settingsRepo.setSetting(pool, 'telegraph_rules_path', '');
   await settingsRepo.setSetting(pool, 'telegraph_rules_url', '');
-
-  // Create fresh
   return await updateRulesPage(pool);
 }
 
