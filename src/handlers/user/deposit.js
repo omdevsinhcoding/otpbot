@@ -13,12 +13,13 @@ composer.hears(new RegExp(`^${escRe(BTN_DEPOSIT)}$`), async (ctx) => {
 
   const pool = ctx.dbPool;
   const balance = await walletRepo.getBalance(pool, ctx.from.id);
-  const [paytmOn, bharatpayOn, cryptomusOn, paytmName, bharatpayName] = await Promise.all([
+  const [paytmOn, bharatpayOn, cryptomusOn, paytmName, bharatpayName, cryptomusName] = await Promise.all([
     settingsRepo.getSetting(pool, 'paytm_enabled'),
     settingsRepo.getSetting(pool, 'bharatpay_enabled'),
     settingsRepo.getSetting(pool, 'cryptomus_enabled'),
     settingsRepo.getSetting(pool, 'paytm_display_name'),
     settingsRepo.getSetting(pool, 'bharatpay_display_name'),
+    settingsRepo.getSetting(pool, 'cryptomus_display_name'),
   ]);
 
   let text = `💰 <b>Deposit Funds</b>\n\n💳 <b>Your Balance:</b> ₹${formatNumber(balance)}\n\nChoose a payment method:`;
@@ -26,7 +27,7 @@ composer.hears(new RegExp(`^${escRe(BTN_DEPOSIT)}$`), async (ctx) => {
   const kb = new InlineKeyboard();
   if (paytmOn) kb.text(`💳 ${paytmName || 'Pay via Automatic Gateway'}`, 'deposit:paytm').row();
   if (bharatpayOn) kb.text(`🏦 ${bharatpayName || 'Pay via UTR / Transaction ID'}`, 'deposit:bharatpay').row();
-  if (cryptomusOn) kb.text('₿ Cryptomus', 'deposit:cryptomus').row();
+  if (cryptomusOn) kb.text(`₿ ${cryptomusName || 'Cryptomus'}`, 'deposit:cryptomus').row();
   if (!paytmOn && !bharatpayOn && !cryptomusOn) text += '\n\n⚠️ No payment methods available.';
   kb.text('❌ Close', 'deposit:close');
 
