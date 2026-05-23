@@ -157,10 +157,13 @@ composer.hears(new RegExp(`^${escRe(BTN_MORE)}$`), async (ctx) => {
   await ctx.reply('🔥 <b>More Options</b>', { parse_mode: 'HTML', reply_markup: MORE_MENU_KEYBOARD });
 });
 
-// ── 📩 BUY MAIL (Temp Mail on main menu) ────────────────────────
+// ── 📮 BUY MAIL (main menu — separate feature, NOT temp mail) ───
 composer.hears(new RegExp(`^${escRe(BTN_BUY_MAIL)}$`), async (ctx) => {
   if (!await checkForceJoin(ctx)) return;
-  await handleCreateTempMail(ctx);
+  await ctx.reply(
+    '📮 <b>Buy Mail</b>\n\nThis feature is coming soon. Stay tuned!',
+    { parse_mode: 'HTML', reply_markup: await menuFor(ctx) }
+  );
 });
 
 // ── 🛡 SUPPORT ──────────────────────────────────────────────────
