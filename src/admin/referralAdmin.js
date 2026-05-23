@@ -1,10 +1,10 @@
 /**
- * 🎁 REFERRAL ADMIN PANEL — Clean, minimal.
+ * 🎁 REFERRAL ADMIN PANEL
  *
  * 4 sections:
  * 1. Dashboard (toggle + summary)
  * 2. Edit Commission %
- * 3. Manage Referrals (user lookup + individual remove buttons like lootpaglubot)
+ * 3. Manage Referrals (search by name/username/ID → suggested results → profile)
  * 4. Analytics
  */
 import { Composer, InlineKeyboard } from 'grammy';
@@ -108,16 +108,16 @@ composer.callbackQuery('refadm:custompct', adminRequired, async (ctx) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-//  MANAGE REFERRALS — Lootpaglubot-style user lookup
+//  MANAGE REFERRALS — Search by name/username/ID
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery('refadm:manage', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
-  states.set(ctx.chat.id, { step: 'manage_lookup' });
+  states.set(ctx.chat.id, { step: 'manage_search' });
 
   const text =
     `📋 <b>Manage Referrals</b>\n\n` +
-    `Send the <b>Telegram ID</b> of the referrer whose referrals you want to view or delete:\n\n` +
-    `<i>Tip: Use /id in the bot to get any user's ID</i>`;
+    `Search by <b>Name</b>, <b>Username</b>, or <b>User ID</b>:\n\n` +
+    `<i>Type to search — matching results will be shown.</i>`;
   const kb = new InlineKeyboard()
     .text('◀ Back', 'admin:referral').text('❌ Cancel', 'admin:referral');
 
@@ -125,16 +125,73 @@ composer.callbackQuery('refadm:manage', adminRequired, async (ctx) => {
   catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
 });
 
+/** Search users by name, username, or user ID */
+async function searchUsers(pool, query, limit = 8) {
+  // If numeric, search by user_id directly
+  const numericId = parseInt(query);
+  if (!isNaN(numericId) && String(numericId) === query) {
+    const { rows } = await pool.query(
+      `SELECT user_id, full_name, username FROM users WHERE user_id = $1 LIMIT 1`,
+      [numericId]
+    );
+    return rows;
+  }
+
+  // Text search — match name or username (partial)
+  const pattern = `%${query}%`;
+  const { rows } = await pool.query(
+    `SELECT user_id, full_name, username FROM users
+     WHERE LOWER(full_name) LIKE LOWER($1)
+        OR LOWER(username) LIKE LOWER($1)
+     ORDER BY full_name ASC
+     LIMIT $2`,
+    [pattern, limit]
+  );
+  return rows;
+}
+
+/** Show search results as inline buttons */
+async function showSearchResults(ctx, results, query) {
+  if (results.length === 0) {
+    const text = `🔍 No users found for "<b>${escapeHtml(query)}</b>"`;
+    const kb = new InlineKeyboard()
+      .text('🔍 Search Again', 'refadm:manage')
+      .text('◀ Back', 'admin:referral');
+    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+    return;
+  }
+
+  let text = `🔍 <b>Search Results</b> for "${escapeHtml(query)}":\n\n`;
+  const kb = new InlineKeyboard();
+
+  for (const r of results) {
+    const name = escapeHtml(r.full_name || 'Unknown');
+    const uname = r.username ? ` @${escapeHtml(r.username)}` : '';
+    text += `👤 ${name}${uname} — <code>${r.user_id}</code>\n`;
+    kb.text(`${name} (${r.user_id})`, `refadm:profile:${r.user_id}`).row();
+  }
+
+  kb.text('🔍 Search Again', 'refadm:manage').text('◀ Back', 'admin:referral');
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+}
+
+/** Select from search results */
+composer.callbackQuery(/^refadm:profile:(\d+)$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  states.delete(ctx.chat.id);
+  await showUserReferralProfile(ctx, parseInt(ctx.match[1]));
+});
+
 /**
- * Show full referral profile with individual remove buttons
- * Matches lootpaglubot's "Manage Referrals" exactly.
+ * Show full referral profile with individual remove buttons.
+ * Matches lootpaglubot style.
  */
 async function showUserReferralProfile(ctx, userId) {
   const pool = ctx.dbPool;
   const user = await userRepo.getUser(pool, userId);
   if (!user) {
     await ctx.reply('⚠️ User not found.', {
-      reply_markup: new InlineKeyboard().text('🔍 Search Another', 'refadm:manage').text('◀ Back', 'admin:referral')
+      reply_markup: new InlineKeyboard().text('🔍 Search Again', 'refadm:manage').text('◀ Back', 'admin:referral')
     });
     return;
   }
@@ -142,7 +199,6 @@ async function showUserReferralProfile(ctx, userId) {
   const userName = escapeHtml(user.full_name || 'Unknown');
   const stats = await referralRepo.getUserReferralStats(pool, userId);
   const referrals = await referralRepo.getReferralsByUser(pool, userId, 20, 0);
-  const walletBalance = stats.wallet ? parseFloat(stats.wallet.balance) : 0;
 
   // Build text
   let text = `👤 <b>Referrals for</b> <code>${userId}</code> (${userName})\n\n`;
@@ -169,16 +225,13 @@ async function showUserReferralProfile(ctx, userId) {
     text += `  <i>No referred users.</i>\n`;
   }
 
-  text += `\n💰 <b>Wallet:</b> ₹${formatNumber(walletBalance)} | <b>Total Earned:</b> ₹${formatNumber(stats.totalEarned)}\n`;
   text += `\n<i>Removing a referral reverses wallet credit and lets the user re-refer.</i>`;
 
-  // Build buttons — like lootpaglubot
+  // Build buttons — lootpaglubot style
   const kb = new InlineKeyboard();
 
-  // Remove referrer button (if they were referred by someone)
+  // Remove referrer button
   if (user.referred_by) {
-    const referrer = await userRepo.getUser(pool, user.referred_by);
-    const refLabel = referrer ? escapeHtml(referrer.full_name || 'Unknown') : 'Unknown';
     kb.text(`🗑 Remove referrer (${user.referred_by}) — let user re-refer`, `refadm:rmref:${userId}:${user.referred_by}`).row();
   }
 
@@ -190,7 +243,7 @@ async function showUserReferralProfile(ctx, userId) {
 
   // Remove ALL outgoing referrals
   if (referrals.length > 0) {
-    kb.text(`❌ Remove ALL outgoing referrals (reset)`, `refadm:rmall_confirm:${userId}`).row();
+    kb.text('❌ Remove ALL outgoing referrals (reset)', `refadm:rmall_confirm:${userId}`).row();
   }
 
   kb.text('◀ Back', 'admin:referral');
@@ -264,7 +317,7 @@ composer.callbackQuery(/^refadm:rmall_exec:(\d+)$/, adminRequired, async (ctx) =
     { action: 'remove_all_referrals', target_user_id: userId, removed_count: rowCount });
 
   const text = `✅ Removed <b>${rowCount}</b> referral(s) from user ${userId}.`;
-  const kb = new InlineKeyboard().text('🔍 Search Another', 'refadm:manage').text('◀ Back', 'admin:referral');
+  const kb = new InlineKeyboard().text('🔍 Search Again', 'refadm:manage').text('◀ Back', 'admin:referral');
 
   try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
   catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
@@ -325,15 +378,26 @@ composer.on('message:text', async (ctx, next) => {
     return;
   }
 
-  // ── Manage: User lookup ──
-  if (state.step === 'manage_lookup') {
-    const userId = parseInt(input);
-    if (isNaN(userId)) {
-      await ctx.reply('⚠️ Enter a valid user ID (numbers only):');
+  // ── Manage: Search users ──
+  if (state.step === 'manage_search') {
+    if (input.length < 1) {
+      await ctx.reply('⚠️ Please enter at least 1 character to search:');
       return;
     }
+
+    // Search by name, username, or ID
+    const results = await searchUsers(pool, input);
+
+    // If exact numeric match → go directly to profile
+    const numId = parseInt(input);
+    if (!isNaN(numId) && String(numId) === input && results.length === 1) {
+      states.delete(ctx.chat.id);
+      await showUserReferralProfile(ctx, numId);
+      return;
+    }
+
     states.delete(ctx.chat.id);
-    await showUserReferralProfile(ctx, userId);
+    await showSearchResults(ctx, results, input);
     return;
   }
 

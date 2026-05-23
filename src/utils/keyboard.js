@@ -18,10 +18,10 @@ export function getMainMenu(isAdmin = false, referralEnabled = true) {
     .text(BTN_PROFILE).text(BTN_MORE).text(BTN_BUY_MAIL).row();
   if (referralEnabled) {
     kb.text(BTN_SUPPORT).text(BTN_REFER_EARN).row();
+    kb.text(BTN_READYMADE);
   } else {
-    kb.text(BTN_SUPPORT).row();
+    kb.text(BTN_SUPPORT).text(BTN_READYMADE);
   }
-  kb.text(BTN_READYMADE);
   if (isAdmin) {
     kb.row().text(BTN_ADMIN_PANEL);
   }

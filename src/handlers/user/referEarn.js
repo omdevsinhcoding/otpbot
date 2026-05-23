@@ -1,8 +1,8 @@
 /**
  * 🎁 REFER & EARN — User-facing referral handler.
  *
- * Matches the exact premium screenshot design.
- * Buttons: Enter Referral Code, My Referral History, Back
+ * Layout matching swift_otp style.
+ * Buttons: Condition (Telegraph URL), Enter Referral Code, My Referrals, Back
  */
 import { Composer, InlineKeyboard } from 'grammy';
 import { checkForceJoin } from '../../middleware/forceJoinCheck.js';
@@ -13,9 +13,127 @@ import * as userRepo from '../../database/repositories/userRepo.js';
 import * as referralRepo from '../../database/repositories/referralRepo.js';
 import * as settingsRepo from '../../database/repositories/settingsRepo.js';
 import * as walletRepo from '../../database/repositories/walletRepo.js';
+import logger from '../../utils/logger.js';
 
 const composer = new Composer();
 const _states = new Map();
+
+// ═══════════════════════════════════════════════════════════════════
+//  TELEGRAPH T&C PAGE — Lazy creation + caching
+// ═══════════════════════════════════════════════════════════════════
+
+/** Build the T&C content as Telegraph Node array */
+function buildTCContent(commPct) {
+  return [
+    { tag: 'h3', children: ['🎁 Refer & Earn — Kaise Kaam Karta Hai?'] },
+    { tag: 'p', children: ['Bahut simple hai! Bas 3 steps follow karo:'] },
+    { tag: 'br' },
+    { tag: 'h4', children: ['Step 1: 📤 Apna Link Share Karo'] },
+    { tag: 'p', children: ['Bot me "🎁 Refer & Earn" open karo aur apna unique referral link copy karo. Friends, family ya social media pe share karo!'] },
+    { tag: 'br' },
+    { tag: 'h4', children: ['Step 2: 👥 Friend Bot Join Kare'] },
+    { tag: 'p', children: ['Jab koi apka link use karke bot start kare, wo apka referral ban jaata hai. Apko turant notification milega! 🔔'] },
+    { tag: 'br' },
+    { tag: 'h4', children: [
+      'Step 3: 💰 Har Deposit Pe Kamao (',
+      { tag: 'strong', children: [`${commPct}% Commission`] },
+      ')'
+    ]},
+    { tag: 'p', children: ['Jab apka referred friend successful deposit kare, apko commission milta hai! Bonus seedha apke wallet me aata hai.'] },
+    { tag: 'br' },
+    { tag: 'h4', children: ['💡 Example Samjho'] },
+    { tag: 'p', children: [
+      `• Friend ₹500 deposit kare → Apko ₹${(500 * commPct / 100).toFixed(0)} milega 🎉`,
+    ]},
+    { tag: 'p', children: [
+      `• Friend ₹1000 deposit kare → Apko ₹${(1000 * commPct / 100).toFixed(0)} milega 💰`,
+    ]},
+    { tag: 'p', children: [
+      `• Friend ₹2000 deposit kare → Apko ₹${(2000 * commPct / 100).toFixed(0)} milega 🤑`,
+    ]},
+    { tag: 'p', children: [
+      { tag: 'strong', children: ['Koi limit nahi! Jitna share karo utna kamao! 🔥'] }
+    ]},
+    { tag: 'br' },
+    { tag: 'hr' },
+    { tag: 'h3', children: ['💰 Earnings Kaha Jaata Hai?'] },
+    { tag: 'p', children: ['• Commission seedha apke wallet balance me add hota hai'] },
+    { tag: 'p', children: ['• Wallet balance se coupons, OTPs ya kuch bhi kharid sakte ho!'] },
+    { tag: 'p', children: ['• Koi extra step nahi — fully automatic! ✅'] },
+    { tag: 'br' },
+    { tag: 'hr' },
+    { tag: 'h3', children: ['🚫 Rules — Zaroor Follow Karo'] },
+    { tag: 'p', children: ['❌ Self-referral bilkul allowed NAHI hai'] },
+    { tag: 'p', children: ['❌ Fake ya duplicate accounts → Bonus cancel hoga'] },
+    { tag: 'p', children: ['❌ Suspicious activity → Account block hoga'] },
+    { tag: 'p', children: ['✅ Sirf SUCCESSFUL deposits count honge'] },
+    { tag: 'p', children: ['✅ Ek user ka ek hi referral code hota hai'] },
+    { tag: 'br' },
+    { tag: 'hr' },
+    { tag: 'h3', children: ['🔥 Abhi Start Karo!'] },
+    { tag: 'p', children: [
+      'Bot open karo → ',
+      { tag: 'strong', children: ['"🎁 Refer & Earn"'] },
+      ' tap karo → Link share karo → Earning shuru! 💰'
+    ]},
+    { tag: 'p', children: [
+      { tag: 'em', children: ['Jyada refer = Jyada earning. Simple! 😎'] }
+    ]},
+  ];
+}
+
+/**
+ * Get or create the Telegraph T&C page URL.
+ * Creates a new Telegraph account + page on first call, caches URL in settings.
+ */
+async function getTelegraphUrl(pool) {
+  // Check cache first
+  let url = await settingsRepo.getSetting(pool, 'referral_terms_url');
+  if (url) return url;
+
+  try {
+    const commPct = parseFloat(await settingsRepo.getSetting(pool, 'referral_commission_pct')) || 10;
+
+    // 1. Create Telegraph account
+    const accRes = await fetch('https://api.telegra.ph/createAccount', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        short_name: 'ReferBot',
+        author_name: 'Refer & Earn'
+      })
+    });
+    const accData = await accRes.json();
+    if (!accData.ok) throw new Error('Telegraph account creation failed');
+    const token = accData.result.access_token;
+
+    // Save token for future page updates
+    await settingsRepo.setSetting(pool, 'telegraph_token', token);
+
+    // 2. Create the T&C page
+    const content = buildTCContent(commPct);
+    const pageRes = await fetch('https://api.telegra.ph/createPage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        access_token: token,
+        title: '🎁 Refer & Earn — Terms & Conditions',
+        content,
+        author_name: 'Refer & Earn Bot',
+        return_content: false,
+      })
+    });
+    const pageData = await pageRes.json();
+    if (!pageData.ok) throw new Error('Telegraph page creation failed');
+
+    url = pageData.result.url;
+    await settingsRepo.setSetting(pool, 'referral_terms_url', url);
+    return url;
+  } catch (err) {
+    logger.debug(`Telegraph page creation failed: ${err.message}`);
+    return null; // Fallback: no URL available
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════
 //  MAIN CARD — 🎁 Refer & Earn button
@@ -57,34 +175,30 @@ async function showReferralCard(ctx, edit = false) {
   const totalRefs = await referralRepo.getTotalReferralCount(pool, userId);
   const wallet = await referralRepo.getReferralWallet(pool, userId);
   const totalEarned = wallet ? parseFloat(wallet.total_earned) : 0;
-  const mainBalance = await walletRepo.getBalance(pool, userId);
 
   const botInfo = await ctx.api.getMe();
   const refLink = `https://t.me/${botInfo.username}?start=${refCode}`;
 
+  // Get Telegraph URL for Condition button
+  const tcUrl = await getTelegraphUrl(pool);
+
   const text =
-    `🏆 <b>REFER & EARN</b>\n` +
+    `🎁 <b>REFER & EARN</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━━\n\n` +
-    `🤑 Earn up to <b>${commPct}%</b> on every referral!\n\n` +
-    `✨ <b>How it works:</b>\n` +
-    `1️⃣ Share your link\n` +
-    `2️⃣ Friends join the bot\n` +
-    `3️⃣ Get 🤑 <b>${commPct}%</b> on their deposits!\n\n` +
-    `💰 Reward goes straight to your wallet!\n\n` +
+    `🔑 <b>Your Referral Code:</b> <code>${refCode}</code>\n` +
     `🔗 <b>Your Referral Link:</b>\n` +
     `<code>${refLink}</code>\n\n` +
-    `🔑 <b>Code:</b> <code>${refCode}</code>\n\n` +
-    `━━━━━━━━━━━━━━━━━━━━━\n\n` +
-    `📊 <b>Your Stats</b>\n\n` +
-    `👥 Referrals: <b>${formatNumber(totalRefs)}</b>\n` +
-    `🤑 Earnings: <b>₹${formatNumber(totalEarned)}</b>\n` +
-    `💰 Wallet: <b>₹${formatNumber(mainBalance)}</b>\n\n` +
-    `💡 <i>Wallet balance can be used to purchase coupons!</i> 💳`;
+    `💰 <b>Referral Balance (${commPct}% On Deposits):</b> ₹${formatNumber(totalEarned)}\n` +
+    `👥 <b>Total Referrals:</b> ${formatNumber(totalRefs)}`;
 
-  const kb = new InlineKeyboard()
-    .text('🔗 Enter Referral Code', 'ref:enter_code').row()
-    .text('📋 My Referral History', 'ref:history:1').row()
-    .text('◀ Back', 'ref:back');
+  const kb = new InlineKeyboard();
+  // Condition button — URL button to Telegraph page
+  if (tcUrl) {
+    kb.url('📜 Condition', tcUrl).row();
+  }
+  kb.text('🔗 Enter Referral Code', 'ref:enter_code').row();
+  kb.text('👥 My Referrals', 'ref:history:1').row();
+  kb.text('◀ Back', 'ref:back');
 
   if (edit) {
     try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
@@ -119,7 +233,7 @@ composer.callbackQuery('ref:enter_code', async (ctx) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-//  MY REFERRAL HISTORY — Paginated
+//  MY REFERRALS — Paginated
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery(/^ref:history:(\d+)$/, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
@@ -135,7 +249,7 @@ composer.callbackQuery(/^ref:history:(\d+)$/, async (ctx) => {
 
   if (totalRefs === 0) {
     const text =
-      `📋 <b>My Referral History</b>\n\n` +
+      `👥 <b>My Referrals</b>\n\n` +
       `<i>No referrals yet. Share your link to start earning!</i>`;
     const kb = new InlineKeyboard().text('◀ Back', 'ref:home');
     try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
@@ -143,7 +257,7 @@ composer.callbackQuery(/^ref:history:(\d+)$/, async (ctx) => {
     return;
   }
 
-  let text = `📋 <b>My Referral History</b>  (${formatNumber(totalRefs)} total)\n\n`;
+  let text = `👥 <b>My Referrals</b>  (${formatNumber(totalRefs)} total)\n\n`;
 
   for (let i = 0; i < referrals.length; i++) {
     const r = referrals[i];
@@ -189,7 +303,6 @@ composer.on('message:text', async (ctx, next) => {
   const input = ctx.message.text.trim();
   const kb = new InlineKeyboard().text('◀ Back', 'ref:home');
 
-  // Look up the code
   try {
     const { rows } = await pool.query(
       'SELECT user_id, full_name FROM users WHERE referral_code = $1', [input]
@@ -202,13 +315,11 @@ composer.on('message:text', async (ctx, next) => {
 
     const referrer = rows[0];
 
-    // Self-referral check
     if (referrer.user_id === ctx.from.id) {
       await ctx.reply("⚠️ You can't use your own referral code!", { reply_markup: kb });
       return;
     }
 
-    // Already has referrer check
     const user = await userRepo.getUser(pool, ctx.from.id);
     if (user?.referred_by) {
       _states.delete(ctx.chat.id);
@@ -231,10 +342,11 @@ composer.on('message:text', async (ctx, next) => {
       const refEnabled = await settingsRepo.getSetting(pool, 'referral_enabled');
       if (refEnabled) {
         const commPct = parseFloat(await settingsRepo.getSetting(pool, 'referral_commission_pct')) || 10;
+        const joinerName = escapeHtml([ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ') || 'Someone');
         const notifText =
           `🎉 <b>New Referral!</b>\n\n` +
-          `👤 A user joined using your code!\n` +
-          `💰 You'll earn <b>${commPct}%</b> on their deposits!\n\n` +
+          `👤 <b>${joinerName}</b> joined using your code!\n` +
+          `🤑 You'll earn <b>${commPct}%</b> on their deposits!\n\n` +
           `🔥 <i>Keep sharing to earn more!</i>`;
         await ctx.api.sendMessage(referrer.user_id, notifText, { parse_mode: 'HTML' });
       }
