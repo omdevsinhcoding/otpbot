@@ -141,7 +141,7 @@ composer.callbackQuery('benefits:remove_author', adminRequired, async (ctx) => {
   try {
     const { updateRulesPage } = await import('../services/telegraphService.js');
     await updateRulesPage(ctx.dbPool);
-  } catch {}
+  } catch (e) { logger.error(`[Benefits] Telegraph update failed: ${e.message}`); }
   states.delete(ctx.chat.id);
   await showDashboard(ctx);
 });
@@ -435,8 +435,10 @@ async function saveRule(ctx, pool, data) {
   // Auto-update Telegraph rules page
   try {
     const { updateRulesPage } = await import('../services/telegraphService.js');
-    await updateRulesPage(pool);
-  } catch {}
+    const url = await updateRulesPage(pool);
+    if (url) logger.info(`[Benefits] Telegraph updated: ${url}`);
+    else logger.warn(`[Benefits] Telegraph returned null (no active rules?)`);
+  } catch (e) { logger.error(`[Benefits] Telegraph update failed: ${e.message}`); }
 
   const msg = `✅ <b>Rule Created!</b>\n\n${ICONS[saved.rule_type]} ${describeRule(saved)}\n<i>${exampleCalc(saved)}</i>`;
   const kb = new InlineKeyboard().text('➕ Add Another', 'benefits:add').row().text('◀ Dashboard', 'admin:benefits');
@@ -542,7 +544,7 @@ composer.on('message:text', async (ctx, next) => {
     try {
       const { updateRulesPage } = await import('../services/telegraphService.js');
       await updateRulesPage(pool);
-    } catch {}
+    } catch (e) { logger.error(`[Benefits] Telegraph update failed: ${e.message}`); }
     states.delete(ctx.chat.id);
     await ctx.reply(`✅ Telegraph name set to: <b>${escapeHtml(input)}</b>`, {
       parse_mode: 'HTML',
@@ -614,7 +616,7 @@ composer.on('message:text', async (ctx, next) => {
 
     const updated = await depositRulesRepo.getRule(pool, id);
     if (updated) await autoTitle(pool, updated);
-    try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(pool); } catch {}
+    try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(pool); } catch (e) { logger.error(`[Benefits] Telegraph update failed: ${e.message}`); }
     states.delete(ctx.chat.id);
     await ctx.reply('✅ Updated!');
     await showEdit(ctx, id);
@@ -753,7 +755,7 @@ composer.callbackQuery(/^bset:pct:\d+:\d+$/, adminRequired, async (ctx) => {
   await depositRulesRepo.updateRule(ctx.dbPool, id, { percentage: pct });
   const r = await depositRulesRepo.getRule(ctx.dbPool, id);
   if (r) await autoTitle(ctx.dbPool, r);
-  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch {}
+  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch (e) { logger.error(`[Benefits] Telegraph update failed: ${e.message}`); }
   await showEdit(ctx, id);
 });
 
@@ -791,7 +793,7 @@ composer.callbackQuery(/^bset:amt:\d+:\d+$/, adminRequired, async (ctx) => {
   else await depositRulesRepo.updateRule(ctx.dbPool, id, { min_deposit: amt });
   const updated = await depositRulesRepo.getRule(ctx.dbPool, id);
   if (updated) await autoTitle(ctx.dbPool, updated);
-  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch {}
+  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch (e) { logger.error(`[Benefits] Telegraph update failed: ${e.message}`); }
   await showEdit(ctx, id);
 });
 
@@ -815,7 +817,7 @@ composer.callbackQuery(/^bset:min:\d+:\d+$/, adminRequired, async (ctx) => {
   await depositRulesRepo.updateRule(ctx.dbPool, id, { min_deposit: amt });
   const r = await depositRulesRepo.getRule(ctx.dbPool, id);
   if (r) await autoTitle(ctx.dbPool, r);
-  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch {}
+  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch (e) { logger.error(`[Benefits] Telegraph update failed: ${e.message}`); }
   await showEdit(ctx, id);
 });
 
@@ -839,7 +841,7 @@ composer.callbackQuery(/^bset:days:\d+:\d+$/, adminRequired, async (ctx) => {
   await depositRulesRepo.updateRule(ctx.dbPool, id, { rolling_period_days: days });
   const r = await depositRulesRepo.getRule(ctx.dbPool, id);
   if (r) await autoTitle(ctx.dbPool, r);
-  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch {}
+  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch (e) { logger.error(`[Benefits] Telegraph update failed: ${e.message}`); }
   await showEdit(ctx, id);
 });
 
@@ -866,7 +868,7 @@ composer.callbackQuery(/^bset:roll:\d+:\d+$/, adminRequired, async (ctx) => {
   await depositRulesRepo.updateRule(ctx.dbPool, id, { rolling_30d_min: amt });
   const r = await depositRulesRepo.getRule(ctx.dbPool, id);
   if (r) await autoTitle(ctx.dbPool, r);
-  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch {}
+  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch (e) { logger.error(`[Benefits] Telegraph update failed: ${e.message}`); }
   await showEdit(ctx, id);
 });
 
@@ -876,7 +878,7 @@ composer.callbackQuery(/^bedit:toggle:\d+$/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const id = parseInt(ctx.callbackQuery.data.split(':')[2]);
   await depositRulesRepo.toggleRule(ctx.dbPool, id);
-  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch {}
+  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch (e) { logger.error(`[Benefits] Telegraph update failed: ${e.message}`); }
   await showEdit(ctx, id);
 });
 
@@ -896,7 +898,7 @@ composer.callbackQuery(/^bedit:confirm_del:\d+$/, adminRequired, async (ctx) => 
   try { await ctx.answerCallbackQuery(); } catch {}
   const id = parseInt(ctx.callbackQuery.data.split(':')[2]);
   await depositRulesRepo.deleteRule(ctx.dbPool, id);
-  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch {}
+  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch (e) { logger.error(`[Benefits] Telegraph update failed: ${e.message}`); }
   await showManage(ctx);
 });
 

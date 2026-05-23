@@ -140,7 +140,10 @@ function buildContent(rules, botName) {
 export async function updateRulesPage(pool) {
   try {
     const rules = await depositRulesRepo.getActiveRules(pool);
-    if (rules.length === 0) return null;
+    if (rules.length === 0) {
+      logger.warn(`[Telegraph] No active rules found, skipping update.`);
+      return null;
+    }
 
     const token = await getToken(pool);
     const customName = await settingsRepo.getSetting(pool, 'telegraph_author_name');
@@ -157,21 +160,28 @@ export async function updateRulesPage(pool) {
     let page;
     if (existingPath) {
       // Edit existing page
+      logger.info(`[Telegraph] Editing existing page: ${existingPath} (${rules.length} rules)`);
       const params = new URLSearchParams();
       params.append('access_token', token);
       params.append('title', title);
       params.append('content', contentStr);
       params.append('author_name', botName);
+      params.append('return_content', 'false');
 
       const res = await fetch(`${API}/editPage/${existingPath}`, {
         method: 'POST',
         body: params,
       });
       const data = await res.json();
-      if (!data.ok) throw new Error(data.error || 'editPage failed');
+      if (!data.ok) {
+        logger.error(`[Telegraph] editPage failed: ${JSON.stringify(data)}`);
+        throw new Error(data.error || 'editPage failed');
+      }
       page = data.result;
+      logger.info(`[Telegraph] Page edited successfully: ${page.path}`);
     } else {
       // Create new page
+      logger.info(`[Telegraph] Creating new page (${rules.length} rules)`);
       const params = new URLSearchParams();
       params.append('access_token', token);
       params.append('title', title);
@@ -183,9 +193,13 @@ export async function updateRulesPage(pool) {
         body: params,
       });
       const data = await res.json();
-      if (!data.ok) throw new Error(data.error || 'createPage failed');
+      if (!data.ok) {
+        logger.error(`[Telegraph] createPage failed: ${JSON.stringify(data)}`);
+        throw new Error(data.error || 'createPage failed');
+      }
       page = data.result;
       await settingsRepo.setSetting(pool, 'telegraph_rules_path', page.path);
+      logger.info(`[Telegraph] New page created: ${page.path}`);
     }
 
     const url = `https://telegra.ph/${page.path}`;
