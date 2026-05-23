@@ -142,13 +142,12 @@ composer.callbackQuery('benefits:reset_telegraph', adminRequired, async (ctx) =>
   }
 });
 
-// ── Fix Old Data (stamp credit_amount + sync wallet) ──────────
+// ── Fix Old Data (stamp credit_amount + reconcile with balance) ─
 composer.callbackQuery('benefits:fix_data', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery('⏳ Fixing...'); } catch {}
   const pool = ctx.dbPool;
   try {
-    // 1. Stamp credit_amount on ALL old transactions that don't have it
-    //    Old deposits never had tax applied, so credit_amount = raw amount
+    // 1. Stamp credit_amount = raw amount on transactions that don't have it
     const { rowCount: stamped } = await pool.query(
       `UPDATE transactions
        SET gateway_data = jsonb_set(
@@ -165,16 +164,44 @@ composer.callbackQuery('benefits:fix_data', adminRequired, async (ctx) => {
       `DELETE FROM bonus_history WHERE rule_type = 'tax'`
     );
 
-    // 3. Sync total_deposit = balance for all users (no purchases exist yet)
+    // 3. Sync total_deposit = balance (no purchases yet)
     await pool.query(
       `UPDATE user_wallets SET total_deposit = balance WHERE total_deposit > balance`
     );
 
+    // 4. Reconcile: for each user, if SUM(credit_amount) > balance,
+    //    reduce the LATEST transaction's credit_amount by the excess
+    //    So that SUM(credit_amount) = balance exactly
+    const { rowCount: reconciled } = await pool.query(
+      `WITH user_excess AS (
+         SELECT w.user_id,
+           COALESCE(SUM((t.gateway_data->>'credit_amount')::numeric), 0) - w.balance AS excess
+         FROM user_wallets w
+         LEFT JOIN transactions t ON t.user_id = w.user_id AND t.status = 'success'
+         GROUP BY w.user_id, w.balance
+         HAVING COALESCE(SUM((t.gateway_data->>'credit_amount')::numeric), 0) > w.balance
+       ),
+       latest_tx AS (
+         SELECT DISTINCT ON (user_id) id, user_id
+         FROM transactions
+         WHERE status = 'success'
+         ORDER BY user_id, created_at DESC
+       )
+       UPDATE transactions t
+       SET gateway_data = jsonb_set(
+         gateway_data,
+         '{credit_amount}',
+         to_jsonb(GREATEST((gateway_data->>'credit_amount')::numeric - ue.excess, 0))
+       )
+       FROM user_excess ue, latest_tx lt
+       WHERE t.id = lt.id AND lt.user_id = ue.user_id`
+    );
+
     const text = `✅ <b>Data Fixed!</b>\n\n` +
-      `📝 Stamped ${stamped} transactions with credit_amount\n` +
-      `🗑 Deleted ${deleted} phantom tax records\n` +
-      `🔄 Synced total_deposit for all users\n\n` +
-      `<i>All profile values are now correct.</i>`;
+      `📝 Stamped ${stamped} transactions\n` +
+      `🗑 Deleted ${deleted} phantom records\n` +
+      `🔄 Reconciled ${reconciled} users\n\n` +
+      `<i>Balance, Total Deposit, Last 30 Days — all consistent now.</i>`;
 
     const kb = new InlineKeyboard().text('◀ Dashboard', 'admin:benefits');
     try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
