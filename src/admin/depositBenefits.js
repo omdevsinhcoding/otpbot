@@ -108,7 +108,7 @@ async function showDashboard(ctx) {
     kb.text('🔮 Test', 'benefits:test').text('📊 Stats', 'benefits:stats').row();
   }
   kb.text('📝 Set Telegraph Name', 'benefits:set_author').row();
-  kb.text('🔄 Reset Telegraph', 'benefits:reset_telegraph').row();
+  kb.text('🔄 Reset Telegraph', 'benefits:reset_telegraph').text('🧹 Fix Old Data', 'benefits:fix_data').row();
   kb.text('◀ Back', 'admin:back');
   try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
   catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
@@ -139,6 +139,49 @@ composer.callbackQuery('benefits:reset_telegraph', adminRequired, async (ctx) =>
   } catch (e) {
     try { await ctx.editMessageText(`❌ Reset failed: <code>${e.message}</code>`, { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Back', 'admin:benefits') }); }
     catch {}
+  }
+});
+
+// ── Fix Old Data (clean phantom records + sync total_deposit) ──
+composer.callbackQuery('benefits:fix_data', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery('⏳ Fixing...'); } catch {}
+  const pool = ctx.dbPool;
+  try {
+    // 1. Delete phantom tax records from bonus_history
+    const { rowCount: deleted } = await pool.query(
+      `DELETE FROM bonus_history WHERE rule_type = 'tax'`
+    );
+
+    // 2. Sync total_deposit = actual transaction total for all users
+    await pool.query(
+      `UPDATE user_wallets w
+       SET total_deposit = COALESCE((
+         SELECT SUM(t.amount)
+         FROM transactions t
+         WHERE t.user_id = w.user_id AND t.status = 'success'
+       ), 0)`
+    );
+
+    // 3. Ensure total_deposit >= balance (tax adjustments)
+    // For users with no purchases, total_deposit should = balance
+    await pool.query(
+      `UPDATE user_wallets
+       SET total_deposit = balance
+       WHERE total_deposit > balance`
+    );
+
+    const text = `✅ <b>Data Fixed!</b>\n\n` +
+      `🗑 Deleted ${deleted} phantom tax records\n` +
+      `🔄 Synced total_deposit for all users\n\n` +
+      `<i>Profile values will now be consistent.</i>`;
+
+    const kb = new InlineKeyboard().text('◀ Dashboard', 'admin:benefits');
+    try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
+    catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
+  } catch (e) {
+    try { await ctx.editMessageText(`❌ Fix failed: <code>${escapeHtml(e.message)}</code>`, {
+      parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('◀ Back', 'admin:benefits')
+    }); } catch {}
   }
 });
 
