@@ -91,8 +91,18 @@ export async function applyBenefits(pool, userId, depositAmount, orderId) {
     // adjustBalance handles +bonus, -tax, and 0 in one call
     await walletRepo.adjustBalance(pool, userId, benefits.netAdjustment);
 
+    // Stamp NET credit_amount on the transaction for accurate rolling queries
+    const creditAmount = Math.max(0, depositAmount + benefits.netAdjustment);
+    try {
+      await pool.query(
+        `UPDATE transactions 
+         SET gateway_data = jsonb_set(COALESCE(gateway_data, '{}'), '{credit_amount}', $2::text::jsonb)
+         WHERE order_id = $1`,
+        [orderId, JSON.stringify(creditAmount)]
+      );
+    } catch { /* stamp failed — not critical */ }
+
     // Record to bonus_history ONLY after wallet adjustment succeeds
-    // This prevents phantom records (recorded but never applied)
     try {
       const depositRulesRepo = await import('../../database/repositories/depositRulesRepo.js');
       if (benefits.taxRule) {

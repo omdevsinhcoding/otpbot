@@ -105,7 +105,7 @@ async function showDashboard(ctx) {
     .text('➕ Add Rule', 'benefits:add').row();
   if (rules.length > 0) {
     kb.text('📋 Edit / Remove', 'benefits:manage').row();
-    kb.text('🔮 Test', 'benefits:test').text('📊 Stats', 'benefits:stats').row();
+    kb.text('📊 Stats', 'benefits:stats').row();
   }
   kb.text('📝 Set Telegraph Name', 'benefits:set_author').row();
   kb.text('🔄 Reset Telegraph', 'benefits:reset_telegraph').text('🧹 Fix Old Data', 'benefits:fix_data').row();
@@ -142,38 +142,39 @@ composer.callbackQuery('benefits:reset_telegraph', adminRequired, async (ctx) =>
   }
 });
 
-// ── Fix Old Data (clean phantom records + sync total_deposit) ──
+// ── Fix Old Data (stamp credit_amount + sync wallet) ──────────
 composer.callbackQuery('benefits:fix_data', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery('⏳ Fixing...'); } catch {}
   const pool = ctx.dbPool;
   try {
-    // 1. Delete phantom tax records from bonus_history
+    // 1. Stamp credit_amount on ALL old transactions that don't have it
+    //    Old deposits never had tax applied, so credit_amount = raw amount
+    const { rowCount: stamped } = await pool.query(
+      `UPDATE transactions
+       SET gateway_data = jsonb_set(
+         COALESCE(gateway_data, '{}'), 
+         '{credit_amount}', 
+         to_jsonb(amount)
+       )
+       WHERE status = 'success'
+         AND (gateway_data->>'credit_amount') IS NULL`
+    );
+
+    // 2. Delete phantom bonus_history tax records
     const { rowCount: deleted } = await pool.query(
       `DELETE FROM bonus_history WHERE rule_type = 'tax'`
     );
 
-    // 2. Sync total_deposit = actual transaction total for all users
+    // 3. Sync total_deposit = balance for all users (no purchases exist yet)
     await pool.query(
-      `UPDATE user_wallets w
-       SET total_deposit = COALESCE((
-         SELECT SUM(t.amount)
-         FROM transactions t
-         WHERE t.user_id = w.user_id AND t.status = 'success'
-       ), 0)`
-    );
-
-    // 3. Ensure total_deposit >= balance (tax adjustments)
-    // For users with no purchases, total_deposit should = balance
-    await pool.query(
-      `UPDATE user_wallets
-       SET total_deposit = balance
-       WHERE total_deposit > balance`
+      `UPDATE user_wallets SET total_deposit = balance WHERE total_deposit > balance`
     );
 
     const text = `✅ <b>Data Fixed!</b>\n\n` +
+      `📝 Stamped ${stamped} transactions with credit_amount\n` +
       `🗑 Deleted ${deleted} phantom tax records\n` +
       `🔄 Synced total_deposit for all users\n\n` +
-      `<i>Profile values will now be consistent.</i>`;
+      `<i>All profile values are now correct.</i>`;
 
     const kb = new InlineKeyboard().text('◀ Dashboard', 'admin:benefits');
     try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }

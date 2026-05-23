@@ -108,18 +108,16 @@ export async function countRules(pool) {
 
 export async function getUserRolling30d(pool, userId, days = 30) {
   const { rows } = await pool.query(
-    `SELECT 
-       COALESCE(SUM(t.amount), 0)::numeric 
-       + COALESCE((
-           SELECT SUM(bh.bonus_amount) 
-           FROM bonus_history bh 
-           WHERE bh.user_id = $1 
-             AND bh.rule_type = 'tax' 
-             AND bh.created_at >= NOW() - INTERVAL '1 day' * $2
-         ), 0)::numeric AS total
-     FROM transactions t
-     WHERE t.user_id = $1 AND t.status = 'success'
-       AND t.created_at >= NOW() - INTERVAL '1 day' * $2`,
+    `SELECT COALESCE(SUM(
+       CASE 
+         WHEN gateway_data->>'credit_amount' IS NOT NULL 
+         THEN (gateway_data->>'credit_amount')::numeric
+         ELSE amount 
+       END
+     ), 0)::numeric AS total
+     FROM transactions
+     WHERE user_id = $1 AND status = 'success'
+       AND created_at >= NOW() - INTERVAL '1 day' * $2`,
     [userId, days]
   );
   return Math.max(0, parseFloat(rows[0].total) || 0);
