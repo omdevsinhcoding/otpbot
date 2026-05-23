@@ -26,12 +26,20 @@ composer.hears(new RegExp(`^${escRe(BTN_PROFILE)}$`), async (ctx) => {
   const walletMod = await import('../../database/repositories/walletRepo.js');
   const wallet = await walletMod.getWallet(pool, ctx.from.id);
   const balance = wallet ? parseFloat(wallet.balance) : 0;
+  const totalDeposit = wallet ? parseFloat(wallet.total_deposit) : 0;
 
   // Count deposits
   const { rows: depRows } = await pool.query(
     `SELECT COUNT(*)::int AS count FROM transactions WHERE user_id = $1 AND status = 'success'`, [ctx.from.id]
   );
   const depositCount = depRows[0].count;
+
+  // 30-day rolling deposit total
+  let rolling30d = 0;
+  try {
+    const depositRulesRepo = await import('../../database/repositories/depositRulesRepo.js');
+    rolling30d = await depositRulesRepo.getUserRolling30d(pool, ctx.from.id, 30);
+  } catch { /* table may not exist yet */ }
 
   // Count OTP/numbers bought (future-proof: 0 for now)
   const totalBought = 0;
@@ -44,7 +52,8 @@ composer.hears(new RegExp(`^${escRe(BTN_PROFILE)}$`), async (ctx) => {
     `👤 <b>Name :</b> ${escapeHtml(user.full_name || 'N/A')}\n` +
     `🆔 <b>User ID :</b> <code>${user.user_id}</code>\n\n` +
     `💰 <b>Balance :</b> ₹${formatNumber(balance)}\n` +
-    `💵 <b>Total Deposit :</b> ${depositCount} Times\n\n` +
+    `💵 <b>Total Deposit :</b> ₹${formatNumber(totalDeposit)} (${depositCount} Times)\n` +
+    `🏦 <b>Last 30 Days :</b> ₹${formatNumber(rolling30d)}\n\n` +
     `🕐 <b>Last Updated :</b> ${timeStr}\n` +
     `📅 <b>Date :</b> ${dateStr}\n\n` +
     `📦 <b>Total Number Buyed :</b> ${totalBought}`;

@@ -179,7 +179,14 @@ export async function calculateBenefits(pool, userId, depositAmount, orderId = n
 function buildUserMessage(result, allRules, depositAmount) {
   const lines = [];
 
-  lines.push(`━━━━━ 💎 Exᴛʀᴀ Bᴇɴᴇғɪᴛs ━━━━━`);
+  // Contextual header — not "Extra Benefits" when tax is applied
+  if (result.taxRule && !result.bonusRule) {
+    lines.push(`━━━━━ ⚠️ Tᴀx Dᴇᴅᴜᴄᴛᴇᴅ ━━━━━`);
+  } else if (!result.taxRule && result.bonusRule) {
+    lines.push(`━━━━━ 🎁 Exᴛʀᴀ Bᴏɴᴜs ━━━━━`);
+  } else {
+    lines.push(`━━━━━ 📋 Dᴇᴘᴏsɪᴛ Sᴜᴍᴍᴀʀʏ ━━━━━`);
+  }
   lines.push('');
 
   // Show applicable rules summary

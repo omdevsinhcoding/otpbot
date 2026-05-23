@@ -66,7 +66,7 @@ export async function adjustBalance(pool, userId, amount) {
   await ensureWallet(pool, userId);
 
   if (amount > 0) {
-    // Bonus — add to balance only
+    // Bonus — add to balance only (bonus is NOT a deposit)
     const { rows } = await pool.query(
       `UPDATE user_wallets
        SET balance = balance + $2,
@@ -77,11 +77,13 @@ export async function adjustBalance(pool, userId, amount) {
     );
     return rows[0];
   } else {
-    // Tax — deduct from balance (ensure sufficient funds)
+    // Tax — deduct from balance AND total_deposit
+    // (user didn't actually receive this amount, so it's not a real deposit)
     const absAmount = Math.abs(amount);
     const { rows } = await pool.query(
       `UPDATE user_wallets
        SET balance = GREATEST(balance - $2, 0),
+           total_deposit = GREATEST(total_deposit - $2, 0),
            updated_at = NOW()
        WHERE user_id = $1
        RETURNING *`,
