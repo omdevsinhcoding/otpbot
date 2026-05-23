@@ -21,19 +21,24 @@ composer.callbackQuery('admin:payments', adminRequired, async (ctx) => {
 
 async function showPaymentsMenu(ctx) {
   const pool = ctx.dbPool;
-  const [paytmOn, bharatOn, cryptoOn, paytmName, bharatName] = await Promise.all([
+  const [paytmOn, bharatOn, cryptoOn, paytmName, bharatName, histLimit] = await Promise.all([
     settingsRepo.getSetting(pool, 'paytm_enabled'),
     settingsRepo.getSetting(pool, 'bharatpay_enabled'),
     settingsRepo.getSetting(pool, 'cryptomus_enabled'),
     settingsRepo.getSetting(pool, 'paytm_display_name'),
     settingsRepo.getSetting(pool, 'bharatpay_display_name'),
+    settingsRepo.getSetting(pool, 'deposit_history_limit'),
   ]);
+
+  const hl = parseInt(histLimit) || 0;
+  const histLabel = hl > 0 ? `Last ${hl}` : 'All';
 
   const text =
     `💰 <b>Payment Settings</b>\n\n` +
     `💳 Paytm: ${paytmOn ? '✅ On' : '❌ Off'}  ➜ <i>${escapeHtml(paytmName || 'Pay via Automatic Gateway')}</i>\n` +
     `🏦 Bharat Pay: ${bharatOn ? '✅ On' : '❌ Off'}  ➜ <i>${escapeHtml(bharatName || 'Pay via UTR / Transaction ID')}</i>\n` +
-    `₿ Cryptomus: ${cryptoOn ? '✅ On' : '❌ Off'}`;
+    `₿ Cryptomus: ${cryptoOn ? '✅ On' : '❌ Off'}\n\n` +
+    `📜 <b>User Deposit History:</b> ${histLabel}`;
 
   const kb = new InlineKeyboard()
     .text('💳 Paytm Settings', 'pay:paytm').row()
@@ -41,10 +46,74 @@ async function showPaymentsMenu(ctx) {
     .text('₿ Cryptomus Settings', 'pay:cryptomus').row()
     .text('✏️ Rename Paytm', 'pay:paytm:edit:paytm_display_name').text('✏️ Rename BharatPe', 'pay:bharatpay:edit:bharatpay_display_name').row()
     .text('✏️ Rename Crypto', 'pay:cryptomus:edit:cryptomus_display_name').row()
+    .text(`📜 Deposit History: ${histLabel}`, 'pay:deposit_history_limit').row()
     .text('‹ Back', 'admin:back');
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
 }
+
+// ═══════════════════════════════════════════════════════════════════
+//  USER DEPOSIT HISTORY VISIBILITY
+// ═══════════════════════════════════════════════════════════════════
+const HIST_PRESETS = [0, 10, 20, 50, 100];
+
+function buildHistLimitUI(current) {
+  const text =
+    `📜 <b>User Deposit History</b>\n\n` +
+    `<blockquote>Controls how many past transactions a user\ncan see in their Deposit History section.\n\n` +
+    `"Show All" = user sees every transaction they ever made.</blockquote>\n\n` +
+    `Current: <b>${current > 0 ? `Last ${current} transactions` : '✅ Show All'}</b>`;
+
+  const kb = new InlineKeyboard();
+  // Row 1: Show All
+  kb.text(`${current === 0 ? '● ' : ''}✅ Show All`, `pay:set_hist:0`).row();
+  // Row 2-3: presets in pairs
+  for (let i = 1; i < HIST_PRESETS.length; i += 2) {
+    const v1 = HIST_PRESETS[i];
+    kb.text(`${current === v1 ? '● ' : ''}Last ${v1}`, `pay:set_hist:${v1}`);
+    if (HIST_PRESETS[i + 1]) {
+      const v2 = HIST_PRESETS[i + 1];
+      kb.text(`${current === v2 ? '● ' : ''}Last ${v2}`, `pay:set_hist:${v2}`);
+    }
+    kb.row();
+  }
+  // Custom button — shows current custom value if not a preset
+  const isCustom = current > 0 && !HIST_PRESETS.includes(current);
+  kb.text(`${isCustom ? `● Last ${current}` : '✏️ Custom'}`, 'pay:hist_custom').row();
+  kb.text('◀ Back', 'admin:payments');
+
+  return { text, kb };
+}
+
+composer.callbackQuery('pay:deposit_history_limit', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const current = parseInt(await settingsRepo.getSetting(ctx.dbPool, 'deposit_history_limit')) || 0;
+  const { text, kb } = buildHistLimitUI(current);
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
+});
+
+composer.callbackQuery(/^pay:set_hist:(\d+)$/, adminRequired, async (ctx) => {
+  const val = parseInt(ctx.match[1]);
+  await settingsRepo.setSetting(ctx.dbPool, 'deposit_history_limit', val, ctx.from.id);
+  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED,
+    { key: 'deposit_history_limit', value: val });
+  try { await ctx.answerCallbackQuery('✅ Updated!'); } catch {}
+  const { text, kb } = buildHistLimitUI(val);
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
+});
+
+// ── Custom number input ─────────────────────────────────────────
+composer.callbackQuery('pay:hist_custom', adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  editStates.set(ctx.chat.id, { step: 'hist_custom' });
+  await ctx.editMessageText(
+    `✏️ <b>Custom Limit</b>\n\nType the number of transactions to show:\n\n<i>Example: 25, 75, 150</i>`,
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('❌ Cancel', 'pay:deposit_history_limit') }
+  );
+});
+
 
 // ═══════════════════════════════════════════════════════════════════
 //  PAYTM SETTINGS
@@ -771,6 +840,25 @@ composer.on('message:text', async (ctx, next) => {
     const origEdit = ctx.editMessageText.bind(ctx);
     ctx.editMessageText = (text, opts) => ctx.api.editMessageText(ctx.chat.id, placeholder.message_id, text, opts);
     await showCoinList(ctx, 0, query);
+    return;
+  }
+  // ── Custom deposit history limit ─────────────────────────────────
+  if (state.step === 'hist_custom') {
+    editStates.delete(ctx.chat.id);
+    const num = parseInt(ctx.message.text.trim());
+    if (isNaN(num) || num <= 0) {
+      await ctx.reply('⚠️ Enter a positive number (e.g. 25, 75, 150).', {
+        reply_markup: new InlineKeyboard()
+          .text('🔄 Try Again', 'pay:hist_custom')
+          .text('◀ Back', 'pay:deposit_history_limit')
+      });
+      return;
+    }
+    await settingsRepo.setSetting(ctx.dbPool, 'deposit_history_limit', num, ctx.from.id);
+    ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.SETTINGS_CHANGED,
+      { key: 'deposit_history_limit', value: num });
+    const { text, kb } = buildHistLimitUI(num);
+    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
     return;
   }
 
