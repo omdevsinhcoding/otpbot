@@ -1,7 +1,7 @@
 import { Keyboard, InlineKeyboard } from 'grammy';
 import {
   BTN_GET_OTP, BTN_DEPOSIT, BTN_PROFILE, BTN_MORE,
-  BTN_SMS_CHECKER, BTN_SUPPORT, BTN_REFER_EARN, BTN_READYMADE,
+  BTN_BUY_MAIL, BTN_SUPPORT, BTN_REFER_EARN, BTN_READYMADE,
   BTN_GET_EMAIL, BTN_FAVORITE, BTN_PROMO_CODE, BTN_RETURN,
   BTN_TOP_SERVICES, BTN_API, BTN_RESELLER, BTN_ADMIN_PANEL,
   BTN_ADM_BROADCAST, BTN_ADM_USERS, BTN_ADM_FORCEJOIN, BTN_ADM_ADMINS,
@@ -15,7 +15,7 @@ import {
 export function getMainMenu(isAdmin = false) {
   const kb = new Keyboard()
     .text(BTN_GET_OTP).text(BTN_DEPOSIT).row()
-    .text(BTN_PROFILE).text(BTN_MORE).text(BTN_SMS_CHECKER).row()
+    .text(BTN_PROFILE).text(BTN_MORE).text(BTN_BUY_MAIL).row()
     .text(BTN_SUPPORT).text(BTN_REFER_EARN).row()
     .text(BTN_READYMADE);
   if (isAdmin) {

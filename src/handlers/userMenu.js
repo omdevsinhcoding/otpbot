@@ -7,7 +7,7 @@ import * as walletRepo from '../database/repositories/walletRepo.js';
 import { getMainMenu, MORE_MENU_KEYBOARD, ADMIN_PANEL_KEYBOARD, ADMIN_MENU_KEYBOARD, PAYMENTS_MENU_KEYBOARD } from '../utils/keyboard.js';
 import {
   BTN_GET_OTP, BTN_DEPOSIT, BTN_PROFILE, BTN_MORE,
-  BTN_SMS_CHECKER, BTN_SUPPORT, BTN_REFER_EARN, BTN_READYMADE,
+  BTN_BUY_MAIL, BTN_SUPPORT, BTN_REFER_EARN, BTN_READYMADE,
   BTN_GET_EMAIL, BTN_FAVORITE, BTN_PROMO_CODE, BTN_RETURN,
   BTN_TOP_SERVICES, BTN_API, BTN_RESELLER, BTN_ADMIN_PANEL,
   BTN_ADM_BROADCAST, BTN_ADM_USERS, BTN_ADM_FORCEJOIN, BTN_ADM_ADMINS,
@@ -18,6 +18,7 @@ import {
 import { escapeHtml, formatTimestamp, formatNumber } from '../utils/formatters.js';
 import { InlineKeyboard } from 'grammy';
 import logger from '../utils/logger.js';
+import * as tempMailService from '../services/tempMailService.js';
 
 const composer = new Composer();
 
@@ -156,14 +157,38 @@ composer.hears(new RegExp(`^${escRe(BTN_MORE)}$`), async (ctx) => {
   await ctx.reply('🔥 <b>More Options</b>', { parse_mode: 'HTML', reply_markup: MORE_MENU_KEYBOARD });
 });
 
-// ── 📮 SMS CHECKER ──────────────────────────────────────────────
-composer.hears(new RegExp(`^${escRe(BTN_SMS_CHECKER)}$`), async (ctx) => {
+// ── 📩 BUY MAIL (Temp Mail on main menu) ────────────────────────
+composer.hears(new RegExp(`^${escRe(BTN_BUY_MAIL)}$`), async (ctx) => {
   if (!await checkForceJoin(ctx)) return;
 
-  await ctx.reply(
-    '📮 <b>SMS Checker</b>\n\nThis feature is coming soon. Stay tuned!',
-    { parse_mode: 'HTML', reply_markup: await menuFor(ctx) }
-  );
+  try {
+    const result = await tempMailService.createTempEmail(10, 10);
+    if (!result.success) {
+      await ctx.reply(
+        '⚠️ <b>Error</b>\n\nCould not generate a temporary email. Please try again later.',
+        { parse_mode: 'HTML', reply_markup: await menuFor(ctx) }
+      );
+      return;
+    }
+
+    const kb = new InlineKeyboard()
+      .url('🌐 View Inbox In Browser', `https://temp-mail.io/en/email/${encodeURIComponent(result.email)}/token/${result.token}?utm_source=telegram-bot`)
+      .row()
+      .text('📬 Check Inbox', `tempmail:inbox:${result.email}`)
+      .text('🗑 Delete', `tempmail:del:${result.email}:${result.token}`);
+
+    await ctx.reply(
+      '📩 <b>Your Temporary Email Address</b>\n\n' +
+      `✉️ <b>Email:</b>\n<code>${escapeHtml(result.email)}</code>`,
+      { parse_mode: 'HTML', reply_markup: kb }
+    );
+  } catch (err) {
+    logger.error('Temp mail error:', err);
+    await ctx.reply(
+      '⚠️ <b>Error</b>\n\nSomething went wrong. Please try again.',
+      { parse_mode: 'HTML', reply_markup: await menuFor(ctx) }
+    );
+  }
 });
 
 // ── 🛡 SUPPORT ──────────────────────────────────────────────────
@@ -227,13 +252,37 @@ composer.hears(new RegExp(`^${escRe(BTN_RETURN)}$`), async (ctx) => {
   await ctx.reply('🏠 <b>Main Menu</b>', { parse_mode: 'HTML', reply_markup: await menuFor(ctx) });
 });
 
-// ── 📧 GET EMAIL ────────────────────────────────────────────────
+// ── 📧 TEMP MAIL (More section) ─────────────────────────────────
 composer.hears(new RegExp(`^${escRe(BTN_GET_EMAIL)}$`), async (ctx) => {
 
-  await ctx.reply(
-    '📧 <b>Get Email</b>\n\nThis feature is coming soon. Stay tuned!',
-    { parse_mode: 'HTML', reply_markup: MORE_MENU_KEYBOARD }
-  );
+  try {
+    const result = await tempMailService.createTempEmail(10, 10);
+    if (!result.success) {
+      await ctx.reply(
+        '⚠️ <b>Error</b>\n\nCould not generate a temporary email. Please try again later.',
+        { parse_mode: 'HTML', reply_markup: MORE_MENU_KEYBOARD }
+      );
+      return;
+    }
+
+    const kb = new InlineKeyboard()
+      .url('🌐 View Inbox In Browser', `https://temp-mail.io/en/email/${encodeURIComponent(result.email)}/token/${result.token}?utm_source=telegram-bot`)
+      .row()
+      .text('📬 Check Inbox', `tempmail:inbox:${result.email}`)
+      .text('🗑 Delete', `tempmail:del:${result.email}:${result.token}`);
+
+    await ctx.reply(
+      '📧 <b>Your Temporary Email Address</b>\n\n' +
+      `✉️ <b>Email:</b>\n<code>${escapeHtml(result.email)}</code>`,
+      { parse_mode: 'HTML', reply_markup: kb }
+    );
+  } catch (err) {
+    logger.error('Temp mail error:', err);
+    await ctx.reply(
+      '⚠️ <b>Error</b>\n\nSomething went wrong. Please try again.',
+      { parse_mode: 'HTML', reply_markup: MORE_MENU_KEYBOARD }
+    );
+  }
 });
 
 // ── 😊 Favorite ─────────────────────────────────────────────────
@@ -315,6 +364,87 @@ composer.hears(new RegExp(`^${escRe(BTN_ADMIN_PANEL)}$`), async (ctx) => {
     parse_mode: 'HTML',
     reply_markup: ADMIN_PANEL_KEYBOARD,
   });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  📧 TEMP MAIL CALLBACK HANDLERS
+// ═══════════════════════════════════════════════════════════════════
+
+// ── 📬 Check Inbox ──────────────────────────────────────────────
+composer.callbackQuery(/^tempmail:inbox:/, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const email = ctx.callbackQuery.data.replace('tempmail:inbox:', '');
+
+  try {
+    const result = await tempMailService.checkInbox(email);
+    if (!result.success) {
+      await ctx.reply(
+        '⚠️ <b>Error</b>\n\nCould not check inbox. The email may have expired.',
+        { parse_mode: 'HTML' }
+      );
+      return;
+    }
+
+    if (result.messages.length === 0) {
+      await ctx.reply(
+        '📭 <b>Inbox Empty</b>\n\n' +
+        `✉️ <b>Email:</b> <code>${escapeHtml(email)}</code>\n\n` +
+        '<i>No messages received yet. Try again later.</i>',
+        { parse_mode: 'HTML',
+          reply_markup: new InlineKeyboard()
+            .text('🔄 Refresh', `tempmail:inbox:${email}`)
+        }
+      );
+      return;
+    }
+
+    // Show up to 5 most recent messages
+    const msgs = result.messages.slice(0, 5);
+    let text = `📬 <b>Inbox</b> (${result.messages.length} message${result.messages.length > 1 ? 's' : ''})\n\n`;
+    text += `✉️ <b>Email:</b> <code>${escapeHtml(email)}</code>\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+
+    for (const [i, msg] of msgs.entries()) {
+      text += `\n<b>#${i + 1}</b>\n`;
+      text += `📤 <b>From:</b> ${escapeHtml(msg.from || 'Unknown')}\n`;
+      text += `📝 <b>Subject:</b> ${escapeHtml(msg.subject || '(No Subject)')}\n`;
+      if (msg.body_text) {
+        const preview = msg.body_text.substring(0, 200).trim();
+        text += `📄 <b>Preview:</b>\n<i>${escapeHtml(preview)}${msg.body_text.length > 200 ? '...' : ''}</i>\n`;
+      }
+      text += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    }
+
+    await ctx.reply(text, {
+      parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard()
+        .text('🔄 Refresh', `tempmail:inbox:${email}`)
+    });
+  } catch (err) {
+    logger.error('Temp mail inbox error:', err);
+    await ctx.reply('⚠️ Something went wrong checking inbox.', { parse_mode: 'HTML' });
+  }
+});
+
+// ── 🗑 Delete Temp Email ────────────────────────────────────────
+composer.callbackQuery(/^tempmail:del:/, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const parts = ctx.callbackQuery.data.replace('tempmail:del:', '').split(':');
+  const email = parts[0];
+  const token = parts.slice(1).join(':');
+
+  try {
+    await tempMailService.deleteTempEmail(email, token);
+    try { await ctx.deleteMessage(); } catch { /* ignore */ }
+    await ctx.reply(
+      '🗑 <b>Email Deleted</b>\n\n' +
+      `<code>${escapeHtml(email)}</code> has been deleted.`,
+      { parse_mode: 'HTML' }
+    );
+  } catch (err) {
+    logger.error('Temp mail delete error:', err);
+    await ctx.reply('⚠️ Could not delete email.', { parse_mode: 'HTML' });
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════════

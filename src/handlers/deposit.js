@@ -1343,8 +1343,8 @@ composer.callbackQuery('deposit:close', async (ctx) => {
 // Reply keyboard button texts — if user presses these, clear state & forward
 const MENU_BUTTONS = new Set([
   '📠 GET OTP', '💰 DEPOSIT', '👤 PROFILE', '🔥 MORE',
-  '📮 SMS CHECKER', '🛡 SUPPORT', '🎁 REFER & EARN', '💎 READYMADE ACCOUNT',
-  '📧 GET EMAIL', '😊 Favorite', 'Promo Code 👾', '◀️ RETURN',
+  '📩 BUY MAIL', '🎧 SUPPORT', '🎁 REFER & EARN', '💎 READYMADE ACCOUNT',
+  '📧 TEMP MAIL', '😊 Favorite', 'Promo Code 👾', '◀️ RETURN',
   '📊 TOP SERVICES', '⚙️ API', '🔮 Reseller Account', '🔧 ADMIN PANEL',
   // Admin static buttons
   '📢 Broadcast', '👥 Users', '🔗 Force Join', '👑 Admins',

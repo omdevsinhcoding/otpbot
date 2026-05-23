@@ -66,13 +66,13 @@ export const BTN_GET_OTP = "⭐ GET OTP";
 export const BTN_DEPOSIT = "💰 DEPOSIT";
 export const BTN_PROFILE = "👤 PROFILE";
 export const BTN_MORE = "🔥 MORE";
-export const BTN_SMS_CHECKER = "📩 BUY MAIL";
+export const BTN_BUY_MAIL = "📩 BUY MAIL";
 export const BTN_SUPPORT = "🎧 SUPPORT";
 export const BTN_REFER_EARN = "🎁 REFER & EARN";
 export const BTN_READYMADE = "💎 READYMADE ACCOUNT";
 
 // ── MORE sub-menu button labels ──────────────────────────────────────
-export const BTN_GET_EMAIL = "📧 GET EMAIL";
+export const BTN_GET_EMAIL = "📧 TEMP MAIL";
 export const BTN_FAVORITE = "😊 Favorite";
 export const BTN_PROMO_CODE = "Promo Code 🔮";
 export const BTN_RETURN = "◀️ RETURN";
@@ -118,7 +118,7 @@ export const REPLY_KEYBOARD_BUTTONS = new Set([
   BTN_DEPOSIT,
   BTN_PROFILE,
   BTN_MORE,
-  BTN_SMS_CHECKER,
+  BTN_BUY_MAIL,
   BTN_SUPPORT,
   BTN_REFER_EARN,
   BTN_READYMADE,
