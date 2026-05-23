@@ -6,7 +6,7 @@ import * as adminRepo from '../database/repositories/adminRepo.js';
 import * as welcomeRepo from '../database/repositories/welcomeRepo.js';
 import * as settingsRepo from '../database/repositories/settingsRepo.js';
 import { getMainMenu, buildInlineButtons } from '../utils/keyboard.js';
-import { replaceWelcomePlaceholders } from '../utils/formatters.js';
+import { replaceWelcomePlaceholders, escapeHtml } from '../utils/formatters.js';
 import { DEFAULT_WELCOME_TEXT } from '../utils/constants.js';
 import logger from '../utils/logger.js';
 
@@ -129,16 +129,32 @@ composer.command('start', async (ctx) => {
     try {
       const refEnabled = await settingsRepo.getSetting(pool, 'referral_enabled');
       if (refEnabled) {
+        // Notify the REFERRER with the actual name
+        const joinerName = escapeHtml([ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ') || 'Someone');
         const commPct = parseFloat(await settingsRepo.getSetting(pool, 'referral_commission_pct')) || 10;
         const notifText =
           `🎉 <b>New Referral!</b>\n\n` +
-          `👤 A user joined using your link!\n` +
-          `💰 You'll earn <b>${commPct}%</b> on their deposits!\n\n` +
+          `👤 <b>${joinerName}</b> joined using your link!\n` +
+          `🤑 You'll earn <b>${commPct}%</b> on their deposits!\n\n` +
           `🔥 <i>Keep sharing to earn more!</i>`;
         await ctx.api.sendMessage(referredBy, notifText, { parse_mode: 'HTML' });
       }
     } catch {
       // Notification failure is non-critical
+    }
+
+    // Notify the NEW USER that they joined via referral
+    try {
+      const referrerUser = await userRepo.getUser(pool, referredBy);
+      const refName = escapeHtml(referrerUser?.full_name || 'your friend');
+      const refNotif =
+        `🎉 <b>Welcome!</b>\n\n` +
+        `🔗 You joined via <b>${refName}</b>'s referral link!\n` +
+        `🎁 Your friend will receive a reward for inviting you.\n\n` +
+        `🛍 <i>Start shopping and enjoy the deals!</i>`;
+      await ctx.reply(refNotif, { parse_mode: 'HTML' });
+    } catch {
+      // Non-critical
     }
   }
 

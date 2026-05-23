@@ -1,10 +1,10 @@
 /**
  * 🎁 REFERRAL ADMIN PANEL — Clean, minimal.
  *
- * Only 4 sections:
+ * 4 sections:
  * 1. Dashboard (toggle + summary)
  * 2. Edit Commission %
- * 3. Manage Referrals (user lookup + full profile + remove)
+ * 3. Manage Referrals (user lookup + individual remove buttons like lootpaglubot)
  * 4. Analytics
  */
 import { Composer, InlineKeyboard } from 'grammy';
@@ -34,8 +34,6 @@ async function showDashboard(ctx) {
   const enabled = await settingsRepo.getSetting(pool, 'referral_enabled');
   const commPct = parseFloat(await settingsRepo.getSetting(pool, 'referral_commission_pct')) || 10;
   const prefix = await settingsRepo.getSetting(pool, 'referral_code_prefix') || 'ERRORRO';
-
-  // Quick stats
   const stats = await referralRepo.getAnalytics(pool);
 
   const onoff = enabled ? '🟢 ON' : '🔴 OFF';
@@ -49,7 +47,7 @@ async function showDashboard(ctx) {
     `💰 <b>Total Distributed:</b> ₹${formatNumber(stats.totalRewardsDistributed)}`;
 
   const kb = new InlineKeyboard()
-    .text(toggleBtn, 'refadm:toggle').text(`💰 Edit Commission`, 'refadm:commission').row()
+    .text(toggleBtn, 'refadm:toggle').text('💰 Edit Commission', 'refadm:commission').row()
     .text('👥 Manage Referrals', 'refadm:manage').text('📊 Analytics', 'refadm:analytics').row()
     .text('◀ Back', 'admin:back');
 
@@ -110,21 +108,27 @@ composer.callbackQuery('refadm:custompct', adminRequired, async (ctx) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-//  MANAGE REFERRALS — User lookup + full profile
+//  MANAGE REFERRALS — Lootpaglubot-style user lookup
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery('refadm:manage', adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   states.set(ctx.chat.id, { step: 'manage_lookup' });
 
   const text =
-    `👥 <b>Manage Referrals</b>\n\n` +
-    `Enter a User ID to look up their referral details:`;
-  const kb = new InlineKeyboard().text('◀ Back', 'admin:referral');
+    `📋 <b>Manage Referrals</b>\n\n` +
+    `Send the <b>Telegram ID</b> of the referrer whose referrals you want to view or delete:\n\n` +
+    `<i>Tip: Use /id in the bot to get any user's ID</i>`;
+  const kb = new InlineKeyboard()
+    .text('◀ Back', 'admin:referral').text('❌ Cancel', 'admin:referral');
 
   try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
   catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
 });
 
+/**
+ * Show full referral profile with individual remove buttons
+ * Matches lootpaglubot's "Manage Referrals" exactly.
+ */
 async function showUserReferralProfile(ctx, userId) {
   const pool = ctx.dbPool;
   const user = await userRepo.getUser(pool, userId);
@@ -135,66 +139,99 @@ async function showUserReferralProfile(ctx, userId) {
     return;
   }
 
+  const userName = escapeHtml(user.full_name || 'Unknown');
   const stats = await referralRepo.getUserReferralStats(pool, userId);
-  const refCode = user.referral_code || 'N/A';
+  const referrals = await referralRepo.getReferralsByUser(pool, userId, 20, 0);
+  const walletBalance = stats.wallet ? parseFloat(stats.wallet.balance) : 0;
 
-  // Get referrer name
-  let referrerText = 'None';
+  // Build text
+  let text = `👤 <b>Referrals for</b> <code>${userId}</code> (${userName})\n\n`;
+
+  // Show referrer info
   if (user.referred_by) {
     const referrer = await userRepo.getUser(pool, user.referred_by);
-    referrerText = referrer ? `${escapeHtml(referrer.full_name || 'Unknown')} [${user.referred_by}]` : `[${user.referred_by}]`;
-  }
-
-  // Get invited users list (first 15)
-  const referrals = await referralRepo.getReferralsByUser(pool, userId, 15, 0);
-  const walletBalance = stats.wallet ? parseFloat(stats.wallet.balance) : 0;
-  const isFrozen = stats.wallet?.is_frozen || false;
-
-  let text =
-    `🔍 <b>Referral Details</b>\n\n` +
-    `👤 <b>Name:</b> ${escapeHtml(user.full_name || 'N/A')}\n` +
-    `🆔 <b>User ID:</b> <code>${userId}</code>\n` +
-    `🔑 <b>Code:</b> <code>${refCode}</code>\n` +
-    `👥 <b>Referred By:</b> ${referrerText}\n\n` +
-    `━━━ <b>Referral Stats</b> ━━━\n\n` +
-    `👥 <b>Total Referrals:</b> ${formatNumber(stats.totalReferrals)}\n` +
-    `✅ <b>Successful:</b> ${formatNumber(stats.successfulReferrals)}\n` +
-    `🤑 <b>Total Earned:</b> ₹${formatNumber(stats.totalEarned)}\n` +
-    `💰 <b>Wallet Balance:</b> ₹${formatNumber(walletBalance)}\n` +
-    `🧊 <b>Frozen:</b> ${isFrozen ? '🔴 YES' : '🟢 No'}\n`;
-
-  if (referrals.length > 0) {
-    text += `\n━━━ <b>Invited Users</b> ━━━\n\n`;
-    for (let i = 0; i < referrals.length; i++) {
-      const r = referrals[i];
-      const name = escapeHtml(r.full_name || r.username || 'Unknown');
-      const status = parseInt(r.deposits) > 0 ? '✅ Active' : '⏳ Pending';
-      const earned = parseFloat(r.earned) > 0 ? ` — ₹${formatNumber(r.earned)}` : '';
-      const date = new Date(r.first_seen).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
-      text += `#${i + 1} ${name} — ${status}${earned}\n`;
-      text += `     <i>${date}</i>\n`;
-    }
-    if (stats.totalReferrals > 15) {
-      text += `\n<i>... and ${stats.totalReferrals - 15} more</i>\n`;
-    }
-  }
-
-  const kb = new InlineKeyboard();
-  if (stats.totalReferrals > 0) {
-    kb.text('❌ Remove All Referrals', `refadm:remove_confirm:${userId}`).row();
-  }
-  if (isFrozen) {
-    kb.text('🔓 Unfreeze Wallet', `refadm:unfreeze:${userId}`).row();
+    const refName = referrer ? escapeHtml(referrer.full_name || 'Unknown') : 'Unknown';
+    text += `🔗 <b>Referred by:</b> ${user.referred_by} (${refName})\n\n`;
   } else {
-    kb.text('🧊 Freeze Wallet', `refadm:freeze:${userId}`).row();
+    text += `🔗 <b>Referred by:</b> None\n\n`;
   }
-  kb.text('🔍 Search Another', 'refadm:manage').text('◀ Back', 'admin:referral');
+
+  // Show referred users
+  text += `👥 <b>Referred ${referrals.length} user(s):</b>\n`;
+  if (referrals.length > 0) {
+    for (const r of referrals) {
+      const name = escapeHtml(r.full_name || r.username || 'Unknown');
+      const status = parseInt(r.deposits) > 0 ? 'active' : 'joined';
+      const earned = parseFloat(r.earned) > 0 ? `, comm=₹${formatNumber(r.earned)}` : ', comm=₹0';
+      text += `  • <code>${r.user_id}</code> ${name} — ${status}${earned}\n`;
+    }
+  } else {
+    text += `  <i>No referred users.</i>\n`;
+  }
+
+  text += `\n💰 <b>Wallet:</b> ₹${formatNumber(walletBalance)} | <b>Total Earned:</b> ₹${formatNumber(stats.totalEarned)}\n`;
+  text += `\n<i>Removing a referral reverses wallet credit and lets the user re-refer.</i>`;
+
+  // Build buttons — like lootpaglubot
+  const kb = new InlineKeyboard();
+
+  // Remove referrer button (if they were referred by someone)
+  if (user.referred_by) {
+    const referrer = await userRepo.getUser(pool, user.referred_by);
+    const refLabel = referrer ? escapeHtml(referrer.full_name || 'Unknown') : 'Unknown';
+    kb.text(`🗑 Remove referrer (${user.referred_by}) — let user re-refer`, `refadm:rmref:${userId}:${user.referred_by}`).row();
+  }
+
+  // Individual remove buttons for each referred user
+  for (const r of referrals) {
+    const name = escapeHtml(r.full_name || r.username || 'Unknown');
+    kb.text(`🗑 Remove ${name} (${r.user_id})`, `refadm:rmone:${userId}:${r.user_id}`).row();
+  }
+
+  // Remove ALL outgoing referrals
+  if (referrals.length > 0) {
+    kb.text(`❌ Remove ALL outgoing referrals (reset)`, `refadm:rmall_confirm:${userId}`).row();
+  }
+
+  kb.text('◀ Back', 'admin:referral');
 
   await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
 }
 
-// ── Remove All Referrals ────────────────────────────────────────
-composer.callbackQuery(/^refadm:remove_confirm:(\d+)$/, adminRequired, async (ctx) => {
+// ── Remove referrer (let user be re-referred) ───────────────────
+composer.callbackQuery(/^refadm:rmref:(\d+):(\d+)$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const userId = parseInt(ctx.match[1]);
+  const referrerId = parseInt(ctx.match[2]);
+  const pool = ctx.dbPool;
+
+  await pool.query('UPDATE users SET referred_by = NULL WHERE user_id = $1', [userId]);
+
+  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.REFERRAL_REVERSED,
+    { action: 'remove_referrer', user_id: userId, referrer_id: referrerId });
+
+  try { await ctx.answerCallbackQuery({ text: `✅ Referrer removed. User ${userId} can be re-referred.`, show_alert: true }); } catch {}
+  await showUserReferralProfile(ctx, userId);
+});
+
+// ── Remove individual referred user ─────────────────────────────
+composer.callbackQuery(/^refadm:rmone:(\d+):(\d+)$/, adminRequired, async (ctx) => {
+  try { await ctx.answerCallbackQuery(); } catch {}
+  const referrerId = parseInt(ctx.match[1]);
+  const referredId = parseInt(ctx.match[2]);
+  const pool = ctx.dbPool;
+
+  await pool.query('UPDATE users SET referred_by = NULL WHERE user_id = $1 AND referred_by = $2', [referredId, referrerId]);
+
+  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.REFERRAL_REVERSED,
+    { action: 'remove_single_referral', referrer_id: referrerId, referred_id: referredId });
+
+  try { await ctx.answerCallbackQuery({ text: `✅ Removed referral for ${referredId}`, show_alert: true }); } catch {}
+  await showUserReferralProfile(ctx, referrerId);
+});
+
+// ── Remove ALL outgoing referrals (confirmation) ────────────────
+composer.callbackQuery(/^refadm:rmall_confirm:(\d+)$/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const userId = parseInt(ctx.match[1]);
   const user = await userRepo.getUser(ctx.dbPool, userId);
@@ -209,14 +246,14 @@ composer.callbackQuery(/^refadm:remove_confirm:(\d+)$/, adminRequired, async (ct
     `<i>This action cannot be undone!</i>`;
 
   const kb = new InlineKeyboard()
-    .text('✅ Yes, Remove All', `refadm:remove_exec:${userId}`).row()
+    .text('✅ Yes, Remove All', `refadm:rmall_exec:${userId}`).row()
     .text('❌ Cancel', 'admin:referral');
 
   try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
   catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
 });
 
-composer.callbackQuery(/^refadm:remove_exec:(\d+)$/, adminRequired, async (ctx) => {
+composer.callbackQuery(/^refadm:rmall_exec:(\d+)$/, adminRequired, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   const userId = parseInt(ctx.match[1]);
   const pool = ctx.dbPool;
@@ -231,27 +268,6 @@ composer.callbackQuery(/^refadm:remove_exec:(\d+)$/, adminRequired, async (ctx) 
 
   try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
   catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
-});
-
-// ── Freeze / Unfreeze ───────────────────────────────────────────
-composer.callbackQuery(/^refadm:freeze:(\d+)$/, adminRequired, async (ctx) => {
-  try { await ctx.answerCallbackQuery(); } catch {}
-  const userId = parseInt(ctx.match[1]);
-  await referralRepo.freezeWallet(ctx.dbPool, userId);
-  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.REFERRAL_FRAUD,
-    { action: 'freeze_wallet', target_user_id: userId });
-  try { await ctx.answerCallbackQuery({ text: `🧊 Wallet frozen for ${userId}`, show_alert: true }); } catch {}
-  await showUserReferralProfile(ctx, userId);
-});
-
-composer.callbackQuery(/^refadm:unfreeze:(\d+)$/, adminRequired, async (ctx) => {
-  try { await ctx.answerCallbackQuery(); } catch {}
-  const userId = parseInt(ctx.match[1]);
-  await referralRepo.unfreezeWallet(ctx.dbPool, userId);
-  ctx.tracker?.trackAdminFireAndForget(ctx.from.id, ctx.from.username, ActionType.REFERRAL_FRAUD,
-    { action: 'unfreeze_wallet', target_user_id: userId });
-  try { await ctx.answerCallbackQuery({ text: `✅ Wallet unfrozen for ${userId}`, show_alert: true }); } catch {}
-  await showUserReferralProfile(ctx, userId);
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -313,7 +329,7 @@ composer.on('message:text', async (ctx, next) => {
   if (state.step === 'manage_lookup') {
     const userId = parseInt(input);
     if (isNaN(userId)) {
-      await ctx.reply('⚠️ Enter a valid user ID:');
+      await ctx.reply('⚠️ Enter a valid user ID (numbers only):');
       return;
     }
     states.delete(ctx.chat.id);
