@@ -12,12 +12,16 @@ import {
 } from './constants.js';
 
 // ── User main menu (Dynamic — adds Admin button for admins) ─────────
-export function getMainMenu(isAdmin = false) {
+export function getMainMenu(isAdmin = false, referralEnabled = true) {
   const kb = new Keyboard()
     .text(BTN_GET_OTP).text(BTN_DEPOSIT).row()
-    .text(BTN_PROFILE).text(BTN_MORE).text(BTN_BUY_MAIL).row()
-    .text(BTN_SUPPORT).text(BTN_REFER_EARN).row()
-    .text(BTN_READYMADE);
+    .text(BTN_PROFILE).text(BTN_MORE).text(BTN_BUY_MAIL).row();
+  if (referralEnabled) {
+    kb.text(BTN_SUPPORT).text(BTN_REFER_EARN).row();
+  } else {
+    kb.text(BTN_SUPPORT).row();
+  }
+  kb.text(BTN_READYMADE);
   if (isAdmin) {
     kb.row().text(BTN_ADMIN_PANEL);
   }

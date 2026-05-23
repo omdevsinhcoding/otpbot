@@ -18,7 +18,8 @@ const composer = new Composer();
 async function sendWelcomeAndMenu(ctx) {
   const pool = ctx.dbPool;
   const isAdmin = await adminRepo.isAdmin(pool, ctx.from.id);
-  const mainMenu = getMainMenu(isAdmin);
+  const refEnabled = await settingsRepo.getSetting(pool, 'referral_enabled');
+  const mainMenu = getMainMenu(isAdmin, !!refEnabled);
 
   try {
     const welcomeEnabled = await settingsRepo.getSetting(pool, 'welcome_enabled');
@@ -122,6 +123,24 @@ composer.command('start', async (ctx) => {
     referralCode,
     referredBy,
   });
+
+  // ── Notify referrer when new user joins via their link ──────────
+  if (referredBy && !existingUser) {
+    try {
+      const refEnabled = await settingsRepo.getSetting(pool, 'referral_enabled');
+      if (refEnabled) {
+        const commPct = parseFloat(await settingsRepo.getSetting(pool, 'referral_commission_pct')) || 10;
+        const notifText =
+          `🎉 <b>New Referral!</b>\n\n` +
+          `👤 A user joined using your link!\n` +
+          `💰 You'll earn <b>${commPct}%</b> on their deposits!\n\n` +
+          `🔥 <i>Keep sharing to earn more!</i>`;
+        await ctx.api.sendMessage(referredBy, notifText, { parse_mode: 'HTML' });
+      }
+    } catch {
+      // Notification failure is non-critical
+    }
+  }
 
   // ── Force join gate ────────────────────────────────────────────
   if (!await checkForceJoin(ctx)) return;

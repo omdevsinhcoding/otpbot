@@ -8,6 +8,7 @@
  */
 import { Composer } from 'grammy';
 import * as adminRepo from '../../database/repositories/adminRepo.js';
+import * as settingsRepo from '../../database/repositories/settingsRepo.js';
 import { getMainMenu } from '../../utils/keyboard.js';
 
 // ── Shared helpers (imported by feature files) ──────────────────
@@ -17,10 +18,11 @@ export function escRe(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** Get the correct main menu keyboard (checks admin status). */
+/** Get the correct main menu keyboard (checks admin + referral status). */
 export async function menuFor(ctx) {
   const isAdmin = await adminRepo.isAdmin(ctx.dbPool, ctx.from.id);
-  return getMainMenu(isAdmin);
+  const refEnabled = await settingsRepo.getSetting(ctx.dbPool, 'referral_enabled');
+  return getMainMenu(isAdmin, !!refEnabled);
 }
 
 // ── Import all feature handlers ─────────────────────────────────
