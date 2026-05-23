@@ -614,6 +614,7 @@ composer.on('message:text', async (ctx, next) => {
 
     const updated = await depositRulesRepo.getRule(pool, id);
     if (updated) await autoTitle(pool, updated);
+    try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(pool); } catch {}
     states.delete(ctx.chat.id);
     await ctx.reply('✅ Updated!');
     await showEdit(ctx, id);
@@ -752,6 +753,7 @@ composer.callbackQuery(/^bset:pct:\d+:\d+$/, adminRequired, async (ctx) => {
   await depositRulesRepo.updateRule(ctx.dbPool, id, { percentage: pct });
   const r = await depositRulesRepo.getRule(ctx.dbPool, id);
   if (r) await autoTitle(ctx.dbPool, r);
+  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch {}
   await showEdit(ctx, id);
 });
 
@@ -789,6 +791,7 @@ composer.callbackQuery(/^bset:amt:\d+:\d+$/, adminRequired, async (ctx) => {
   else await depositRulesRepo.updateRule(ctx.dbPool, id, { min_deposit: amt });
   const updated = await depositRulesRepo.getRule(ctx.dbPool, id);
   if (updated) await autoTitle(ctx.dbPool, updated);
+  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch {}
   await showEdit(ctx, id);
 });
 
@@ -812,6 +815,7 @@ composer.callbackQuery(/^bset:min:\d+:\d+$/, adminRequired, async (ctx) => {
   await depositRulesRepo.updateRule(ctx.dbPool, id, { min_deposit: amt });
   const r = await depositRulesRepo.getRule(ctx.dbPool, id);
   if (r) await autoTitle(ctx.dbPool, r);
+  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch {}
   await showEdit(ctx, id);
 });
 
@@ -835,6 +839,7 @@ composer.callbackQuery(/^bset:days:\d+:\d+$/, adminRequired, async (ctx) => {
   await depositRulesRepo.updateRule(ctx.dbPool, id, { rolling_period_days: days });
   const r = await depositRulesRepo.getRule(ctx.dbPool, id);
   if (r) await autoTitle(ctx.dbPool, r);
+  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch {}
   await showEdit(ctx, id);
 });
 
@@ -861,6 +866,7 @@ composer.callbackQuery(/^bset:roll:\d+:\d+$/, adminRequired, async (ctx) => {
   await depositRulesRepo.updateRule(ctx.dbPool, id, { rolling_30d_min: amt });
   const r = await depositRulesRepo.getRule(ctx.dbPool, id);
   if (r) await autoTitle(ctx.dbPool, r);
+  try { const { updateRulesPage } = await import('../services/telegraphService.js'); await updateRulesPage(ctx.dbPool); } catch {}
   await showEdit(ctx, id);
 });
 
