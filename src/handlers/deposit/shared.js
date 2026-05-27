@@ -139,6 +139,6 @@ export async function processReferralOnDeposit(pool, botApi, userId, depositAmou
     const { processReferralReward } = await import('../../services/referralService.js');
     await processReferralReward(pool, botApi, userId, depositAmount, orderId);
   } catch (err) {
-    logger.debug(`[Referral] Reward processing failed (non-blocking): ${err.message}`);
+    logger.debug(`[Ref] processing failed: ${err.message}`);
   }
 }

@@ -43,7 +43,7 @@ export async function processReferralReward(pool, botApi, userId, depositAmount,
 
     // 3. Self-referral guard (should never happen, but be safe)
     if (referrerId === userId) {
-      logger.warn(`[Referral] Self-referral detected: ${userId}`);
+      logger.warn(`[Ref] self-referral: ${userId}`);
       await referralRepo.addFraudFlag(pool, userId, 'self_referral', {
         message: 'Self-referral detected during reward processing',
       });
@@ -56,7 +56,7 @@ export async function processReferralReward(pool, botApi, userId, depositAmount,
 
     // 5. Check circular referral (A→B and B→A)
     if (referrer.referred_by === userId) {
-      logger.warn(`[Referral] Circular referral: ${userId} ↔ ${referrerId}`);
+      logger.warn(`[Ref] circular: ${userId} ↔ ${referrerId}`);
       await referralRepo.addFraudFlag(pool, userId, 'circular_referral', {
         message: `Circular referral detected: ${userId} ↔ ${referrerId}`,
         partner: referrerId,
@@ -67,14 +67,14 @@ export async function processReferralReward(pool, botApi, userId, depositAmount,
     // 6. Check referrer wallet is not frozen
     const refWallet = await referralRepo.getReferralWallet(pool, referrerId);
     if (refWallet?.is_frozen) {
-      logger.debug(`[Referral] Referrer ${referrerId} wallet is frozen, skipping reward`);
+      logger.debug(`[Ref] frozen wallet: ${referrerId}`);
       return;
     }
 
     // 7. Check duplicate (belt-and-suspenders — unique index also prevents this)
     const alreadyRewarded = await referralRepo.hasRewardForOrder(pool, referrerId, orderId);
     if (alreadyRewarded) {
-      logger.debug(`[Referral] Duplicate reward attempt for order ${orderId}`);
+      logger.debug(`[Ref] dup order: ${orderId}`);
       return;
     }
 
@@ -94,11 +94,11 @@ export async function processReferralReward(pool, botApi, userId, depositAmount,
     });
 
     if (!reward) {
-      logger.debug(`[Referral] Reward not credited (likely duplicate) for order ${orderId}`);
+      logger.debug(`[Ref] dup blocked: ${orderId}`);
       return;
     }
 
-    logger.info(`[Referral] ✅ Reward ₹${rewardAmount} → user ${referrerId} (from deposit by ${userId}, order ${orderId})`);
+    logger.debug(`[Ref] +₹${rewardAmount} → ${referrerId} (dep ${userId})`);
 
     // 10. Send notification to referrer (matching screenshot style)
     try {
@@ -116,11 +116,11 @@ export async function processReferralReward(pool, botApi, userId, depositAmount,
       await botApi.sendMessage(referrerId, notifText, { parse_mode: 'HTML' });
     } catch (err) {
       // Notification failure is not critical — reward is already credited
-      logger.debug(`[Referral] Notification to ${referrerId} failed: ${err.message}`);
+      logger.debug(`[Ref] notif failed: ${referrerId}`);
     }
 
   } catch (err) {
     // NEVER let referral processing block deposit success
-    logger.error(`[Referral] processReferralReward error: ${err.message}`);
+    logger.error(`[Ref] reward error: ${err.message}`);
   }
 }
