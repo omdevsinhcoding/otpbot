@@ -56,7 +56,7 @@ async function showReferralCard(ctx, edit = false) {
   // Stats
   const totalRefs = await referralRepo.getTotalReferralCount(pool, userId);
   const wallet = await referralRepo.getReferralWallet(pool, userId);
-  const totalEarned = wallet ? parseFloat(wallet.total_earned) : 0;
+  const walletBalance = wallet ? parseFloat(wallet.balance) : 0;
 
   const botInfo = await ctx.api.getMe();
   const refLink = `https://t.me/${botInfo.username}?start=${refCode}`;
@@ -71,7 +71,7 @@ async function showReferralCard(ctx, edit = false) {
     `🔑 <b>Your Referral Code:</b> <code>${refCode}</code>\n` +
     `🔗 <b>Your Referral Link:</b>\n` +
     `<code>${refLink}</code>\n\n` +
-    `💰 <b>Referral Balance (${commPct}% On Deposits):</b> ₹${formatNumber(totalEarned)}\n` +
+    `💰 <b>Referral Balance (${commPct}% On Deposits):</b> ₹${formatNumber(walletBalance)}\n` +
     `👥 <b>Total Referrals:</b> ${formatNumber(totalRefs)}`;
 
   const kb = new InlineKeyboard();
@@ -224,7 +224,12 @@ composer.on('message:text', async (ctx, next) => {
 
     const refName = escapeHtml(referrer.full_name || 'a user');
     await ctx.reply(
-      `✅ <b>Success!</b>\n\nYou've been referred by <b>${refName}</b>! 🎉`,
+      `🔗 <b>𝗥𝗲𝗳𝗲𝗿𝗿𝗮𝗹 𝗔𝗰𝘁𝗶𝘃𝗮𝘁𝗲𝗱!</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `👤 You've been referred by <b>${refName}</b>!\n` +
+      `🎁 Your friend will earn rewards on your deposits\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━━\n` +
+      `🛍 <i>Start shopping and enjoy the deals!</i> ✨`,
       { parse_mode: 'HTML', reply_markup: kb }
     );
 
@@ -235,10 +240,12 @@ composer.on('message:text', async (ctx, next) => {
         const commPct = parseFloat(await settingsRepo.getSetting(pool, 'referral_commission_pct')) || 10;
         const joinerName = escapeHtml([ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ') || 'Someone');
         const notifText =
-          `🎉 <b>New Referral!</b>\n\n` +
-          `👤 <b>${joinerName}</b> joined using your code!\n` +
-          `🤑 You'll earn <b>${commPct}%</b> on their deposits!\n\n` +
-          `🔥 <i>Keep sharing to earn more!</i>`;
+          `🎊 <b>𝗡𝗲𝘄 𝗥𝗲𝗳𝗲𝗿𝗿𝗮𝗹 𝗔𝗹𝗲𝗿𝘁!</b>\n` +
+          `━━━━━━━━━━━━━━━━━━━━━\n\n` +
+          `👤 <b>${joinerName}</b> used your referral code!\n` +
+          `💰 You'll earn <b>${commPct}%</b> commission on their every deposit\n\n` +
+          `━━━━━━━━━━━━━━━━━━━━━\n` +
+          `🔥 <i>Keep sharing to earn more!</i> 💸`;
         await ctx.api.sendMessage(referrer.user_id, notifText, { parse_mode: 'HTML' });
       }
     } catch { /* notification failure is non-critical */ }

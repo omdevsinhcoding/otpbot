@@ -7,6 +7,8 @@ export async function upsertUser(pool, { userId, username, fullName, languageCod
        full_name = COALESCE(EXCLUDED.full_name, users.full_name),
        language_code = COALESCE(EXCLUDED.language_code, users.language_code),
        is_premium = EXCLUDED.is_premium,
+       referral_code = COALESCE(users.referral_code, EXCLUDED.referral_code),
+       referred_by = COALESCE(users.referred_by, EXCLUDED.referred_by),
        last_active = NOW(),
        is_active = TRUE
      RETURNING *`,

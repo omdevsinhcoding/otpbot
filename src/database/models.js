@@ -356,8 +356,7 @@ export async function initDb(pool) {
 
   // Migrate old referral codes to new PREFIX-XXXXXXXX format
   try {
-    const prefixRow = await pool.query(`SELECT value FROM bot_settings WHERE key = 'referral_code_prefix'`);
-    const prefix = prefixRow.rows[0]?.value || 'ERRORRO';
+    const prefix = 'ERRORRO'; // Always use ERRORRO — never changes
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     // Find users with old-format codes (not matching PREFIX-XXXXXXXX)
     const { rows: oldUsers } = await pool.query(

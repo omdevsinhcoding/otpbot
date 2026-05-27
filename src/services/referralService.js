@@ -102,14 +102,18 @@ export async function processReferralReward(pool, botApi, userId, depositAmount,
 
     // 10. Send notification to referrer (matching screenshot style)
     try {
-      const { getBalance } = await import('../database/repositories/walletRepo.js');
-      const mainBal = await getBalance(pool, referrerId);
+      const depositorName = user.full_name || 'A referred user';
+      const { escapeHtml: esc } = await import('../utils/formatters.js');
+      const refWalletAfter = await referralRepo.getReferralWallet(pool, referrerId);
+      const walletBal = refWalletAfter ? parseFloat(refWalletAfter.balance) : rewardAmount;
       const notifText =
-        `🎉 <b>New Referral!</b>\n\n` +
-        `👤 A referred user made a deposit!\n` +
-        `🤑 ₹${formatNumber(rewardAmount)} added to your wallet!\n` +
-        `💰 Balance: ₹${formatNumber(mainBal)}\n\n` +
-        `🔥 <i>Keep sharing to earn more!</i>`;
+        `💸 <b>𝗥𝗲𝗳𝗲𝗿𝗿𝗮𝗹 𝗘𝗮𝗿𝗻𝗶𝗻𝗴!</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `👤 <b>${esc(depositorName)}</b> made a deposit!\n` +
+        `🤑 ₹${formatNumber(rewardAmount)} commission credited\n` +
+        `💰 Referral Balance: ₹${formatNumber(walletBal)}\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━━\n` +
+        `🔥 <i>Keep sharing to earn more!</i> 💸`;
       await botApi.sendMessage(referrerId, notifText, { parse_mode: 'HTML' });
     } catch (err) {
       // Notification failure is not critical — reward is already credited

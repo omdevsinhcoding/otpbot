@@ -78,13 +78,13 @@ composer.command('start', async (ctx) => {
   let referredBy = null;
   const payload = ctx.match;
   if (payload) {
-    let refCode = null;
+    // Accept any referral code format:
+    //  - New format: PREFIX-XXXXXXXX (e.g. ERRORRO-PTMG7X77)
+    //  - Legacy: ref_<code> (strip the ref_ prefix)
+    //  - Any other direct code lookup
+    let refCode = payload;
     if (payload.startsWith('ref_')) {
-      // Legacy format: ref_<code>
       refCode = payload.slice(4);
-    } else if (/^[A-Z0-9]+-[A-Z0-9]{8}$/.test(payload)) {
-      // New format: PREFIX-XXXXXXXX (the entire payload IS the code)
-      refCode = payload;
     }
     if (refCode) {
       try {
@@ -107,8 +107,7 @@ composer.command('start', async (ctx) => {
   if (!referralCode) {
     try {
       const { generateUniqueCode } = await import('../database/repositories/referralRepo.js');
-      const prefix = await settingsRepo.getSetting(pool, 'referral_code_prefix') || 'ERRORRO';
-      referralCode = await generateUniqueCode(pool, prefix);
+      referralCode = await generateUniqueCode(pool, 'ERRORRO');
     } catch {
       referralCode = `${ctx.from.id.toString(36)}${crypto.randomBytes(3).toString('hex')}`;
     }
@@ -124,35 +123,41 @@ composer.command('start', async (ctx) => {
     referredBy,
   });
 
-  // ── Notify referrer when new user joins via their link ──────────
-  if (referredBy && !existingUser) {
+  // ── Notify both users when referral link is used ────────────────
+  // Fire if: referredBy was resolved AND the user didn't already have a referrer
+  const hadReferrerBefore = existingUser?.referred_by;
+  if (referredBy && !hadReferrerBefore) {
     try {
       const refEnabled = await settingsRepo.getSetting(pool, 'referral_enabled');
       if (refEnabled) {
-        // Notify the REFERRER with the actual name
+        // ── Notify the REFERRER ──
         const joinerName = escapeHtml([ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ') || 'Someone');
         const commPct = parseFloat(await settingsRepo.getSetting(pool, 'referral_commission_pct')) || 10;
-        const notifText =
-          `🎉 <b>New Referral!</b>\n\n` +
+        const referrerNotif =
+          `🎊 <b>𝗡𝗲𝘄 𝗥𝗲𝗳𝗲𝗿𝗿𝗮𝗹 𝗔𝗹𝗲𝗿𝘁!</b>\n` +
+          `━━━━━━━━━━━━━━━━━━━━━\n\n` +
           `👤 <b>${joinerName}</b> joined using your link!\n` +
-          `🤑 You'll earn <b>${commPct}%</b> on their deposits!\n\n` +
-          `🔥 <i>Keep sharing to earn more!</i>`;
-        await ctx.api.sendMessage(referredBy, notifText, { parse_mode: 'HTML' });
+          `💰 You'll earn <b>${commPct}%</b> commission on their every deposit\n\n` +
+          `━━━━━━━━━━━━━━━━━━━━━\n` +
+          `🔥 <i>Keep sharing to earn more!</i> 💸`;
+        await ctx.api.sendMessage(referredBy, referrerNotif, { parse_mode: 'HTML' });
       }
     } catch {
       // Notification failure is non-critical
     }
 
-    // Notify the NEW USER that they joined via referral
+    // ── Notify the USER who joined via referral ──
     try {
       const referrerUser = await userRepo.getUser(pool, referredBy);
       const refName = escapeHtml(referrerUser?.full_name || 'your friend');
-      const refNotif =
-        `🎉 <b>Welcome!</b>\n\n` +
-        `🔗 You joined via <b>${refName}</b>'s referral link!\n` +
-        `🎁 Your friend will receive a reward for inviting you.\n\n` +
-        `🛍 <i>Start shopping and enjoy the deals!</i>`;
-      await ctx.reply(refNotif, { parse_mode: 'HTML' });
+      const userNotif =
+        `🔗 <b>𝗥𝗲𝗳𝗲𝗿𝗿𝗮𝗹 𝗔𝗰𝘁𝗶𝘃𝗮𝘁𝗲𝗱!</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `👤 You joined via <b>${refName}</b>'s referral!\n` +
+        `🎁 Your friend will earn rewards on your deposits\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━━\n` +
+        `🛍 <i>Start shopping and enjoy the deals!</i> ✨`;
+      await ctx.reply(userNotif, { parse_mode: 'HTML' });
     } catch {
       // Non-critical
     }
