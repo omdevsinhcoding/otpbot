@@ -217,7 +217,7 @@ composer.on('message:text', async (ctx, next) => {
       try {
         chat = await ctx.api.getChat(chatIdentifier);
       } catch (err) {
-        results.push(`❌ <code>${escapeHtml(String(input))}</code> — Bot is not in this channel. Please add the bot to the channel first!`);
+        results.push(`❌ <code>${escapeHtml(String(input))}</code> — Bot is not in this channel.\n    ➡️ Add the bot as <b>Administrator</b> in the channel first!`);
         failed++;
         continue;
       }
