@@ -12,6 +12,10 @@ const settings = Object.freeze({
   BOT_TOKEN: process.env.BOT_TOKEN,
   FIRST_ADMIN_ID: Number(process.env.FIRST_ADMIN_ID),
 
+  // Web server for Mini App + webhooks
+  WEBAPP_URL: process.env.WEBAPP_URL || '',          // e.g. https://yourdomain.com
+  WEBHOOK_PORT: Number(process.env.WEBHOOK_PORT) || 3000,
+
   LOG_LEVEL: process.env.LOG_LEVEL || 'info',
   LOG_PATH: process.env.LOG_PATH || './logs',
 });

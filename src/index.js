@@ -8,6 +8,7 @@ import { initDb } from './database/models.js';
 import { createBot } from './bot/bot.js';
 import { Tracker } from './tracking/tracker.js';
 import { setupErrorHandler } from './handlers/error.js';
+import { startWebServer, stopWebServer } from './server.js';
 
 
 import settings from './config/settings.js';
@@ -116,10 +117,20 @@ async function main() {
   // 8. Start payment expiry background service
   startExpiryService(bot, pool);
 
-  // 8. Graceful shutdown
+  // 9. Start web server (Mini App + webhooks)
+  if (settings.WEBAPP_URL) {
+    startWebServer(bot, pool, settings.WEBHOOK_PORT);
+    logger.info(`[WebApp] Mini App URL: ${settings.WEBAPP_URL}`);
+  } else {
+    // Start server anyway for webhooks (without WEBAPP_URL, analytics won't work)
+    startWebServer(bot, pool, settings.WEBHOOK_PORT);
+  }
+
+  // 10. Graceful shutdown
   const shutdown = async (signal) => {
     logger.info(`Received ${signal}. Shutting down…`);
     stopExpiryService();
+    stopWebServer();
     await bot.stop();
     await closePool();
     logger.info('Bot stopped. Goodbye!');

@@ -1,9 +1,10 @@
 import { Composer } from 'grammy';
 import { escRe } from './index.js';
 import { BTN_ADMIN_PANEL } from '../../utils/constants.js';
-import { getMainMenu, ADMIN_PANEL_KEYBOARD } from '../../utils/keyboard.js';
+import { getMainMenu, getAdminPanelKeyboard } from '../../utils/keyboard.js';
 import * as adminRepo from '../../database/repositories/adminRepo.js';
 import { formatNumber } from '../../utils/formatters.js';
+import settings from '../../config/settings.js';
 
 const composer = new Composer();
 
@@ -36,7 +37,7 @@ composer.hears(new RegExp(`^${escRe(BTN_ADMIN_PANEL)}$`), async (ctx) => {
 
   await ctx.reply(text, {
     parse_mode: 'HTML',
-    reply_markup: ADMIN_PANEL_KEYBOARD,
+    reply_markup: getAdminPanelKeyboard(settings.WEBAPP_URL),
   });
 });
 

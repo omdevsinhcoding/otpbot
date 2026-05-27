@@ -50,15 +50,25 @@ export const PAYMENTS_MENU_KEYBOARD = new Keyboard()
   .text(BTN_PAY_BACK)
   .resized();
 
-// ── Admin panel (Inline Keyboard) ────────────────────────────────────
-export const ADMIN_PANEL_KEYBOARD = new InlineKeyboard()
-  .text('📢 Broadcast', `${ADMIN_CB}broadcast`).text('👥 Users', `${ADMIN_CB}users`).row()
-  .text('🔗 Force Join', `${ADMIN_CB}forcejoin`).text('👑 Admins', `${ADMIN_CB}admins`).row()
-  .text('💬 Welcome Msg', `${ADMIN_CB}welcome`).text('📜 T&C', `${ADMIN_CB}tc`).row()
-  .text('💰 Payments', `${ADMIN_CB}payments`).text('💎 Benefits', `${ADMIN_CB}benefits`).row()
-  .text('🎁 Referral', `${ADMIN_CB}referral`).text('⚙️ Settings', `${ADMIN_CB}settings`).row()
-  .text('🤖 Bot Stats', `${ADMIN_CB}botstats`).text('📋 Admin Logs', `${ADMIN_CB}logs`).row()
-  .text('❌ Close', `${ADMIN_CB}close`);
+// ── Admin panel (Dynamic Inline Keyboard — includes Mini App button) ──
+export function getAdminPanelKeyboard(webappUrl = '') {
+  const kb = new InlineKeyboard()
+    .text('📢 Broadcast', `${ADMIN_CB}broadcast`).text('👥 Users', `${ADMIN_CB}users`).row()
+    .text('🔗 Force Join', `${ADMIN_CB}forcejoin`).text('👑 Admins', `${ADMIN_CB}admins`).row()
+    .text('💬 Welcome Msg', `${ADMIN_CB}welcome`).text('📜 T&C', `${ADMIN_CB}tc`).row()
+    .text('💰 Payments', `${ADMIN_CB}payments`).text('💎 Benefits', `${ADMIN_CB}benefits`).row()
+    .text('🎁 Referral', `${ADMIN_CB}referral`).text('⚙️ Settings', `${ADMIN_CB}settings`).row();
+
+  // Mini App Analytics button (only if WEBAPP_URL is configured)
+  if (webappUrl) {
+    kb.webApp('📊 Analytics', `${webappUrl}/webapp/admin`).row();
+  }
+
+  kb.text('🤖 Bot Stats', `${ADMIN_CB}botstats`).text('📋 Admin Logs', `${ADMIN_CB}logs`).row()
+    .text('❌ Close', `${ADMIN_CB}close`);
+
+  return kb;
+}
 
 // ── Dynamic keyboard builders ────────────────────────────────────────
 
