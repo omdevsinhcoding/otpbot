@@ -89,11 +89,10 @@ export async function checkForceJoin(ctx) {
         .replace(/\{user\}/gi, userMention)
         .replace(/\{first_name\}/gi, firstName.replace(/[<>&]/g, ''))
         .replace(/\{channel_count\}/gi, String(notJoined.length));
+    } else if (notJoined.length === 1) {
+      text = `👋 Hey ${userMention}!\n\nPlease join our channel to use the bot.`;
     } else {
-      text = `👋 Hey! ${userMention}, Please Join Our Channel${notJoined.length > 1 ? 's' : ''} To Access The Bot\n\n`;
-      text += `<blockquote>`;
-      text += `You must join <b>${notJoined.length}</b> channel${notJoined.length > 1 ? 's' : ''} to continue.`;
-      text += `</blockquote>`;
+      text = `👋 Hey ${userMention}!\n\nPlease join all ${notJoined.length} channels below to use the bot.`;
     }
 
     await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
@@ -128,29 +127,26 @@ export async function verifyForceJoin(ctx) {
     const notJoined = await getNotJoinedChannels(ctx, channels);
     if (notJoined.length === 0) return true;
 
-    // Still not joined — show which ones are missing
+    // Still not joined — show only remaining channels (clean approach)
     const rawColor = await getSetting(pool, 'fj_verify_color');
     const verifyColor = rawColor !== null && rawColor !== undefined ? rawColor : 'success';
     const kb = buildChannelKb(notJoined, verifyColor);
 
-    const totalRequired = channels.length;
-    const joinedCount = totalRequired - notJoined.length;
-
     const firstName = ctx.from.first_name || 'User';
     const userMention = `<a href="tg://user?id=${ctx.from.id}">${firstName.replace(/[<>&]/g, '')}</a>`;
 
-    let text = `⚠️ ${userMention}, You haven't joined all channels yet!\n\n`;
-    text += `<blockquote>`;
-    text += `Still need to join <b>${notJoined.length}</b> channel${notJoined.length > 1 ? 's' : ''}.\n\n`;
-    text += `Progress: ${joinedCount}/${totalRequired} joined`;
-    text += `</blockquote>`;
+    let text;
+    if (notJoined.length === 1) {
+      text = `⚠️ ${userMention}, You haven't joined the channel yet!\n\nPlease join to continue using the bot.`;
+    } else {
+      text = `⚠️ ${userMention}, You still need to join ${notJoined.length} channels!\n\nPlease join all channels below to continue.`;
+    }
 
     try {
       await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
     } catch (editErr) {
-      // Message unchanged — show popup alert instead
       try {
-        await ctx.answerCallbackQuery({ text: `⚠️ You still need to join ${notJoined.length} channel${notJoined.length > 1 ? 's' : ''}!`, show_alert: true });
+        await ctx.answerCallbackQuery({ text: `⚠️ Please join all channels first!`, show_alert: true });
       } catch {}
     }
     return false;

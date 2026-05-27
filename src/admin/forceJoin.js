@@ -213,10 +213,26 @@ composer.on('message:text', async (ctx, next) => {
     }
 
     try {
-      const chat = await ctx.api.getChat(chatIdentifier);
-      const botMember = await ctx.api.getChatMember(chat.id, ctx.me.id);
+      let chat;
+      try {
+        chat = await ctx.api.getChat(chatIdentifier);
+      } catch (err) {
+        results.push(`❌ <code>${escapeHtml(String(input))}</code> — Bot is not in this channel. Please add the bot to the channel first!`);
+        failed++;
+        continue;
+      }
+
+      let botMember;
+      try {
+        botMember = await ctx.api.getChatMember(chat.id, ctx.me.id);
+      } catch {
+        results.push(`❌ ${escapeHtml(chat.title || input)} — Cannot check bot status. Add bot to channel first!`);
+        failed++;
+        continue;
+      }
+
       if (!['administrator', 'creator'].includes(botMember.status)) {
-        results.push(`❌ ${escapeHtml(chat.title || input)} — bot is not admin`);
+        results.push(`❌ ${escapeHtml(chat.title || input)} — Bot is <b>not admin</b> in this channel!\n    ➡️ Make the bot an <b>admin</b> in the channel, then try again.`);
         failed++;
         continue;
       }

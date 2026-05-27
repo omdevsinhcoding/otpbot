@@ -12,6 +12,10 @@ import logger from '../utils/logger.js';
 
 const composer = new Composer();
 
+// Track pending referral notifications (userId → referrerId)
+// Set during /start, consumed during fjcheck:verify
+const pendingReferralNotifs = new Map();
+
 /**
  * Helper: Send the welcome message + main menu to the user.
  */
@@ -70,6 +74,44 @@ async function sendWelcomeAndMenu(ctx) {
   await ctx.reply('Select an option below:', { reply_markup: mainMenu });
 }
 
+/**
+ * Send referral notifications to both referrer and referred user.
+ * Called AFTER force join is cleared so the referral is fully valid.
+ */
+async function sendReferralNotifications(ctx, referrerId) {
+  const pool = ctx.dbPool;
+  try {
+    const refEnabled = await settingsRepo.getSetting(pool, 'referral_enabled');
+    if (!refEnabled) return;
+
+    // ── Notify the REFERRER ──
+    const joinerName = escapeHtml([ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ') || 'Someone');
+    const commPct = parseFloat(await settingsRepo.getSetting(pool, 'referral_commission_pct')) || 10;
+    const referrerNotif =
+      `🎊 <b>𝗡𝗲𝘄 𝗥𝗲𝗳𝗲𝗿𝗿𝗮𝗹 𝗔𝗹𝗲𝗿𝘁!</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `👤 <b>${joinerName}</b> joined using your link!\n` +
+      `💰 You'll earn <b>${commPct}%</b> commission on their every deposit\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━━\n` +
+      `🔥 <i>Keep sharing to earn more!</i> 💸`;
+    await ctx.api.sendMessage(referrerId, referrerNotif, { parse_mode: 'HTML' });
+  } catch { /* non-critical */ }
+
+  // ── Notify the USER who joined via referral ──
+  try {
+    const referrerUser = await userRepo.getUser(pool, referrerId);
+    const refName = escapeHtml(referrerUser?.full_name || 'your friend');
+    const userNotif =
+      `🔗 <b>𝗥𝗲𝗳𝗲𝗿𝗿𝗮𝗹 𝗔𝗰𝘁𝗶𝘃𝗮𝘁𝗲𝗱!</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `👤 You joined via <b>${refName}</b>'s referral!\n` +
+      `🎁 Your friend will earn rewards on your deposits\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━━\n` +
+      `🛍 <i>Start shopping and enjoy the deals!</i> ✨`;
+    await ctx.reply(userNotif, { parse_mode: 'HTML' });
+  } catch { /* non-critical */ }
+}
+
 composer.command('start', async (ctx) => {
   if (!ctx.from) return;
   const pool = ctx.dbPool;
@@ -113,6 +155,10 @@ composer.command('start', async (ctx) => {
     }
   }
 
+  // Track if this is a NEW referral (for notifications after force join)
+  const hadReferrerBefore = existingUser?.referred_by;
+  const isNewReferral = referredBy && !hadReferrerBefore;
+
   await userRepo.upsertUser(pool, {
     userId: ctx.from.id,
     username: ctx.from.username || null,
@@ -123,48 +169,20 @@ composer.command('start', async (ctx) => {
     referredBy,
   });
 
-  // ── Notify both users when referral link is used ────────────────
-  // Fire if: referredBy was resolved AND the user didn't already have a referrer
-  const hadReferrerBefore = existingUser?.referred_by;
-  if (referredBy && !hadReferrerBefore) {
-    try {
-      const refEnabled = await settingsRepo.getSetting(pool, 'referral_enabled');
-      if (refEnabled) {
-        // ── Notify the REFERRER ──
-        const joinerName = escapeHtml([ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ') || 'Someone');
-        const commPct = parseFloat(await settingsRepo.getSetting(pool, 'referral_commission_pct')) || 10;
-        const referrerNotif =
-          `🎊 <b>𝗡𝗲𝘄 𝗥𝗲𝗳𝗲𝗿𝗿𝗮𝗹 𝗔𝗹𝗲𝗿𝘁!</b>\n` +
-          `━━━━━━━━━━━━━━━━━━━━━\n\n` +
-          `👤 <b>${joinerName}</b> joined using your link!\n` +
-          `💰 You'll earn <b>${commPct}%</b> commission on their every deposit\n\n` +
-          `━━━━━━━━━━━━━━━━━━━━━\n` +
-          `🔥 <i>Keep sharing to earn more!</i> 💸`;
-        await ctx.api.sendMessage(referredBy, referrerNotif, { parse_mode: 'HTML' });
-      }
-    } catch {
-      // Notification failure is non-critical
-    }
-
-    // ── Notify the USER who joined via referral ──
-    try {
-      const referrerUser = await userRepo.getUser(pool, referredBy);
-      const refName = escapeHtml(referrerUser?.full_name || 'your friend');
-      const userNotif =
-        `🔗 <b>𝗥𝗲𝗳𝗲𝗿𝗿𝗮𝗹 𝗔𝗰𝘁𝗶𝘃𝗮𝘁𝗲𝗱!</b>\n` +
-        `━━━━━━━━━━━━━━━━━━━━━\n\n` +
-        `👤 You joined via <b>${refName}</b>'s referral!\n` +
-        `🎁 Your friend will earn rewards on your deposits\n\n` +
-        `━━━━━━━━━━━━━━━━━━━━━\n` +
-        `🛍 <i>Start shopping and enjoy the deals!</i> ✨`;
-      await ctx.reply(userNotif, { parse_mode: 'HTML' });
-    } catch {
-      // Non-critical
-    }
-  }
-
   // ── Force join gate ────────────────────────────────────────────
-  if (!await checkForceJoin(ctx)) return;
+  // Referral is saved to DB above, but notifications fire ONLY after force join passes
+  if (isNewReferral) {
+    // Mark pending — will be consumed by fjcheck:verify or below
+    pendingReferralNotifs.set(ctx.from.id, referredBy);
+  }
+  if (!await checkForceJoin(ctx)) return; // blocked by force join — notifications deferred
+
+  // ── Send referral notifications (force join passed directly) ──
+  const pendingRef = pendingReferralNotifs.get(ctx.from.id);
+  if (pendingRef) {
+    pendingReferralNotifs.delete(ctx.from.id);
+    await sendReferralNotifications(ctx, pendingRef);
+  }
 
   // ── Terms & Conditions gate ────────────────────────────────────
   try {
@@ -234,6 +252,14 @@ composer.callbackQuery('fjcheck:verify', async (ctx) => {
     try { await ctx.editMessageText('✅ Verification passed!'); } catch {}
 
     const pool = ctx.dbPool;
+
+    // ── Send pending referral notifications ──
+    // User was referred during /start but notifications were deferred until force join passed
+    const pendingRefId = pendingReferralNotifs.get(ctx.from.id);
+    if (pendingRefId) {
+      pendingReferralNotifs.delete(ctx.from.id);
+      await sendReferralNotifications(ctx, pendingRefId);
+    }
 
     // ── Next step: T&C gate ──
     try {
