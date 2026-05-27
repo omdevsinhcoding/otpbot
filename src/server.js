@@ -94,12 +94,21 @@ async function handleCryptomusWebhook(req, res) {
         cryptomus_status: paymentStatus, via: 'webhook',
       });
       await walletRepo.addBalance(_pool, txn.user_id, creditAmount);
+
+      // Apply deposit benefits (tax/bonus)
+      let netAmount = creditAmount;
+      try {
+        const { applyBenefits } = await import('./handlers/deposit/shared.js');
+        const { netCreditAmount } = await applyBenefits(_pool, txn.user_id, creditAmount, orderId);
+        netAmount = netCreditAmount;
+      } catch { /* benefits failed — use gross */ }
+
       const newBalance = await walletRepo.getBalance(_pool, txn.user_id);
 
-      // Process referral commission (best-effort, non-blocking)
+      // Process referral commission on NET amount (best-effort, non-blocking)
       try {
         const { processReferralReward } = await import('./services/referralService.js');
-        await processReferralReward(_pool, _bot.api, txn.user_id, creditAmount, orderId);
+        await processReferralReward(_pool, _bot.api, txn.user_id, netAmount, orderId);
       } catch { /* referral processing should never block webhook */ }
 
       // Notify user via Telegram

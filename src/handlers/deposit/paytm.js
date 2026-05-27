@@ -276,8 +276,8 @@ async function _doPaytmCheck(ctx, pool, orderId) {
       });
       await walletRepo.addBalance(pool, ctx.from.id, creditAmount);
       try { await ctx.api.deleteMessage(ctx.chat.id, verifyMsg.message_id); } catch { /* ignore */ }
-      const { benefits, newBalance } = await applyBenefits(pool, ctx.from.id, creditAmount, orderId);
-      await processReferralOnDeposit(pool, ctx.api, ctx.from.id, creditAmount, orderId);
+      const { benefits, newBalance, netCreditAmount } = await applyBenefits(pool, ctx.from.id, creditAmount, orderId);
+      await processReferralOnDeposit(pool, ctx.api, ctx.from.id, netCreditAmount, orderId);
       await ctx.reply(buildSuccessMessage(creditAmount, newBalance, orderId, benefits),
         { parse_mode: 'HTML' }
       );

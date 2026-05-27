@@ -5,7 +5,7 @@ import { Composer, InlineKeyboard } from 'grammy';
 import { checkForceJoin } from '../../middleware/forceJoinCheck.js';
 import { escRe, menuFor } from './index.js';
 import { BTN_PROFILE } from '../../utils/constants.js';
-import { escapeHtml, formatNumber } from '../../utils/formatters.js';
+import { escapeHtml, formatNumber, formatDateTimeShortIST } from '../../utils/formatters.js';
 import * as userRepo from '../../database/repositories/userRepo.js';
 import * as settingsRepo from '../../database/repositories/settingsRepo.js';
 
@@ -135,18 +135,7 @@ composer.callbackQuery(/^profile:deposit_history(?::(\d+))?$/, async (ctx) => {
   };
   const gwIcon = (g) => g === 'paytm' ? '⚡' : g === 'bharatpay' ? '🏦' : g === 'cryptomus' ? '🪙' : '💳';
 
-  const formatDate = (d) => {
-    const dt = new Date(d);
-    const day = String(dt.getDate()).padStart(2, '0');
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const mon = months[dt.getMonth()];
-    const yr = dt.getFullYear();
-    let hr = dt.getHours();
-    const min = String(dt.getMinutes()).padStart(2, '0');
-    const ampm = hr >= 12 ? 'PM' : 'AM';
-    hr = hr % 12 || 12;
-    return `${day} ${mon} ${yr}, ${hr}:${min} ${ampm}`;
-  };
+  const formatDate = (d) => formatDateTimeShortIST(d);
 
   let text = '';
   text += `╔═══════════════════════╗\n`;

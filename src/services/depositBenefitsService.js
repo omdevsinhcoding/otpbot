@@ -177,9 +177,10 @@ function buildUserMessage(result, allRules, depositAmount) {
     lines.push('');
   }
 
-  // 30-day deposit info
+  // 30-day deposit info (show NET — subtract current deposit's tax since credit_amount isn't stored yet)
+  const rolling30dNet = Math.max(0, result.rolling30d - result.taxAmount);
   lines.push(`━━━ 🏦 30-Dᴀʏ Dᴇᴘᴏsɪᴛs ━━━`);
-  lines.push(`   ↳ ₹${formatNumber(result.rolling30d)}`);
+  lines.push(`   ↳ ₹${formatNumber(rolling30dNet)}`);
 
   // Show next tier hint
   const loyaltyRules = allRules

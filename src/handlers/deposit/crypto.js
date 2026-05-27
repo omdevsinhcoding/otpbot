@@ -62,8 +62,8 @@ function startCryptoAutoCheck(api, pool, orderId, uuid, userId, chatId, msgId, a
         const updated = await transactionRepo.updateStatus(pool, orderId, 'success', uuid, { cryptomus_status: result.status });
         if (!updated) return;
         await walletRepo.addBalance(pool, userId, creditAmount);
-        const { benefits, newBalance } = await applyBenefits(pool, userId, creditAmount, orderId);
-        await processReferralOnDeposit(pool, api, userId, creditAmount, orderId);
+        const { benefits, newBalance, netCreditAmount } = await applyBenefits(pool, userId, creditAmount, orderId);
+        await processReferralOnDeposit(pool, api, userId, netCreditAmount, orderId);
 
         try { await api.deleteMessage(chatId, msgId); } catch {}
         await api.sendMessage(chatId, buildSuccessMessage(creditAmount, newBalance, orderId, benefits),
@@ -536,8 +536,8 @@ composer.callbackQuery(/^deposit:check_crypto:CX-/, async (ctx) => {
       }
       await walletRepo.addBalance(pool, ctx.from.id, creditAmount);
       try { await ctx.deleteMessage(); } catch { /* ignore */ }
-      const { benefits, newBalance } = await applyBenefits(pool, ctx.from.id, creditAmount, orderId);
-      await processReferralOnDeposit(pool, ctx.api, ctx.from.id, creditAmount, orderId);
+      const { benefits, newBalance, netCreditAmount } = await applyBenefits(pool, ctx.from.id, creditAmount, orderId);
+      await processReferralOnDeposit(pool, ctx.api, ctx.from.id, netCreditAmount, orderId);
       await ctx.reply(buildSuccessMessage(creditAmount, newBalance, orderId, benefits),
         { parse_mode: 'HTML' }
       );
@@ -572,8 +572,8 @@ composer.callbackQuery(/^deposit:check_crypto:CRYPTO_/, async (ctx) => {
     await transactionRepo.updateStatus(pool, orderId, 'success', uuid, result);
     await walletRepo.addBalance(pool, ctx.from.id, creditAmount);
     try { await ctx.deleteMessage(); } catch { /* ignore */ }
-    const { benefits, newBalance } = await applyBenefits(pool, ctx.from.id, creditAmount, orderId);
-    await processReferralOnDeposit(pool, ctx.api, ctx.from.id, creditAmount, orderId);
+    const { benefits, newBalance, netCreditAmount } = await applyBenefits(pool, ctx.from.id, creditAmount, orderId);
+    await processReferralOnDeposit(pool, ctx.api, ctx.from.id, netCreditAmount, orderId);
     await ctx.reply(buildSuccessMessage(creditAmount, newBalance, orderId, benefits),
       { parse_mode: 'HTML' }
     );

@@ -8,7 +8,7 @@
 import { InlineKeyboard } from 'grammy';
 import * as walletRepo from '../../database/repositories/walletRepo.js';
 import * as depositBenefitsService from '../../services/depositBenefitsService.js';
-import { formatNumber } from '../../utils/formatters.js';
+import { formatNumber, formatDateTimeIST } from '../../utils/formatters.js';
 import logger from '../../utils/logger.js';
 
 // ── Per-user state map ──────────────────────────────────────────
@@ -51,15 +51,7 @@ export async function safeReply(ctx, text, opts = {}) {
  * Premium deposit success message — unified across all gateways.
  */
 export function buildSuccessMessage(amount, newBalance, orderId, benefits = null) {
-  const now = new Date();
-  const day = String(now.getDate()).padStart(2, '0');
-  const mon = String(now.getMonth() + 1).padStart(2, '0');
-  const yr = now.getFullYear();
-  let hr = now.getHours();
-  const min = String(now.getMinutes()).padStart(2, '0');
-  const ampm = hr >= 12 ? 'PM' : 'AM';
-  hr = hr % 12 || 12;
-  const dateStr = `${day}-${mon}-${yr}  ${hr}:${min} ${ampm}`;
+  const dateStr = formatDateTimeIST();
 
   let msg =
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
@@ -87,7 +79,7 @@ export function buildSuccessMessage(amount, newBalance, orderId, benefits = null
 export async function applyBenefits(pool, userId, depositAmount, orderId) {
   try {
     const benefits = await depositBenefitsService.calculateBenefits(pool, userId, depositAmount, orderId);
-    if (!benefits.active) return { benefits: null, newBalance: await walletRepo.getBalance(pool, userId) };
+    if (!benefits.active) return { benefits: null, newBalance: await walletRepo.getBalance(pool, userId), netCreditAmount: depositAmount };
 
     // adjustBalance handles +bonus, -tax, and 0 in one call
     await walletRepo.adjustBalance(pool, userId, benefits.netAdjustment);
@@ -127,9 +119,9 @@ export async function applyBenefits(pool, userId, depositAmount, orderId) {
     } catch { /* recording failed but wallet is already adjusted — ok */ }
 
     const newBalance = await walletRepo.getBalance(pool, userId);
-    return { benefits, newBalance };
+    return { benefits, newBalance, netCreditAmount: creditAmount };
   } catch {
-    return { benefits: null, newBalance: await walletRepo.getBalance(pool, userId) };
+    return { benefits: null, newBalance: await walletRepo.getBalance(pool, userId), netCreditAmount: depositAmount };
   }
 }
 

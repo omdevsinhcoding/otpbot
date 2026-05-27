@@ -127,49 +127,69 @@ composer.callbackQuery('ref:enter_code', async (ctx) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-//  MY REFERRALS — Paginated
+//  MY REFERRALS DASHBOARD — Production-grade
 // ═══════════════════════════════════════════════════════════════════
 composer.callbackQuery(/^ref:history:(\d+)$/, async (ctx) => {
   try { await ctx.answerCallbackQuery(); } catch {}
   _states.delete(ctx.chat.id);
   const pool = ctx.dbPool;
   const page = parseInt(ctx.match[1]) || 1;
-  const perPage = 10;
+  const perPage = 5;
   const offset = (page - 1) * perPage;
+  const commPct = parseFloat(await settingsRepo.getSetting(pool, 'referral_commission_pct')) || 10;
 
-  const totalRefs = await referralRepo.getTotalReferralCount(pool, ctx.from.id);
-  const referrals = await referralRepo.getReferralsByUser(pool, ctx.from.id, perPage, offset);
+  // Fetch dashboard stats + referrals in parallel
+  const [dashStats, referrals] = await Promise.all([
+    referralRepo.getReferralDashboardStats(pool, ctx.from.id),
+    referralRepo.getReferralsByUser(pool, ctx.from.id, perPage, offset),
+  ]);
+
+  const totalRefs = dashStats.totalReferrals;
   const totalPages = Math.max(1, Math.ceil(totalRefs / perPage));
+  const safePage = Math.min(page, totalPages);
 
   if (totalRefs === 0) {
     const text =
-      `👥 <b>My Referrals</b>\n\n` +
-      `<i>No referrals yet. Share your link to start earning!</i>`;
+      `👥 <b>MY REFERRALS DASHBOARD</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `📭 No referrals yet.\n\n` +
+      `Share your referral link and start\nearning <b>${commPct}%</b> on every deposit! 🔗`;
     const kb = new InlineKeyboard().text('◀ Back', 'ref:home');
     try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
     catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
     return;
   }
 
-  let text = `👥 <b>My Referrals</b>  (${formatNumber(totalRefs)} total)\n\n`;
+  let text = '';
+  text += `👥 <b>MY REFERRALS DASHBOARD</b>\n`;
+  text += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+  text += `🎯 <b>Total Referrals:</b> ${formatNumber(totalRefs)}\n`;
+  text += `💰 <b>30D Deposits:</b> ₹${formatNumber(dashStats.deposit30d)}\n`;
+  text += `🤑 <b>Your Earnings (${commPct}%):</b> ₹${formatNumber(dashStats.earned30d)}\n`;
+  text += `━━━━━━━━━━━━━━━━━━━━━\n`;
 
   for (let i = 0; i < referrals.length; i++) {
     const r = referrals[i];
     const num = offset + i + 1;
     const name = escapeHtml(r.full_name || r.username || 'Unknown');
-    const date = new Date(r.first_seen).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-    const status = parseInt(r.deposits) > 0 ? '✅ Active' : '⏳ Pending';
-    const earned = parseFloat(r.earned) > 0 ? ` — ₹${formatNumber(r.earned)}` : '';
-    text += `#${num} ${name} — ${status}${earned}\n`;
-    text += `     <i>${date}</i>\n\n`;
+    const dep30d = parseFloat(r.deposit_30d);
+    const earned = parseFloat(r.earned);
+
+    text += `\n<b>${num}. ${name}</b>\n`;
+    text += `🆔 <code>${r.user_id}</code>\n`;
+    text += `💰 <b>30D Deposit:</b> ₹${formatNumber(dep30d)}\n`;
+    if (earned > 0) {
+      text += `🤑 <b>Earned:</b> ₹${formatNumber(earned)}\n`;
+    }
   }
 
-  text += `📄 Page ${page}/${totalPages}`;
+  text += `\n━━━━━━━━━━━━━━━━━━━━━\n`;
+  text += `📄 Page ${safePage}/${totalPages}`;
 
   const kb = new InlineKeyboard();
-  if (page > 1) kb.text('◀ Prev', `ref:history:${page - 1}`);
-  kb.text(`${page}/${totalPages}`, 'noop');
-  if (page < totalPages) kb.text('Next ▶', `ref:history:${page + 1}`);
+  if (safePage > 1) kb.text('◀ Prev', `ref:history:${safePage - 1}`);
+  kb.text(`📄 ${safePage}/${totalPages}`, 'noop');
+  if (safePage < totalPages) kb.text('Next ▶', `ref:history:${safePage + 1}`);
   kb.row().text('◀ Back', 'ref:home');
 
   try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
@@ -221,8 +241,8 @@ composer.on('message:text', async (ctx, next) => {
       return;
     }
 
-    // Set referrer
-    await pool.query('UPDATE users SET referred_by = $1 WHERE user_id = $2', [referrer.user_id, ctx.from.id]);
+    // Set referrer + mark as notified (notifications are sent immediately below)
+    await pool.query('UPDATE users SET referred_by = $1, referral_notified = TRUE WHERE user_id = $2', [referrer.user_id, ctx.from.id]);
     _states.delete(ctx.chat.id);
 
     const refName = escapeHtml(referrer.full_name || 'a user');

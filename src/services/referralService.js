@@ -16,7 +16,7 @@
 import * as referralRepo from '../database/repositories/referralRepo.js';
 import * as settingsRepo from '../database/repositories/settingsRepo.js';
 import * as userRepo from '../database/repositories/userRepo.js';
-import { formatNumber } from '../utils/formatters.js';
+import { formatNumber, escapeHtml } from '../utils/formatters.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -102,14 +102,13 @@ export async function processReferralReward(pool, botApi, userId, depositAmount,
 
     // 10. Send notification to referrer (matching screenshot style)
     try {
-      const depositorName = user.full_name || 'A referred user';
-      const { escapeHtml: esc } = await import('../utils/formatters.js');
+      const depositorName = escapeHtml(user.full_name || 'A referred user');
       const refWalletAfter = await referralRepo.getReferralWallet(pool, referrerId);
       const walletBal = refWalletAfter ? parseFloat(refWalletAfter.balance) : rewardAmount;
       const notifText =
         `💸 <b>𝗥𝗲𝗳𝗲𝗿𝗿𝗮𝗹 𝗘𝗮𝗿𝗻𝗶𝗻𝗴!</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━\n\n` +
-        `👤 <b>${esc(depositorName)}</b> made a deposit!\n` +
+        `👤 <b>${depositorName}</b> made a deposit!\n` +
         `🤑 ₹${formatNumber(rewardAmount)} commission credited\n` +
         `💰 Referral Balance: ₹${formatNumber(walletBal)}\n\n` +
         `━━━━━━━━━━━━━━━━━━━━━\n` +

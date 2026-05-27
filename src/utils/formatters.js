@@ -98,3 +98,45 @@ export function replaceWelcomePlaceholders(text, user) {
     .replace(/\{username\}/gi, escapeHtml(username))
     .replace(/\{id\}/gi, String(userId));
 }
+
+// ═══════════════════════════════════════════════════════════════════
+//  DATE FORMATTING — Asia/Kolkata (IST UTC+5:30)
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Format date + time in Kolkata timezone: "27-05-2026  4:50 PM"
+ * @param {Date|string|null} date - Date to format (defaults to now)
+ */
+export function formatDateTimeIST(date = null) {
+  const d = date ? new Date(date) : new Date();
+  const opts = { timeZone: 'Asia/Kolkata' };
+  const parts = new Intl.DateTimeFormat('en-IN', {
+    ...opts, day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true,
+  }).formatToParts(d);
+  const p = {};
+  for (const { type, value } of parts) p[type] = value;
+  return `${p.day}-${p.month}-${p.year}  ${p.hour}:${p.minute} ${p.dayPeriod}`;
+}
+
+/**
+ * Format date only in Kolkata timezone: "27 May 2026"
+ * @param {Date|string|null} date - Date to format (defaults to now)
+ */
+export function formatDateIST(date = null) {
+  const d = date ? new Date(date) : new Date();
+  return d.toLocaleDateString('en-IN', {
+    timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric',
+  });
+}
+
+/**
+ * Format date + time short in Kolkata: "27 May 2026, 4:50 PM"
+ */
+export function formatDateTimeShortIST(date = null) {
+  const d = date ? new Date(date) : new Date();
+  return d.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true,
+  });
+}

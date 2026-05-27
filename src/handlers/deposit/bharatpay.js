@@ -93,8 +93,8 @@ export async function handleBharatpayUTR(ctx) {
     await transactionRepo.updateStatus(pool, orderId, 'success', utr, result);
     await walletRepo.addBalance(pool, ctx.from.id, result.amount);
 
-    const { benefits, newBalance } = await applyBenefits(pool, ctx.from.id, result.amount, orderId);
-    await processReferralOnDeposit(pool, ctx.api, ctx.from.id, result.amount, orderId);
+    const { benefits, newBalance, netCreditAmount } = await applyBenefits(pool, ctx.from.id, result.amount, orderId);
+    await processReferralOnDeposit(pool, ctx.api, ctx.from.id, netCreditAmount, orderId);
     await ctx.reply(buildSuccessMessage(result.amount, newBalance, orderId, benefits),
       { parse_mode: 'HTML' }
     );

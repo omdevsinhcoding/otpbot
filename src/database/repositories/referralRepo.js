@@ -292,13 +292,19 @@ export async function getSuccessfulReferralCount(pool, userId) {
 }
 
 /**
- * List referred users with their deposit status.
+ * List referred users with their 30-day deposit and earning data.
+ * Uses NET deposit amount (after tax) via gateway_data->>'credit_amount'.
  */
 export async function getReferralsByUser(pool, userId, limit = 20, offset = 0) {
   const { rows } = await pool.query(
     `SELECT u.user_id, u.username, u.full_name, u.first_seen,
-            (SELECT COUNT(*)::int FROM transactions WHERE user_id = u.user_id AND status = 'success') AS deposits,
-            (SELECT COALESCE(SUM(reward_amount), 0) FROM referral_rewards WHERE referrer_id = $1 AND referred_id = u.user_id AND status = 'credited') AS earned
+            (SELECT COALESCE(SUM(
+              COALESCE((gateway_data->>'credit_amount')::numeric, amount)
+            ), 0) FROM transactions
+             WHERE user_id = u.user_id AND status = 'success'
+             AND created_at >= NOW() - INTERVAL '30 days') AS deposit_30d,
+            (SELECT COALESCE(SUM(reward_amount), 0) FROM referral_rewards
+             WHERE referrer_id = $1 AND referred_id = u.user_id AND status = 'credited') AS earned
      FROM users u
      WHERE u.referred_by = $1
      ORDER BY u.first_seen DESC
@@ -306,6 +312,32 @@ export async function getReferralsByUser(pool, userId, limit = 20, offset = 0) {
     [userId, limit, offset]
   );
   return rows;
+}
+
+/**
+ * Dashboard-level aggregate stats for referral page.
+ * Uses NET deposit amount (after tax) for accurate 30D stats.
+ */
+export async function getReferralDashboardStats(pool, userId) {
+  const { rows } = await pool.query(
+    `SELECT
+       (SELECT COUNT(*)::int FROM users WHERE referred_by = $1) AS total_referrals,
+       (SELECT COALESCE(SUM(
+         COALESCE((t.gateway_data->>'credit_amount')::numeric, t.amount)
+       ), 0)::numeric FROM transactions t
+        JOIN users u ON u.user_id = t.user_id
+        WHERE u.referred_by = $1 AND t.status = 'success'
+        AND t.created_at >= NOW() - INTERVAL '30 days') AS deposit_30d,
+       (SELECT COALESCE(SUM(rr.reward_amount), 0)::numeric FROM referral_rewards rr
+        WHERE rr.referrer_id = $1 AND rr.status = 'credited'
+        AND rr.created_at >= NOW() - INTERVAL '30 days') AS earned_30d`,
+    [userId]
+  );
+  return {
+    totalReferrals: rows[0].total_referrals,
+    deposit30d: parseFloat(rows[0].deposit_30d),
+    earned30d: parseFloat(rows[0].earned_30d),
+  };
 }
 
 /**

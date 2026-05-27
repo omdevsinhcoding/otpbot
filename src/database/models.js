@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
     is_premium     BOOLEAN      NOT NULL DEFAULT FALSE,
     referral_code  VARCHAR(50)  UNIQUE,
     referred_by    BIGINT       REFERENCES users(user_id) ON DELETE SET NULL,
+    referral_notified BOOLEAN   NOT NULL DEFAULT FALSE,
     first_seen     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     last_active    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     is_active      BOOLEAN      NOT NULL DEFAULT TRUE
