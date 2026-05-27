@@ -87,7 +87,10 @@ async function showReferralCard(ctx, edit = false) {
     kb.url('📜 Condition', pages.en).row();
   }
 
-  kb.text('🔗 Enter Referral Code', 'ref:enter_code').row();
+  // Only show "Enter Referral Code" if user doesn't already have a referrer
+  if (!user?.referred_by) {
+    kb.text('🔗 Enter Referral Code', 'ref:enter_code').row();
+  }
   kb.text('👥 My Referrals', 'ref:history:1').row();
   kb.text('◀ Back', 'ref:back');
 
