@@ -52,7 +52,7 @@ export function startWebServer(bot, pool, port = 3000) {
   _app.get('/api/admin/chart', webAppAdminAuth(pool), handleAdminChart);
 
   // ── Catch-all: Block page for non-Telegram visitors ────────────
-  _app.get('*', (req, res) => {
+  _app.use((req, res) => {
     res.sendFile(path.join(__dirname, 'webapp', 'public', 'blocked.html'));
   });
 
