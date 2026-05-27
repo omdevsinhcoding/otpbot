@@ -7,6 +7,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
+    "build:client": "cd src/webapp/client && npm install && npm run build",
+    "postinstall": "cd src/webapp/client && npm install && npm run build",
     "init-db": "node src/scripts/initDb.js"
   },
   "dependencies": {

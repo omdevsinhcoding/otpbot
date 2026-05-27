@@ -1,0 +1,248 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', -apple-system, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #06080f;
+  color: #e8eaf6;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Aurora ── */
+.bp-aurora {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+.bp-aurora-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.3;
+  animation: bp-drift 14s ease-in-out infinite alternate;
+}
+.bp-aurora-blob:nth-child(1) {
+  width: 500px; height: 500px;
+  background: radial-gradient(circle, rgba(99,102,241,0.45), transparent 70%);
+  top: -15%; left: -10%;
+}
+.bp-aurora-blob:nth-child(2) {
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, rgba(244,114,182,0.35), transparent 70%);
+  bottom: -20%; right: -10%;
+  animation-delay: -4s;
+  animation-duration: 18s;
+}
+.bp-aurora-blob:nth-child(3) {
+  width: 300px; height: 300px;
+  background: radial-gradient(circle, rgba(52,211,153,0.25), transparent 70%);
+  top: 40%; left: 50%;
+  animation-delay: -8s;
+  animation-duration: 20s;
+}
+@keyframes bp-drift {
+  0%   { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(40px, -30px) scale(1.15); }
+}
+
+/* ── Grid Pattern ── */
+.bp-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background-image:
+    linear-gradient(rgba(99,102,241,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99,102,241,0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  mask-image: radial-gradient(ellipse 60% 60% at 50% 50%, black 20%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse 60% 60% at 50% 50%, black 20%, transparent 70%);
+}
+
+/* ── Scan Line ── */
+.bp-scan {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 2px;
+  background: linear-gradient(90deg, transparent, #818cf8, transparent);
+  opacity: 0.12;
+  z-index: 2;
+  animation: bp-scan 4s linear infinite;
+}
+@keyframes bp-scan {
+  0%   { top: -2px; }
+  100% { top: 100%; }
+}
+
+/* ── Container ── */
+.bp-container {
+  position: relative;
+  z-index: 10;
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  max-width: 440px;
+  width: 92%;
+}
+
+/* ── Glass Card ── */
+.bp-card {
+  background: rgba(12, 16, 32, 0.55);
+  border: 1px solid rgba(99, 102, 241, 0.1);
+  border-radius: 24px;
+  padding: 3rem 2rem 2.5rem;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow:
+    0 0 60px rgba(99,102,241,0.05),
+    0 24px 48px rgba(0,0,0,0.4),
+    inset 0 1px 0 rgba(255,255,255,0.03);
+  animation: bp-cardIn 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+@keyframes bp-cardIn {
+  from { opacity: 0; transform: translateY(40px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Shield ── */
+.bp-shield-wrap {
+  width: 88px; height: 88px;
+  margin: 0 auto 2rem;
+  position: relative;
+}
+.bp-ring {
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(99,102,241,0.12);
+  animation: bp-ringPulse 3s ease-in-out infinite;
+}
+.bp-ring-2 {
+  inset: -24px;
+  border-color: rgba(99,102,241,0.06);
+  animation-delay: 1s;
+}
+@keyframes bp-ringPulse {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50%      { transform: scale(1.08); opacity: 0; }
+}
+.bp-shield {
+  width: 88px; height: 88px;
+  background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(244,114,182,0.08));
+  border: 1px solid rgba(99,102,241,0.15);
+  border-radius: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 1;
+}
+.bp-shield svg {
+  width: 40px; height: 40px;
+  stroke: #818cf8;
+  filter: drop-shadow(0 0 12px rgba(99,102,241,0.4));
+}
+
+/* ── Badge ── */
+.bp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: rgba(239,68,68,0.08);
+  border: 1px solid rgba(239,68,68,0.12);
+  border-radius: 20px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #f87171;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 1.25rem;
+}
+.bp-badge-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: #f87171;
+  animation: bp-blink 1.5s ease-in-out infinite;
+}
+@keyframes bp-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+
+/* ── Text ── */
+.bp-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.75rem;
+  background: linear-gradient(135deg, #c7d2fe, #f9a8d4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.bp-desc {
+  font-size: 0.88rem;
+  color: rgba(232,234,246,0.4);
+  line-height: 1.7;
+  margin-bottom: 2rem;
+  max-width: 320px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.bp-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(99,102,241,0.1), transparent);
+  margin: 0 -2rem 1.5rem;
+}
+.bp-hint {
+  font-size: 0.72rem;
+  color: rgba(232,234,246,0.35);
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.bp-hint svg {
+  width: 14px; height: 14px;
+  stroke: rgba(232,234,246,0.35);
+}
+
+/* ── Button ── */
+.bp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 36px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
+  text-decoration: none;
+  border-radius: 14px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  letter-spacing: -0.01em;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 24px rgba(99,102,241,0.3);
+  border: none;
+  cursor: pointer;
+}
+.bp-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(99,102,241,0.45);
+}
+.bp-btn svg { width: 18px; height: 18px; }
+
+/* ── Footer ── */
+.bp-footer {
+  margin-top: 2rem;
+  font-size: 0.62rem;
+  color: rgba(232,234,246,0.15);
+  letter-spacing: 0.04em;
+}

@@ -33,7 +33,7 @@ export function startWebServer(bot, pool, port = 3000) {
 
   _app.use(express.json());
 
-  // ── Static files (CSS, JS) ─────────────────────────────────────
+  // ── Static files (React build output) ────────────────────────────
   _app.use(express.static(path.join(__dirname, 'webapp', 'public')));
 
   // ── Health check ───────────────────────────────────────────────
@@ -42,9 +42,9 @@ export function startWebServer(bot, pool, port = 3000) {
   // ── Cryptomus webhook ──────────────────────────────────────────
   _app.post('/crypto/webhook', handleCryptomusWebhook);
 
-  // ── Mini App: Admin Analytics page ─────────────────────────────
+  // ── Mini App: Admin Analytics page (React SPA) ──────────────────
   _app.get('/webapp/admin', (req, res) => {
-    res.sendFile(path.join(__dirname, 'webapp', 'public', 'admin.html'));
+    res.sendFile(path.join(__dirname, 'webapp', 'public', 'index.html'));
   });
 
   // ── API: Admin Stats (authenticated) ───────────────────────────
