@@ -328,6 +328,11 @@ export async function initDb(pool) {
     await pool.query(`ALTER TABLE deposit_rules ADD COLUMN IF NOT EXISTS rolling_period_days INT DEFAULT 30`);
   } catch { /* table may not exist yet */ }
 
+  // Migration: add referral_notified flag to users
+  try {
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_notified BOOLEAN NOT NULL DEFAULT FALSE`);
+  } catch { /* table may not exist yet */ }
+
   await pool.query(SCHEMA_SQL);
   logger.info('Schema applied successfully.');
 

@@ -12,10 +12,6 @@ import logger from '../utils/logger.js';
 
 const composer = new Composer();
 
-// Track pending referral notifications (userId → referrerId)
-// Set during /start, consumed during fjcheck:verify
-const pendingReferralNotifs = new Map();
-
 /**
  * Helper: Send the welcome message + main menu to the user.
  */
@@ -76,10 +72,16 @@ async function sendWelcomeAndMenu(ctx) {
 
 /**
  * Send referral notifications to both referrer and referred user.
- * Called AFTER force join is cleared so the referral is fully valid.
+ * Marks referral_notified = TRUE in DB so it only fires once.
  */
 async function sendReferralNotifications(ctx, referrerId) {
   const pool = ctx.dbPool;
+
+  // Mark as notified FIRST (prevent double-send even if messages fail)
+  try {
+    await pool.query('UPDATE users SET referral_notified = TRUE WHERE user_id = $1', [ctx.from.id]);
+  } catch { /* non-critical */ }
+
   try {
     const refEnabled = await settingsRepo.getSetting(pool, 'referral_enabled');
     if (!refEnabled) return;
@@ -109,6 +111,21 @@ async function sendReferralNotifications(ctx, referrerId) {
       `━━━━━━━━━━━━━━━━━━━━━\n` +
       `🛍 <i>Start shopping and enjoy the deals!</i> ✨`;
     await ctx.reply(userNotif, { parse_mode: 'HTML' });
+  } catch { /* non-critical */ }
+}
+
+/**
+ * Check if user has a pending (unnotified) referral and send notifications.
+ * DB-backed — survives server restarts.
+ */
+async function checkAndSendPendingReferral(ctx) {
+  try {
+    const pool = ctx.dbPool;
+    const user = await userRepo.getUser(pool, ctx.from.id);
+    // Has a referrer AND hasn't been notified yet
+    if (user?.referred_by && !user.referral_notified) {
+      await sendReferralNotifications(ctx, user.referred_by);
+    }
   } catch { /* non-critical */ }
 }
 
@@ -155,10 +172,6 @@ composer.command('start', async (ctx) => {
     }
   }
 
-  // Track if this is a NEW referral (for notifications after force join)
-  const hadReferrerBefore = existingUser?.referred_by;
-  const isNewReferral = referredBy && !hadReferrerBefore;
-
   await userRepo.upsertUser(pool, {
     userId: ctx.from.id,
     username: ctx.from.username || null,
@@ -170,19 +183,11 @@ composer.command('start', async (ctx) => {
   });
 
   // ── Force join gate ────────────────────────────────────────────
-  // Referral is saved to DB above, but notifications fire ONLY after force join passes
-  if (isNewReferral) {
-    // Mark pending — will be consumed by fjcheck:verify or below
-    pendingReferralNotifs.set(ctx.from.id, referredBy);
-  }
-  if (!await checkForceJoin(ctx)) return; // blocked by force join — notifications deferred
+  // Referral is saved to DB above. Notifications fire ONLY after force join passes.
+  if (!await checkForceJoin(ctx)) return;
 
-  // ── Send referral notifications (force join passed directly) ──
-  const pendingRef = pendingReferralNotifs.get(ctx.from.id);
-  if (pendingRef) {
-    pendingReferralNotifs.delete(ctx.from.id);
-    await sendReferralNotifications(ctx, pendingRef);
-  }
+  // ── Send referral notifications (force join passed) ────────────
+  await checkAndSendPendingReferral(ctx);
 
   // ── Terms & Conditions gate ────────────────────────────────────
   try {
@@ -253,13 +258,8 @@ composer.callbackQuery('fjcheck:verify', async (ctx) => {
 
     const pool = ctx.dbPool;
 
-    // ── Send pending referral notifications ──
-    // User was referred during /start but notifications were deferred until force join passed
-    const pendingRefId = pendingReferralNotifs.get(ctx.from.id);
-    if (pendingRefId) {
-      pendingReferralNotifs.delete(ctx.from.id);
-      await sendReferralNotifications(ctx, pendingRefId);
-    }
+    // ── Send pending referral notifications (DB-backed) ──
+    await checkAndSendPendingReferral(ctx);
 
     // ── Next step: T&C gate ──
     try {
